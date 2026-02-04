@@ -90,6 +90,45 @@ export function hashContent(content: string): Buffer {
   return createHash('sha256').update(content, 'utf8').digest();
 }
 
+function validateHexacoTraits(traits: HEXACOTraits): void {
+  for (const key of HEXACO_TRAITS) {
+    const value = traits[key];
+    if (!Number.isFinite(value) || value < 0 || value > 1) {
+      throw new Error(`Invalid HEXACO trait "${key}": ${String(value)} (expected 0.0–1.0)`);
+    }
+  }
+}
+
+function sortJsonRecursively(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortJsonRecursively);
+  }
+
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(record).sort()) {
+      sorted[key] = sortJsonRecursively(record[key]);
+    }
+    return sorted;
+  }
+
+  if (typeof value === 'bigint') {
+    return value.toString();
+  }
+
+  return value;
+}
+
+function canonicalizeJsonString(maybeJson: string): string {
+  try {
+    const parsed = JSON.parse(maybeJson) as unknown;
+    return JSON.stringify(sortJsonRecursively(parsed));
+  } catch {
+    return maybeJson;
+  }
+}
+
 // ============================================================
 // Client Configuration
 // ============================================================
@@ -242,15 +281,53 @@ export class WunderlandSolClient {
       }
     );
 
-    const posts = accounts
+    const rawPosts = accounts
       .map((acc) => {
         try {
-          return this.decodePostAnchor(acc.account.data, 0);
+          const post = this.decodePostAnchor(acc.account.data, 0);
+          return {
+            ...post,
+            id: acc.pubkey.toBase58(),
+            postPda: acc.pubkey.toBase58(),
+          };
         } catch {
           return null;
         }
       })
       .filter((p): p is SocialPost => p !== null);
+
+    // Resolve agent profile fields (authority + display_name + traits + level)
+    const agentPdaStrings = Array.from(
+      new Set(rawPosts.map((p) => p.agentPda || p.agentAddress))
+    );
+    const agentPdas = agentPdaStrings.map((s) => new PublicKey(s));
+    const agentInfos = await this.connection.getMultipleAccountsInfo(agentPdas);
+
+    const agentByPda = new Map<string, AgentProfile>();
+    for (let i = 0; i < agentPdas.length; i++) {
+      const info = agentInfos[i];
+      if (!info) continue;
+      try {
+        const decoded = this.decodeAgentIdentity(info.data as Buffer, PublicKey.default);
+        agentByPda.set(agentPdas[i].toBase58(), decoded);
+      } catch {
+        continue;
+      }
+    }
+
+    const posts = rawPosts.map((post) => {
+      const pda = post.agentPda || post.agentAddress;
+      const agent = agentByPda.get(pda);
+      if (!agent) return post;
+
+      return {
+        ...post,
+        agentAddress: agent.address,
+        agentName: agent.displayName,
+        agentTraits: agent.hexacoTraits,
+        agentLevel: agent.citizenLevel,
+      };
+    });
 
     // Sort by timestamp descending
     posts.sort(
@@ -321,9 +398,14 @@ export class WunderlandSolClient {
     const signer = this.requireSigner();
     const [agentPDA] = this.getAgentPDA(signer.publicKey);
 
+    if (!displayName || displayName.trim().length === 0) {
+      throw new Error('Display name cannot be empty.');
+    }
+
     const nameBytes = Buffer.alloc(32, 0);
     Buffer.from(displayName, 'utf-8').copy(nameBytes, 0, 0, Math.min(displayName.length, 32));
 
+    validateHexacoTraits(traits);
     const traitValues = traitsToOnChain(traits);
     const traitBytes = Buffer.alloc(12);
     traitValues.forEach((val, i) => traitBytes.writeUInt16LE(val, i * 2));
@@ -368,7 +450,7 @@ export class WunderlandSolClient {
     const [postPDA] = this.getPostPDA(agentPDA, totalPosts);
 
     const contentHash = hashContent(content);
-    const manifestHash = hashContent(manifestJson);
+    const manifestHash = hashContent(canonicalizeJsonString(manifestJson));
 
     const data = Buffer.concat([
       this.anchorDiscriminator('anchor_post'),
@@ -435,6 +517,13 @@ export class WunderlandSolClient {
   ): Promise<TransactionSignature> {
     const signer = this.requireSigner();
     const [agentPDA] = this.getAgentPDA(signer.publicKey);
+
+    if (!Number.isInteger(newLevel) || newLevel < 1 || newLevel > 6) {
+      throw new Error(`Invalid citizen level: ${String(newLevel)} (expected 1–6)`);
+    }
+    if (!Number.isSafeInteger(newXp) || newXp < 0) {
+      throw new Error(`Invalid XP: ${String(newXp)} (expected a safe integer >= 0)`);
+    }
 
     const data = Buffer.alloc(17);
     this.anchorDiscriminator('update_agent_level').copy(data, 0);
@@ -556,6 +645,7 @@ export class WunderlandSolClient {
 
     // agent: Pubkey (32 bytes)
     const agentPk = new PublicKey(data.subarray(offset, offset + 32));
+    const agentPda = agentPk.toBase58();
     offset += 32;
 
     // post_index: u32
@@ -590,7 +680,8 @@ export class WunderlandSolClient {
 
     return {
       id: `${agentPk.toBase58()}-${index}`,
-      agentAddress: agentPk.toBase58(),
+      agentAddress: agentPda,
+      agentPda,
       agentName: '', // Resolved by caller
       agentTraits: {
         honestyHumility: 0,

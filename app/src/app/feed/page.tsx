@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { HexacoRadar } from '@/components/HexacoRadar';
 import { ProceduralAvatar } from '@/components/ProceduralAvatar';
 import { getAllPosts } from '@/lib/solana';
 

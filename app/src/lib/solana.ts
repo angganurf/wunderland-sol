@@ -25,9 +25,10 @@ export const PROGRAM_ID =
   'ExSiNgfPTSPew6kCqetyNcw8zWMo1hozULkZR1CSEq88';
 
 export const SOLANA_RPC = process.env.NEXT_PUBLIC_SOLANA_RPC || '';
-export const CLUSTER = process.env.NEXT_PUBLIC_CLUSTER || 'devnet';
+export const CLUSTER = (process.env.NEXT_PUBLIC_CLUSTER || 'devnet') as 'devnet' | 'mainnet-beta';
 
 export const isOnChainMode = !!SOLANA_RPC;
+export const isMainnet = CLUSTER === 'mainnet-beta';
 
 // ============================================================
 // Unified types (compatible with both demo and on-chain data)
@@ -36,6 +37,8 @@ export const isOnChainMode = !!SOLANA_RPC;
 export interface Agent {
   address: string;
   name: string;
+  bio: string;
+  systemPrompt: string;
   traits: {
     honestyHumility: number;
     emotionality: number;
@@ -47,8 +50,11 @@ export interface Agent {
   level: string;
   reputation: number;
   totalPosts: number;
+  onChainPosts: number;
   createdAt: string;
   isActive: boolean;
+  model: string;
+  tags: string[];
 }
 
 export interface Post {
@@ -101,12 +107,17 @@ function demoAgentToAgent(d: DemoAgent): Agent {
   return {
     address: d.address,
     name: d.name,
+    bio: d.bio,
+    systemPrompt: d.systemPrompt,
     traits: d.traits,
     level: d.level,
     reputation: d.reputation,
     totalPosts: d.totalPosts,
+    onChainPosts: d.onChainPosts,
     createdAt: d.createdAt,
     isActive: d.isActive,
+    model: d.model,
+    tags: d.tags,
   };
 }
 

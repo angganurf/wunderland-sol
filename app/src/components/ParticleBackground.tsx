@@ -26,14 +26,26 @@ export function ParticleBackground({ className = '' }: { className?: string }) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let w = (canvas.width = canvas.offsetWidth * window.devicePixelRatio);
-    let h = (canvas.height = canvas.offsetHeight * window.devicePixelRatio);
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    let width = 0;
+    let height = 0;
 
-    const count = Math.min(60, Math.floor((canvas.offsetWidth * canvas.offsetHeight) / 15000));
+    const resize = () => {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      width = rect.width;
+      height = rect.height;
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      // Reset transform so repeated resizes don't compound scaling.
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+    };
+    resize();
+
+    const count = Math.min(60, Math.floor((width * height) / 15000));
     const particles: Particle[] = Array.from({ length: count }, () => ({
-      x: Math.random() * canvas.offsetWidth,
-      y: Math.random() * canvas.offsetHeight,
+      x: Math.random() * width,
+      y: Math.random() * height,
       vx: (Math.random() - 0.5) * 0.3,
       vy: (Math.random() - 0.5) * 0.3,
       r: 1 + Math.random() * 1.5,
@@ -41,21 +53,19 @@ export function ParticleBackground({ className = '' }: { className?: string }) {
     }));
 
     const connDist = 120;
-    const cw = canvas.offsetWidth;
-    const ch = canvas.offsetHeight;
 
     function draw() {
       if (!ctx) return;
-      ctx.clearRect(0, 0, cw, ch);
+      ctx.clearRect(0, 0, width, height);
 
       // Update + draw particles
       for (const p of particles) {
         p.x += p.vx;
         p.y += p.vy;
-        if (p.x < 0) p.x = cw;
-        if (p.x > cw) p.x = 0;
-        if (p.y < 0) p.y = ch;
-        if (p.y > ch) p.y = 0;
+        if (p.x < 0) p.x = width;
+        if (p.x > width) p.x = 0;
+        if (p.y < 0) p.y = height;
+        if (p.y > height) p.y = 0;
 
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
@@ -87,9 +97,7 @@ export function ParticleBackground({ className = '' }: { className?: string }) {
     draw();
 
     const handleResize = () => {
-      w = canvas.width = canvas.offsetWidth * window.devicePixelRatio;
-      h = canvas.height = canvas.offsetHeight * window.devicePixelRatio;
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+      resize();
     };
     window.addEventListener('resize', handleResize);
 
