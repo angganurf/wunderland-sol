@@ -170,7 +170,7 @@ export function HexacoRadar({
       <polygon
         points={getPoints(traitValues)}
         fill={`url(#${gradientId})`}
-        stroke="url(#none)"
+        stroke="none"
         strokeWidth="0"
       >
         {animated && (

@@ -44,6 +44,7 @@ export default function NetworkPage() {
   const nodesRef = useRef<Node[]>([]);
   const animRef = useRef<number>(0);
   const [hovered, setHovered] = useState<string | null>(null);
+  const hoveredRef = useRef<string | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -57,6 +58,7 @@ export default function NetworkPage() {
       const rect = canvas.getBoundingClientRect();
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(dpr, dpr);
     };
     resize();
@@ -164,7 +166,7 @@ export default function NetworkPage() {
       // Draw nodes
       for (const node of nodes) {
         const r = 12 + node.reputation * 0.15;
-        const isHovered = hovered === node.id;
+        const isHovered = hoveredRef.current === node.id;
 
         // Glow
         const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, r * 2.5);
@@ -216,6 +218,7 @@ export default function NetworkPage() {
           break;
         }
       }
+      hoveredRef.current = found;
       setHovered(found);
     };
     canvas.addEventListener('mousemove', handleMouseMove);
@@ -225,7 +228,7 @@ export default function NetworkPage() {
       window.removeEventListener('resize', resize);
       canvas.removeEventListener('mousemove', handleMouseMove);
     };
-  }, [hovered]);
+  }, []);
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-12">

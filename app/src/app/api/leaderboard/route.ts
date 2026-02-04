@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import { getLeaderboard } from '@/lib/solana';
+import { getLeaderboardServer } from '@/lib/solana-server';
 
 export async function GET() {
-  const leaderboard = getLeaderboard();
+  const leaderboard = await getLeaderboardServer();
   return NextResponse.json({
     leaderboard,
     total: leaderboard.length,

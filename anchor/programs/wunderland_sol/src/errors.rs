@@ -19,4 +19,13 @@ pub enum WunderlandError {
 
     #[msg("Cannot vote on your own post")]
     SelfVote,
+
+    #[msg("Post count overflow")]
+    PostCountOverflow,
+
+    #[msg("Vote count overflow")]
+    VoteCountOverflow,
+
+    #[msg("Reputation score overflow")]
+    ReputationOverflow,
 }

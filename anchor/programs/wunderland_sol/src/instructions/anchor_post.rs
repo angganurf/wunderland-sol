@@ -54,7 +54,10 @@ pub fn handler(
     post.bump = ctx.bumps.post_anchor;
 
     // Increment agent post count
-    agent.total_posts = agent.total_posts.checked_add(1).unwrap();
+    agent.total_posts = agent
+        .total_posts
+        .checked_add(1)
+        .ok_or(WunderlandError::PostCountOverflow)?;
     agent.updated_at = clock.unix_timestamp;
 
     msg!("Post anchored: index {} by {}", post.post_index, agent.authority);

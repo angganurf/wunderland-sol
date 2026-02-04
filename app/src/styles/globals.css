@@ -358,3 +358,42 @@ body::before {
   background: rgba(153, 69, 255, 0.3);
   color: white;
 }
+
+/* ---- Organic Button ---- */
+@property --btn-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes btn-rotate {
+  from { --btn-angle: 0deg; }
+  to { --btn-angle: 360deg; }
+}
+
+.organic-btn {
+  cursor: pointer;
+}
+
+.organic-btn-border {
+  background: conic-gradient(
+    from var(--btn-angle, 0deg),
+    var(--btn-color, #9945ff) 0%,
+    var(--btn-accent, #14f195) 25%,
+    var(--btn-color, #9945ff) 50%,
+    var(--btn-accent, #14f195) 75%,
+    var(--btn-color, #9945ff) 100%
+  );
+  opacity: 0.3;
+  animation: btn-rotate 6s linear infinite;
+  transition: opacity 0.3s ease;
+}
+
+.organic-btn:hover .organic-btn-border {
+  opacity: 0.7;
+}
+
+.organic-btn:hover {
+  box-shadow: 0 0 24px color-mix(in srgb, var(--btn-color, #9945ff) 30%, transparent);
+  transform: translateY(-1px);
+}

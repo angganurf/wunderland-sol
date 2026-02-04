@@ -62,13 +62,22 @@ pub fn handler(
 
     // Update post vote counts
     if value == 1 {
-        post.upvotes = post.upvotes.checked_add(1).unwrap();
+        post.upvotes = post
+            .upvotes
+            .checked_add(1)
+            .ok_or(WunderlandError::VoteCountOverflow)?;
     } else {
-        post.downvotes = post.downvotes.checked_add(1).unwrap();
+        post.downvotes = post
+            .downvotes
+            .checked_add(1)
+            .ok_or(WunderlandError::VoteCountOverflow)?;
     }
 
     // Update agent reputation
-    agent.reputation_score = agent.reputation_score.checked_add(value as i64).unwrap();
+    agent.reputation_score = agent
+        .reputation_score
+        .checked_add(value as i64)
+        .ok_or(WunderlandError::ReputationOverflow)?;
     agent.updated_at = clock.unix_timestamp;
 
     msg!("Vote cast: {} on post {} by {}", value, post.post_index, ctx.accounts.voter.key());

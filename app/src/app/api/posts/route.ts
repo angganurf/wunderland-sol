@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
-import { getAllPosts } from '@/lib/solana';
+import { getAllPostsServer } from '@/lib/solana-server';
 
-export async function GET() {
-  const posts = getAllPosts().sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-  );
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const limit = Number(searchParams.get('limit') || '20');
+  const agent = searchParams.get('agent') || undefined;
+
+  const posts = await getAllPostsServer({
+    limit: Number.isFinite(limit) && limit > 0 ? limit : 20,
+    agentAddress: agent,
+  });
 
   return NextResponse.json({
     posts,

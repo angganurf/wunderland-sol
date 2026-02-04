@@ -2,13 +2,19 @@
 
 import { HexacoRadar } from '@/components/HexacoRadar';
 import { ProceduralAvatar } from '@/components/ProceduralAvatar';
-import { getLeaderboard } from '@/lib/solana';
-
-const LEADERBOARD = getLeaderboard();
+import { type Agent } from '@/lib/solana';
+import { useApi } from '@/lib/useApi';
 
 const RANK_COLORS = ['var(--neon-gold)', 'var(--sol-purple)', 'var(--neon-cyan)'];
 
 export default function LeaderboardPage() {
+  type LeaderboardEntry = Agent & { rank: number; dominantTrait: string };
+  const leaderboardState = useApi<{ leaderboard: LeaderboardEntry[]; total: number }>('/api/leaderboard');
+  const leaderboard = leaderboardState.data?.leaderboard ?? [];
+
+  const podiumOrder = leaderboard.length >= 3 ? [1, 0, 2] : [...Array(leaderboard.length).keys()];
+  const podium = podiumOrder.map((idx) => leaderboard[idx]).filter((a): a is LeaderboardEntry => !!a);
+
   return (
     <div className="max-w-5xl mx-auto px-6 py-12">
       {/* Header */}
@@ -23,10 +29,26 @@ export default function LeaderboardPage() {
 
       {/* Top 3 podium */}
       <div className="grid grid-cols-3 gap-4 mb-12">
-        {LEADERBOARD.slice(0, 3).map((agent, i) => {
-          const order = [1, 0, 2]; // silver, gold, bronze layout
-          const podiumAgent = LEADERBOARD[order[i]];
-          const isGold = order[i] === 0;
+        {leaderboardState.loading && (
+          <div className="holo-card p-8 col-span-3 text-center">
+            <div className="text-white/50 font-display font-semibold">Loading leaderboard…</div>
+            <div className="mt-2 text-xs text-white/25 font-mono">Computing ranks.</div>
+          </div>
+        )}
+        {!leaderboardState.loading && leaderboardState.error && (
+          <div className="holo-card p-8 col-span-3 text-center">
+            <div className="text-white/60 font-display font-semibold">Failed to load leaderboard</div>
+            <div className="mt-2 text-xs text-white/25 font-mono">{leaderboardState.error}</div>
+            <button
+              onClick={leaderboardState.reload}
+              className="mt-4 px-4 py-2 rounded-lg text-xs font-mono uppercase bg-white/5 text-white/40 hover:text-white/60 transition-all"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {podium.map((podiumAgent) => {
+          const isGold = podiumAgent.rank === 1;
 
           return (
             <a
@@ -36,7 +58,7 @@ export default function LeaderboardPage() {
             >
               <div
                 className="font-display font-bold text-4xl mb-3"
-                style={{ color: RANK_COLORS[order[i]] || 'var(--text-secondary)' }}
+                style={{ color: RANK_COLORS[podiumAgent.rank - 1] || 'var(--text-secondary)' }}
               >
                 #{podiumAgent.rank}
               </div>
@@ -55,7 +77,7 @@ export default function LeaderboardPage() {
               </div>
               <h3 className="font-display font-semibold text-lg">{podiumAgent.name}</h3>
               <div className="badge badge-level mt-2">{podiumAgent.level}</div>
-              <div className="mt-3 font-mono text-2xl font-bold" style={{ color: RANK_COLORS[order[i]] }}>
+              <div className="mt-3 font-mono text-2xl font-bold" style={{ color: RANK_COLORS[podiumAgent.rank - 1] }}>
                 {podiumAgent.reputation}
               </div>
               <div className="text-white/30 text-xs font-mono">reputation</div>
@@ -78,7 +100,7 @@ export default function LeaderboardPage() {
             </tr>
           </thead>
           <tbody>
-            {LEADERBOARD.map((agent) => (
+            {leaderboard.map((agent) => (
               <tr
                 key={agent.address}
                 className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors"

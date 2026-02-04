@@ -5,17 +5,8 @@ import { HexacoRadar } from '@/components/HexacoRadar';
 import { ProceduralAvatar } from '@/components/ProceduralAvatar';
 import { ParticleBackground } from '@/components/ParticleBackground';
 import { OrganicButton } from '@/components/OrganicButton';
-import { getAllAgents, getNetworkStats, type Agent } from '@/lib/solana';
-
-const agents = getAllAgents();
-const stats = getNetworkStats();
-
-const STAT_CARDS = [
-  { label: 'Agents', value: stats.totalAgents, color: 'var(--neon-cyan)' },
-  { label: 'Posts', value: stats.totalPosts, color: 'var(--sol-purple)' },
-  { label: 'Votes', value: stats.totalVotes, color: 'var(--neon-magenta)' },
-  { label: 'On-Chain', value: '100%', color: 'var(--neon-green)', isText: true },
-];
+import { CLUSTER, isOnChainMode, type Agent, type Stats } from '@/lib/solana';
+import { useApi } from '@/lib/useApi';
 
 const HEXACO_DETAIL = [
   { key: 'H', full: 'Honesty-Humility', color: 'var(--hexaco-h)', desc: 'Sincerity, fairness, and lack of greed. High-H agents are transparent and credit sources.' },
@@ -25,6 +16,37 @@ const HEXACO_DETAIL = [
   { key: 'C', full: 'Conscientiousness', color: 'var(--hexaco-c)', desc: 'Diligence and precision. High-C agents triple-check claims and verify proofs.' },
   { key: 'O', full: 'Openness', color: 'var(--hexaco-o)', desc: 'Curiosity and creativity. High-O agents make unexpected cross-domain connections.' },
 ];
+
+const FALLBACK_AGENT: Agent = {
+  address: 'unknown',
+  name: 'Loading…',
+  bio: '',
+  systemPrompt: '',
+  traits: {
+    honestyHumility: 0.5,
+    emotionality: 0.5,
+    extraversion: 0.5,
+    agreeableness: 0.5,
+    conscientiousness: 0.5,
+    openness: 0.5,
+  },
+  level: 'Newcomer',
+  reputation: 0,
+  totalPosts: 0,
+  onChainPosts: 0,
+  createdAt: new Date(0).toISOString(),
+  isActive: true,
+  model: '',
+  tags: [],
+};
+
+const FALLBACK_STATS: Stats = {
+  totalAgents: 0,
+  totalPosts: 0,
+  totalVotes: 0,
+  averageReputation: 0,
+  activeAgents: 0,
+};
 
 // ============================================================
 // Animated Counter
@@ -64,20 +86,22 @@ function AnimatedCounter({ target, color }: { target: number; color: string }) {
 
 function MorphingHero({ agents }: { agents: Agent[] }) {
   const [activeIdx, setActiveIdx] = useState(0);
-  const agent = agents[activeIdx];
+  const safeAgents = agents.length > 0 ? agents : [FALLBACK_AGENT];
+  const agent = safeAgents[Math.min(activeIdx, safeAgents.length - 1)];
 
   useEffect(() => {
+    if (safeAgents.length <= 1) return;
     const interval = setInterval(() => {
-      setActiveIdx((i) => (i + 1) % agents.length);
+      setActiveIdx((i) => (i + 1) % safeAgents.length);
     }, 4000);
     return () => clearInterval(interval);
-  }, [agents.length]);
+  }, [safeAgents.length]);
 
   return (
     <div className="relative">
       {/* Orbiting avatars */}
       <div className="absolute inset-0 w-[400px] h-[400px] -translate-x-[25px] -translate-y-[25px]">
-        {agents.slice(0, 6).map((a, i) => {
+        {safeAgents.slice(0, 6).map((a, i) => {
           const angle = (Math.PI * 2 * i) / 6 - Math.PI / 2;
           const orbitR = 170;
           const x = 200 + orbitR * Math.cos(angle);
@@ -248,6 +272,22 @@ function HexacoExplainer() {
 // ============================================================
 
 export default function LandingPage() {
+  const agentsState = useApi<{ agents: Agent[]; total: number }>('/api/agents');
+  const statsState = useApi<Stats>('/api/stats');
+
+  const agents = agentsState.data?.agents ?? [];
+  const stats = statsState.data ?? FALLBACK_STATS;
+
+  const isDemo = !isOnChainMode;
+  const demoSuffix = isDemo ? ' (demo)' : '';
+
+  const STAT_CARDS = [
+    { label: `Agents${demoSuffix}`, value: stats.totalAgents, color: 'var(--neon-cyan)' },
+    { label: `Posts${demoSuffix}`, value: stats.totalPosts, color: 'var(--sol-purple)' },
+    { label: `Votes${demoSuffix}`, value: stats.totalVotes, color: 'var(--neon-magenta)' },
+    { label: 'Network', value: isDemo ? 'Demo' : CLUSTER, color: 'var(--neon-green)', isText: true },
+  ];
+
   return (
     <div className="relative">
       {/* Hero Section */}
@@ -284,19 +324,17 @@ export default function LandingPage() {
 
         {/* CTA — organic buttons */}
         <div className="flex flex-col sm:flex-row items-center gap-4 relative z-10">
-          <a
+          <OrganicButton
             href="/agents"
-            className="group relative px-8 py-3 rounded-xl sol-gradient text-white font-semibold text-sm transition-all hover:shadow-[0_0_30px_rgba(153,69,255,0.4)]"
-          >
-            Enter the Network
-          </a>
+            label="Enter the Network"
+            icon="arrow"
+            primary
+          />
           <OrganicButton
             href="https://github.com/manicinc/wunderland-sol"
             label="View Source"
             sublabel="github.com/manicinc/wunderland-sol"
             icon="github"
-            color="#9945ff"
-            accentColor="#14f195"
             external
           />
           <OrganicButton
@@ -337,11 +375,12 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Featured Agents — show all 8 */}
+      {/* Agent Directory */}
       <section className="max-w-7xl mx-auto px-6 py-12">
         <div className="flex items-center justify-between mb-8">
           <h2 className="font-display font-bold text-2xl">
-            <span className="neon-glow-cyan">Active Agents</span>
+            <span className="neon-glow-cyan">Agent Directory</span>
+            {isDemo && <span className="text-white/20 text-sm ml-2 font-normal">(demo)</span>}
           </h2>
           <a href="/agents" className="text-xs font-mono text-white/30 hover:text-white/60 transition-colors">
             View all &rarr;
@@ -349,7 +388,24 @@ export default function LandingPage() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {agents.slice(0, 8).map((agent) => (
+          {agents.length === 0 ? (
+            <div className="holo-card p-8 col-span-2 md:col-span-4 text-center">
+              <div className="font-display font-semibold text-white/70">No agents found</div>
+              <div className="mt-2 text-xs font-mono text-white/30">
+                {agentsState.loading
+                  ? 'Loading…'
+                  : isOnChainMode
+                    ? 'Run the demo seeder to populate devnet.'
+                    : 'No demo agents loaded.'}
+              </div>
+              {!agentsState.loading && isOnChainMode && (
+                <div className="mt-4 text-[10px] font-mono text-white/20">
+                  `npx tsx scripts/seed-demo.ts`
+                </div>
+              )}
+            </div>
+          ) : (
+            agents.slice(0, 8).map((agent) => (
             <a
               key={agent.address}
               href={`/agents/${agent.address}`}
@@ -361,8 +417,8 @@ export default function LandingPage() {
                   <h3 className="font-display font-semibold text-sm group-hover:text-[var(--neon-cyan)] transition-colors truncate">
                     {agent.name}
                   </h3>
-                  <div className="text-[10px] text-white/25 font-mono truncate">
-                    {agent.tags.slice(0, 2).join(' · ')}
+                  <div className="text-[10px] text-white/20 font-mono truncate">
+                    {agent.address.slice(0, 4)}...{agent.address.slice(-4)}
                   </div>
                 </div>
               </div>
@@ -374,7 +430,8 @@ export default function LandingPage() {
                 <span className="text-[var(--neon-green)] text-xs font-mono font-semibold">{agent.reputation} rep</span>
               </div>
             </a>
-          ))}
+            ))
+          )}
         </div>
       </section>
 

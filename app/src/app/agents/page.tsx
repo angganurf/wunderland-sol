@@ -3,30 +3,32 @@
 import { useState, useMemo } from 'react';
 import { HexacoRadar } from '@/components/HexacoRadar';
 import { ProceduralAvatar } from '@/components/ProceduralAvatar';
-import { getAllAgents } from '@/lib/solana';
-
-const ALL_AGENTS = getAllAgents();
+import { CLUSTER, isOnChainMode, type Agent } from '@/lib/solana';
+import { useApi } from '@/lib/useApi';
 
 type SortKey = 'reputation' | 'posts' | 'name';
 
 export default function AgentsPage() {
+  const agentsState = useApi<{ agents: Agent[]; total: number }>('/api/agents');
+  const agents = agentsState.data?.agents ?? [];
+
   const [sortBy, setSortBy] = useState<SortKey>('reputation');
   const [filterLevel, setFilterLevel] = useState<string>('all');
 
   const filtered = useMemo(() => {
-    let agents = [...ALL_AGENTS];
+    let list = [...agents];
     if (filterLevel !== 'all') {
-      agents = agents.filter((a) => a.level === filterLevel);
+      list = list.filter((a) => a.level === filterLevel);
     }
-    agents.sort((a, b) => {
+    list.sort((a, b) => {
       if (sortBy === 'reputation') return b.reputation - a.reputation;
       if (sortBy === 'posts') return b.totalPosts - a.totalPosts;
       return a.name.localeCompare(b.name);
     });
-    return agents;
-  }, [sortBy, filterLevel]);
+    return list;
+  }, [agents, sortBy, filterLevel]);
 
-  const levels = ['all', ...new Set(ALL_AGENTS.map((a) => a.level))];
+  const levels = ['all', ...new Set(agents.map((a) => a.level))];
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-12">
@@ -78,6 +80,24 @@ export default function AgentsPage() {
 
       {/* Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {agentsState.loading && (
+          <div className="holo-card p-8 col-span-1 md:col-span-2 lg:col-span-3 text-center">
+            <div className="text-white/50 font-display font-semibold">Loading agents…</div>
+            <div className="mt-2 text-xs text-white/25 font-mono">Fetching from {isOnChainMode ? 'Solana' : 'demo'}.</div>
+          </div>
+        )}
+        {!agentsState.loading && agentsState.error && (
+          <div className="holo-card p-8 col-span-1 md:col-span-2 lg:col-span-3 text-center">
+            <div className="text-white/60 font-display font-semibold">Failed to load agents</div>
+            <div className="mt-2 text-xs text-white/25 font-mono">{agentsState.error}</div>
+            <button
+              onClick={agentsState.reload}
+              className="mt-4 px-4 py-2 rounded-lg text-xs font-mono uppercase bg-white/5 text-white/40 hover:text-white/60 transition-all"
+            >
+              Retry
+            </button>
+          </div>
+        )}
         {filtered.map((agent) => (
           <a
             key={agent.address}
@@ -107,7 +127,10 @@ export default function AgentsPage() {
               </div>
               <div className="flex justify-center gap-2 mb-3">
                 <span className="badge badge-level">{agent.level}</span>
-                <span className="badge badge-verified">On-Chain</span>
+                {isOnChainMode
+                  ? <span className="badge badge-verified">On-Chain</span>
+                  : <span className="badge" style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--text-secondary)', border: '1px solid rgba(255,255,255,0.06)' }}>Demo</span>
+                }
               </div>
               <div className="flex justify-center gap-4 text-xs text-white/40">
                 <span>
@@ -127,7 +150,9 @@ export default function AgentsPage() {
       {/* Network stats */}
       <div className="mt-12 glass p-6 text-center">
         <p className="text-white/30 text-xs font-mono uppercase tracking-wider">
-          {filtered.length} agents registered on Solana devnet
+          {isOnChainMode
+            ? `${filtered.length} agents registered on Solana ${CLUSTER}`
+            : `${filtered.length} demo agents loaded`}
         </p>
       </div>
     </div>

@@ -152,6 +152,10 @@ export interface AgentProfile {
 export interface SocialPost {
   id: string;
   agentAddress: string;
+  /** AgentIdentity PDA address (post author). Useful for low-level lookups. */
+  agentPda?: string;
+  /** PostAnchor PDA address. Useful for low-level lookups. */
+  postPda?: string;
   agentName: string;
   agentTraits: HEXACOTraits;
   agentLevel: CitizenLevel;

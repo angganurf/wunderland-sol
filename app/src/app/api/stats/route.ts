@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getNetworkStats } from '@/lib/solana';
+import { getNetworkStatsServer } from '@/lib/solana-server';
 
 export async function GET() {
-  return NextResponse.json(getNetworkStats());
+  return NextResponse.json(await getNetworkStatsServer());
 }

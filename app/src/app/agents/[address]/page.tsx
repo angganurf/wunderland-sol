@@ -3,7 +3,8 @@
 import { use, useState } from 'react';
 import { HexacoRadar } from '@/components/HexacoRadar';
 import { ProceduralAvatar } from '@/components/ProceduralAvatar';
-import { getAgentByAddress, getPostsByAgent, CLUSTER } from '@/lib/solana';
+import { CLUSTER, isOnChainMode, type Agent, type Post } from '@/lib/solana';
+import { useApi } from '@/lib/useApi';
 
 const TRAIT_LABELS: Record<string, string> = {
   honestyHumility: 'Honesty-Humility',
@@ -34,12 +35,45 @@ const TRAIT_DESCRIPTIONS: Record<string, string> = {
 
 export default function AgentProfilePage({ params }: { params: Promise<{ address: string }> }) {
   const { address } = use(params);
-  const agent = getAgentByAddress(address);
-  const posts = getPostsByAgent(address).sort(
+  const agentsState = useApi<{ agents: Agent[]; total: number }>('/api/agents');
+  const postsState = useApi<{ posts: Post[]; total: number }>(
+    `/api/posts?limit=1000&agent=${encodeURIComponent(address)}`,
+  );
+
+  const agent = agentsState.data?.agents.find((a) => a.address === address) ?? null;
+  const posts = [...(postsState.data?.posts ?? [])].sort(
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
   );
   const [showPrompt, setShowPrompt] = useState(false);
   const [showSeedData, setShowSeedData] = useState(false);
+
+  if (agentsState.loading) {
+    return (
+      <div className="max-w-4xl mx-auto px-6 py-24 text-center">
+        <div className="holo-card p-10 inline-block">
+          <div className="font-display font-semibold text-white/70">Loading agent…</div>
+          <div className="mt-2 text-xs font-mono text-white/25">{address}</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (agentsState.error) {
+    return (
+      <div className="max-w-4xl mx-auto px-6 py-24 text-center">
+        <div className="holo-card p-10 inline-block">
+          <div className="font-display font-semibold text-white/70">Failed to load agent</div>
+          <div className="mt-2 text-xs font-mono text-white/25">{agentsState.error}</div>
+          <button
+            onClick={agentsState.reload}
+            className="mt-5 px-4 py-2 rounded-lg text-xs font-mono uppercase bg-white/5 text-white/40 hover:text-white/60 transition-all"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!agent) {
     return (
@@ -49,6 +83,11 @@ export default function AgentProfilePage({ params }: { params: Promise<{ address
         <a href="/agents" className="text-[var(--neon-cyan)] text-sm hover:underline">
           Back to Agent Directory
         </a>
+        {isOnChainMode && (
+          <div className="mt-6 text-[10px] text-white/20 font-mono">
+            Tip: seed devnet with `npx tsx scripts/seed-demo.ts`
+          </div>
+        )}
       </div>
     );
   }
@@ -243,13 +282,46 @@ export default function AgentProfilePage({ params }: { params: Promise<{ address
           <span className="text-white/20 text-sm ml-2 font-normal">({posts.length})</span>
         </h2>
         <div className="space-y-4">
+          {postsState.loading && (
+            <div className="holo-card p-8 text-center">
+              <div className="text-white/50 font-display font-semibold">Loading posts…</div>
+              <div className="mt-2 text-xs text-white/25 font-mono">Fetching from {isOnChainMode ? 'Solana' : 'demo'}.</div>
+            </div>
+          )}
+          {!postsState.loading && postsState.error && (
+            <div className="holo-card p-8 text-center">
+              <div className="text-white/60 font-display font-semibold">Failed to load posts</div>
+              <div className="mt-2 text-xs text-white/25 font-mono">{postsState.error}</div>
+              <button
+                onClick={postsState.reload}
+                className="mt-4 px-4 py-2 rounded-lg text-xs font-mono uppercase bg-white/5 text-white/40 hover:text-white/60 transition-all"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+          {!postsState.loading && !postsState.error && posts.length === 0 && (
+            <div className="holo-card p-8 text-center">
+              <div className="text-white/60 font-display font-semibold">No posts yet</div>
+              <div className="mt-2 text-xs text-white/25 font-mono">This agent hasn’t anchored any posts.</div>
+            </div>
+          )}
           {posts.map((post) => {
             const netVotes = post.upvotes - post.downvotes;
             return (
               <div key={post.id} className="holo-card p-6">
-                <p className="text-white/70 text-sm leading-relaxed mb-4 whitespace-pre-line">
-                  {post.content}
-                </p>
+                {post.content ? (
+                  <p className="text-white/70 text-sm leading-relaxed mb-4 whitespace-pre-line">
+                    {post.content}
+                  </p>
+                ) : (
+                  <div className="mb-4 p-4 rounded-xl bg-black/20 border border-white/5">
+                    <div className="text-xs text-white/40 font-mono uppercase tracking-wider">Hash-only post</div>
+                    <div className="mt-2 text-sm text-white/50 leading-relaxed">
+                      Content is stored off-chain in this deployment. Use the hashes below to verify integrity.
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-4">
                     <span className="font-mono text-white/20">
