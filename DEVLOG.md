@@ -494,3 +494,91 @@ Integrated the official Wunderland brand identity and added light/dark mode togg
 The Wunderland platform is now branded as a subsidiary of "Rabbit Hole Inc" — the human-AI collaboration platform. The gold keyhole icon and champagne color scheme connect the two brands while maintaining Wunderland's cyberpunk identity.
 
 ---
+
+## Entry 10 — Real-Time Stimulus Feed with SQLite Storage
+**Date**: 2026-02-04 20:30 UTC
+**Agent**: Claude Opus 4.5
+
+### Overview
+Implemented a real-time stimulus feed that polls external news sources (HackerNews, arXiv) and stores them locally in SQLite. This replaces the hardcoded demo data with live, configurable data ingestion.
+
+### Design Decision: Local SQLite vs IPFS
+User feedback: "Keep that data stored in SQLite locally on the server since we don't need that to be decentralized."
+
+Rationale:
+- News feed data is ephemeral and high-volume
+- No need for cryptographic provenance (unlike user-submitted tips)
+- SQLite provides fast queries and simple deployment
+- IPFS reserved for tip content where verifiable provenance matters
+
+### New Files Created
+
+**`app/src/lib/db/stimulus-db.ts`**:
+- SQLite schema using better-sqlite3
+- Tables: `stimulus_items`, `ingestion_state`, `stimulus_config`
+- Content-hash based deduplication
+- Runtime-configurable settings stored in DB
+- Key types: `StimulusItem`, `StimulusQuery`
+
+**`app/src/lib/db/stimulus-ingester.ts`**:
+- HackerNews ingestion via Algolia API (no auth required)
+- arXiv ingestion via Atom feed (no auth required)
+- Priority derivation from HN points (>500=breaking, >200=high, >100=normal, else low)
+- Category extraction from tags and title keywords
+- Parallel polling with `Promise.all`
+
+**`app/src/app/api/stimulus/feed/route.ts`**:
+- GET endpoint with pagination and filtering
+- Query params: `limit`, `offset`, `type`, `source`, `priority`, `since`
+
+**`app/src/app/api/stimulus/poll/route.ts`**:
+- POST to trigger manual poll (for cron jobs)
+- GET for polling status and statistics
+
+**`app/src/app/api/stimulus/config/route.ts`**:
+- GET/POST for runtime configuration
+- Validates poll intervals (60s–24hr), boolean flags, item limits
+
+### Configuration (`.env.example`)
+```
+STIMULUS_POLL_INTERVAL_MS=900000    # 15 min default
+STIMULUS_DB_PATH=                   # Default: ./data
+STIMULUS_HACKERNEWS_ENABLED=true
+STIMULUS_ARXIV_ENABLED=true
+STIMULUS_MAX_ITEMS_PER_POLL=25
+```
+
+### UI Updates (`app/src/app/world/page.tsx`)
+
+**StimulusFeed component now**:
+- Fetches from `/api/stimulus/feed?limit=15`
+- Displays source badges: HN (orange), arXiv (red), TIP (purple)
+- Shows priority badges with color coding
+- Relative time formatting ("2h ago", "just now")
+- Clickable titles for URL items
+- HN metadata (points, comments)
+- Categories as small tags
+- Scrollable container with max height
+
+### Backend Service Status
+**Currently**: Polling is on-demand only. Call `POST /api/stimulus/poll` to trigger.
+
+**Production options**:
+1. External cron job hitting the poll endpoint
+2. Vercel/Railway cron (if deploying there)
+3. Next.js instrumentation for server-side background task
+4. NestJS scheduled task calling the Next.js API
+
+The Next.js app doesn't run a persistent background loop—that would require either instrumentation or a separate service.
+
+### Build Status
+- Next.js build: ✓ (23 routes)
+- SDK build: ✓
+- No type errors
+
+### Next Steps
+- Set up cron job for automatic polling
+- Add WebSocket/SSE for real-time feed updates
+- Agent mood reactions to incoming stimulus
+
+---
