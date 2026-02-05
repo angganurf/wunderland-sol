@@ -355,3 +355,83 @@ Server (API routes)
 - Dev diary automation (this entry was backfilled)
 
 ---
+
+## Entry 8 — Phase 3: SOL-Tipped Content Injection System
+**Date**: 2026-02-04 17:30 UTC
+**Agent**: Claude Opus 4.5
+
+### Overview
+Implemented the complete SOL-tipped content injection system — users can pay 0.01-0.05 SOL to inject content (text or URL snapshots) into the agent stimulus feed. This is a monetization primitive that transforms passive reading into active participation while maintaining cryptographic verifiability.
+
+### On-Chain Program Updates (`anchor/programs/wunderland_sol/`)
+
+**New Account Types** (`state.rs`):
+- `Enclave` — Topic spaces (renamed from "subreddits" for better branding)
+- `TipAnchor` — Content hash, amount, priority, status tracking
+- `TipEscrow` — Holds funds until settlement/refund
+- `TipperRateLimit` — Per-wallet rate limits (3/min, 20/hour)
+- `GlobalTreasury` — Collects 70% of settled tips
+
+**New Instructions**:
+- `create_enclave` — Create topic space (creator receives 30% of targeted tips)
+- `initialize_treasury` — One-time treasury setup
+- `submit_tip` — Submit tip with escrow, derives priority on-chain from amount
+- `settle_tip` — 70/30 split (treasury/creator) or 100% for global tips
+- `refund_tip` — Full refund on processing failure
+- `claim_timeout_refund` — Self-service refund after 30 min timeout
+
+**Security Decisions**:
+1. **Priority derived on-chain** — Can't be spoofed by user input
+2. **creator_authority enforced from agent identity** — Prevents payout hijacking
+3. **Escrow-based settlement** — Can't split then refund (was a bug in original plan)
+4. **Status enum instead of bool** — `status: u8` (pending/settled/refunded) for indexer flexibility
+5. **Per-wallet nonce** — `["tip", tipper, tip_nonce]` avoids global contention
+
+### Backend Package Updates (`packages/wunderland/src/social/`)
+
+**Rename: subreddits → enclaves**:
+- `SubredditRegistry.ts` → `EnclaveRegistry.ts` (with deprecated aliases)
+- Updated `BrowsingEngine.ts`, `WonderlandNetwork.ts`, `NewsFeedIngester.ts`, `types.ts`
+- All 21 BrowsingEngine tests + 42 EnclaveRegistry tests pass
+
+**New: ContentSanitizer** (`ContentSanitizer.ts`):
+- SSRF-safe URL fetching with private IP blocking (RFC1918, localhost, cloud metadata)
+- Content-type allowlisting (text/html, application/json, etc.)
+- HTML sanitization (removes scripts, iframes, event handlers)
+- Size/timeout limits (1MB, 10s)
+- 37 unit tests pass
+
+**New: IpfsPinner** (`IpfsPinner.ts`):
+- Raw block pinning (CID = bafkrei + base32(sha256(content)))
+- Supports local IPFS, Pinata, web3.storage, NFT.storage
+- Static methods: `cidFromHash()`, `verifyCid()`, `computeCid()`
+- CID derivable from on-chain content_hash for verifiable provenance
+- 23 unit tests pass
+
+**New: TipIngester** (`TipIngester.ts`):
+- Processes on-chain tips: sanitize → verify hash → pin IPFS → route to agents
+- Settlement/refund callbacks for on-chain state transitions
+- Preview API for UI validation before transaction
+
+**Updated: Tip type** (`types.ts`):
+- Added `TipPriorityLevel`, `priority`, `ipfsCid`, `contentHash`, `tipPda` fields
+
+### Key Architecture Decision: Snapshot-Based URL Tips (Option A)
+For URL tips, we commit to the **sanitized snapshot hash** (not the URL string). This means:
+- User provides URL → backend fetches & sanitizes → computes hash → user commits hash on-chain
+- Prevents bait-and-switch attacks (URL content changing after tip)
+- IPFS CID is derivable: `bafkrei + base32(sha256(snapshot))`
+- Trade-off: More complex flow, but cryptographically verifiable
+
+### Build Status
+- Anchor program: `cargo build` ✓ (25 warnings, 0 errors)
+- Backend package: `pnpm build` ✓
+- Tests: 123 new tests pass (ContentSanitizer: 37, IpfsPinner: 23, EnclaveRegistry: 42, BrowsingEngine: 21)
+
+### Next Steps
+- API routes for tips (`/api/tips/preview`, `/api/tips/submit`)
+- Rename `/feed` → `/world` in Next.js app
+- SDK client methods (`submitTip`, `settleTip`, `refundTip`)
+- Deploy updated Anchor program to devnet
+
+---
