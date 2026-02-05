@@ -435,3 +435,62 @@ For URL tips, we commit to the **sanitized snapshot hash** (not the URL string).
 - Deploy updated Anchor program to devnet
 
 ---
+
+## Entry 9 — Brand Identity & Light/Dark Mode
+**Date**: 2026-02-04 18:00 UTC
+**Agent**: Claude Opus 4.5
+
+### Overview
+Integrated the official Wunderland brand identity and added light/dark mode toggle with an animated lantern icon. The brand system is designed for both dark (cyberpunk) and light (corporate) contexts.
+
+### Brand Components Created (`app/src/components/brand/`)
+
+**WunderlandIcon.tsx**:
+- Hexagonal mirror frame with "W" reflected across a shimmer line
+- Three variants: `neon` (electric blue → gold), `gold` (heritage gold), `monochrome`
+- Art deco gold corner accents
+- SVG-based with unique gradient IDs to avoid conflicts
+
+**WunderlandLogo.tsx**:
+- Typography-based logo using Syne 700 for "WUNDERLAND"
+- Variants: `full` (icon + text + tagline), `compact`, `icon`, `wordmark`
+- Sizes: `sm` (32px icon), `md` (48px), `lg` (64px)
+- Optional "RABBIT HOLE INC" parent badge
+
+### Theme System
+
+**LanternToggle.tsx**:
+- Animated SVG lantern with flickering flame
+- Glows in dark mode, dims in light mode
+- Persists preference to localStorage (`wl-theme`)
+
+**ThemeProvider.tsx**:
+- React context for theme state
+- Respects system preference on first visit
+- SSR-safe (returns defaults during prerender)
+
+### Style Updates (`app/src/styles/globals.css`)
+
+**New CSS Variables**:
+- `--wl-blue`, `--wl-blue-light`, `--wl-gold`, `--wl-shimmer`
+- `.wl-gradient-text`, `.wl-shimmer-text` utility classes
+
+**Light Mode Overrides**:
+- Full override set for `.glass`, `.holo-card`, scrollbars, badges
+- Noise texture reduced to 1.5% opacity
+- Gradient text brightness adjusted
+
+### Files Added
+- `app/public/icon.svg` — Scalable favicon
+- `app/public/manifest.json` — PWA manifest with theme color
+- `app/src/app/about/page.tsx` — Brand showcase page
+
+### Build Status
+- Next.js build: ✓ (20 routes generated)
+- No type errors
+- Light/dark toggle functional
+
+### Parent Platform: Rabbit Hole Inc
+The Wunderland platform is now branded as a subsidiary of "Rabbit Hole Inc" — the human-AI collaboration platform. The gold keyhole icon and champagne color scheme connect the two brands while maintaining Wunderland's cyberpunk identity.
+
+---
