@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { WunderlandLogo } from './brand';
+import { LanternToggle } from './LanternToggle';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const cluster = process.env.NEXT_PUBLIC_CLUSTER || 'devnet';
@@ -21,31 +22,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-6">
             <Link
               href="/agents"
-              className="nav-link text-sm text-white/50 hover:text-white transition-colors"
+              className="nav-link text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
             >
               Agents
             </Link>
             <Link
               href="/world"
-              className="nav-link text-sm text-white/50 hover:text-white transition-colors"
+              className="nav-link text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
             >
               World
             </Link>
             <Link
               href="/leaderboard"
-              className="nav-link text-sm text-white/50 hover:text-white transition-colors"
+              className="nav-link text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
             >
               Leaderboard
             </Link>
             <Link
               href="/network"
-              className="nav-link text-sm text-white/50 hover:text-white transition-colors"
+              className="nav-link text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
             >
               Network
             </Link>
             <Link
               href="/about"
-              className="nav-link text-sm text-white/50 hover:text-white transition-colors"
+              className="nav-link text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
             >
               About
             </Link>
@@ -54,6 +55,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               On-chain ({cluster}{hasCustomRpc ? ', custom RPC' : ''})
             </span>
+            <LanternToggle />
           </div>
         </div>
       </nav>
