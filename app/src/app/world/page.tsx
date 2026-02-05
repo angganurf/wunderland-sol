@@ -11,7 +11,7 @@ import { useApi } from '@/lib/useApi';
 // Types
 // ============================================================================
 
-interface Tip {
+interface _Tip {
   tipPda: string;
   tipper: string;
   contentHash: string;
@@ -38,6 +38,21 @@ interface PricingTier {
   maxSol: number;
   priority: string;
   description: string;
+}
+
+interface StimulusItem {
+  id: string;
+  type: 'tip' | 'news';
+  source: string;
+  title: string;
+  content: string;
+  url?: string;
+  contentHash: string;
+  priority: 'low' | 'normal' | 'high' | 'breaking';
+  categories: string[];
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  publishedAt?: string;
 }
 
 // ============================================================================
@@ -381,8 +396,8 @@ function HowItWorksPanel() {
 // ============================================================================
 
 function StimulusFeed() {
-  const tipsState = useApi<{ tips: Tip[] }>('/api/tips?limit=10');
-  const tips = tipsState.data?.tips ?? [];
+  const feedState = useApi<{ items: StimulusItem[]; pagination: { total: number } }>('/api/stimulus/feed?limit=15');
+  const items = feedState.data?.items ?? [];
 
   const priorityBadge: Record<string, string> = {
     low: 'bg-white/10 text-white/50',
@@ -391,60 +406,108 @@ function StimulusFeed() {
     breaking: 'bg-[var(--neon-magenta)]/20 text-[var(--neon-magenta)]',
   };
 
+  const sourceBadge: Record<string, { bg: string; label: string }> = {
+    hackernews: { bg: 'bg-orange-500/20 text-orange-400', label: 'HN' },
+    arxiv: { bg: 'bg-red-500/20 text-red-400', label: 'arXiv' },
+    user_tip: { bg: 'bg-[var(--sol-purple)]/20 text-[var(--sol-purple)]', label: 'TIP' },
+  };
+
+  const formatTimeAgo = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${Math.floor(diffHours / 24)}d ago`;
+  };
+
   return (
     <div className="holo-card p-6">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-display font-bold text-lg">
           <span className="neon-glow-green">Live Stimulus Feed</span>
         </h3>
-        <button
-          onClick={tipsState.reload}
-          className="px-2 py-1 rounded text-[10px] font-mono uppercase bg-white/5 text-white/40 hover:text-white/60 transition-all"
-        >
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-white/30 font-mono">
+            {feedState.data?.pagination.total ?? 0} items
+          </span>
+          <button
+            onClick={feedState.reload}
+            className="px-2 py-1 rounded text-[10px] font-mono uppercase bg-white/5 text-white/40 hover:text-white/60 transition-all"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
-      {tipsState.loading && (
+      {feedState.loading && (
         <div className="text-center py-8 text-white/40 text-sm">Loading stimulus feed...</div>
       )}
 
-      {!tipsState.loading && tips.length === 0 && (
+      {!feedState.loading && items.length === 0 && (
         <div className="text-center py-8">
-          <div className="text-white/40 text-sm">No recent tips</div>
-          <p className="text-white/20 text-xs mt-1">Be the first to inject content into the network!</p>
+          <div className="text-white/40 text-sm">No items in feed yet</div>
+          <p className="text-white/20 text-xs mt-1">News will be polled automatically, or submit a tip!</p>
         </div>
       )}
 
-      <div className="space-y-3">
-        {tips.map((tip) => (
-          <div key={tip.tipPda} className="p-3 rounded-lg bg-black/20 border border-white/5">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase ${priorityBadge[tip.priority]}`}>
-                  {tip.priority}
-                </span>
-                <span className="text-[10px] text-white/30 font-mono">
-                  {tip.sourceType === 'url' ? 'URL' : 'TEXT'}
+      <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+        {items.map((item) => {
+          const source = sourceBadge[item.source] || { bg: 'bg-white/10 text-white/50', label: item.source };
+          return (
+            <div key={item.id} className="p-3 rounded-lg bg-black/20 border border-white/5 hover:border-white/10 transition-colors">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase ${source.bg}`}>
+                    {source.label}
+                  </span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase ${priorityBadge[item.priority]}`}>
+                    {item.priority}
+                  </span>
+                  {item.type === 'tip' && (
+                    <span className="text-[10px] text-white/30 font-mono">
+                      {item.url ? 'URL' : 'TEXT'}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] text-white/20 font-mono">
+                  {formatTimeAgo(item.createdAt)}
                 </span>
               </div>
-              <span className="text-[10px] text-white/20 font-mono">
-                {new Date(tip.createdAt).toLocaleTimeString()}
-              </span>
+              {item.title && (
+                <h4 className="text-sm font-medium text-white/80 mb-1 line-clamp-1">
+                  {item.url ? (
+                    <a href={item.url} target="_blank" rel="noopener noreferrer" className="hover:text-[var(--neon-cyan)] transition-colors">
+                      {item.title}
+                    </a>
+                  ) : (
+                    item.title
+                  )}
+                </h4>
+              )}
+              <p className="text-sm text-white/50 line-clamp-2">
+                {item.content || `[Hash: ${item.contentHash.slice(0, 16)}...]`}
+              </p>
+              {item.categories.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {item.categories.slice(0, 3).map((cat) => (
+                    <span key={cat} className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-white/5 text-white/30">
+                      {cat}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {typeof item.metadata?.points === 'number' && (
+                <div className="mt-2 text-[10px] text-white/30 font-mono">
+                  {item.metadata.points} points · {(item.metadata.numComments as number) ?? 0} comments
+                </div>
+              )}
             </div>
-            <p className="text-sm text-white/60 line-clamp-2">
-              {tip.content || `[Content hash: ${tip.contentHash.slice(0, 16)}...]`}
-            </p>
-            <div className="mt-2 flex items-center justify-between text-[10px]">
-              <span className="text-white/20 font-mono">
-                from {tip.tipper.slice(0, 8)}...
-              </span>
-              <span className="text-[var(--sol-purple)] font-mono">
-                {(tip.amount / 1_000_000_000).toFixed(3)} SOL
-              </span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
