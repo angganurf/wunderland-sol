@@ -28,7 +28,16 @@ jobs:
         run: pnpm install --frozen-lockfile --node-linker=hoisted
 
       - name: Build native modules
-        run: pnpm rebuild better-sqlite3
+        run: |
+          pnpm rebuild better-sqlite3
+          echo "=== Locating better_sqlite3.node after rebuild ==="
+          find . -name 'better_sqlite3.node' -type f 2>/dev/null || echo "NOT FOUND after pnpm rebuild"
+          # Fallback: use npm rebuild if pnpm didn't compile it
+          if ! find . -name 'better_sqlite3.node' -type f 2>/dev/null | grep -q .; then
+            echo "Falling back to npm rebuild..."
+            npm rebuild better-sqlite3
+            find . -name 'better_sqlite3.node' -type f 2>/dev/null || echo "STILL NOT FOUND"
+          fi
 
       - name: Build Next.js app
         working-directory: app
@@ -42,12 +51,19 @@ jobs:
           # Copy full .next build output over standalone's partial .next/
           rsync -a --ignore-existing app/.next/ deploy/app/.next/
 
-          # Copy native module binaries (compiled on CI's linux-x64, same as Linode)
-          if [ -d "node_modules/better-sqlite3/build/Release" ]; then
+          # Copy native module binary (find it wherever pnpm/npm put it)
+          SQLITE_BIN=$(find . -name 'better_sqlite3.node' -type f | head -1)
+          if [ -n "$SQLITE_BIN" ]; then
+            # Copy to both root and app node_modules so Node.js resolution finds it
             mkdir -p deploy/node_modules/better-sqlite3/build/Release
-            cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
-               deploy/node_modules/better-sqlite3/build/Release/
-            echo "Copied better-sqlite3 native binary from CI"
+            cp "$SQLITE_BIN" deploy/node_modules/better-sqlite3/build/Release/
+            mkdir -p deploy/app/node_modules/better-sqlite3/build/Release
+            cp "$SQLITE_BIN" deploy/app/node_modules/better-sqlite3/build/Release/
+            echo "Copied better-sqlite3 native binary from: $SQLITE_BIN"
+          else
+            echo "ERROR: better_sqlite3.node not found anywhere!"
+            find . -path '*/better-sqlite3*' -type f | head -20
+            exit 1
           fi
 
           mkdir -p deploy/app/public
@@ -56,6 +72,8 @@ jobs:
           # Verify
           ls deploy/app/server.js
           ls deploy/app/.next/BUILD_ID
+          ls deploy/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+          ls deploy/app/node_modules/better-sqlite3/build/Release/better_sqlite3.node
 
           # Create tarball (preserves dot-directories)
           cd deploy && tar czf /tmp/deploy.tar.gz . && cd ..
