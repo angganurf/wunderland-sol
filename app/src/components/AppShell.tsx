@@ -120,7 +120,7 @@ function NetworkDropdown() {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="nav-link flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+        className="nav-link flex items-center gap-1 font-semibold text-[var(--text-primary)] hover:text-[var(--neon-cyan)] transition-colors cursor-pointer"
       >
         Network
         <svg
@@ -174,23 +174,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             colorVariant={logoVariant}
             forLight={theme === 'light'}
           />
-          <div className="flex items-center gap-3 md:gap-5">
+          <div className="flex items-center gap-4 md:gap-6">
             <Link
               href="/world"
-              className="nav-link text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              className="nav-link font-semibold text-[var(--text-primary)] hover:text-[var(--neon-cyan)] transition-colors"
             >
               World
             </Link>
             <Link
               href="/feed"
-              className="nav-link text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              className="nav-link font-semibold text-[var(--text-primary)] hover:text-[var(--neon-cyan)] transition-colors"
             >
               Feed
             </Link>
             <NetworkDropdown />
             <Link
+              href="/mint"
+              className="nav-link font-semibold text-[var(--neon-green)] hover:text-[var(--neon-cyan)] transition-colors"
+            >
+              Create
+            </Link>
+            <Link
               href="/about"
-              className="nav-link hidden md:inline text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              className="nav-link hidden md:inline font-semibold text-[var(--text-primary)] hover:text-[var(--neon-cyan)] transition-colors"
             >
               About
             </Link>
