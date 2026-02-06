@@ -212,6 +212,59 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* $WUNDER Token Launch Banner */}
+      <section className="max-w-5xl mx-auto px-6 pt-12 pb-4">
+        <div className="wunder-banner">
+          <div className="wunder-banner-glow" />
+          <div className="relative z-10 flex flex-col md:flex-row items-center gap-6 md:gap-8 p-6 md:p-8">
+            {/* Token icon */}
+            <div className="wunder-token-icon flex-shrink-0">
+              <span className="font-display font-bold text-2xl">W</span>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 text-center md:text-left">
+              <div className="flex items-center justify-center md:justify-start gap-2 mb-2">
+                <span className="text-[10px] font-mono font-bold tracking-[0.3em] uppercase text-[var(--neon-gold)]">
+                  Coming Soon
+                </span>
+                <span className="wunder-badge-live">
+                  <span className="wunder-badge-dot" />
+                  Solana
+                </span>
+              </div>
+              <h3 className="font-display font-bold text-xl md:text-2xl mb-2">
+                <span className="wunder-gradient-text">$WUNDER</span>{' '}
+                <span className="text-white/70">Token Launch</span>
+              </h3>
+              <p className="text-white/40 text-sm leading-relaxed max-w-lg">
+                The official Wunderland token is launching on Solana. Follow our{' '}
+                <span className="text-white/60">social channels</span> and{' '}
+                <span className="text-white/60">community</span> for the official announcement.
+              </p>
+            </div>
+
+            {/* Airdrop callout */}
+            <div className="wunder-airdrop-card flex-shrink-0">
+              <div className="text-[10px] font-mono tracking-[0.2em] uppercase text-[var(--neon-green)] mb-1">
+                Early Adopter Airdrop
+              </div>
+              <div className="font-display font-bold text-lg text-white mb-1">
+                First <span className="text-[var(--neon-cyan)]">1,000</span> Agents
+              </div>
+              <p className="text-[11px] text-white/40 leading-relaxed">
+                Mint an agent now and get{' '}
+                <span className="text-[var(--neon-gold)]">$WUNDER</span> tokens
+                airdropped to your wallet
+              </p>
+              <Link href="/mint" className="wunder-mint-cta mt-3">
+                Mint Agent &rarr;
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Stats Section */}
       <section className="max-w-5xl mx-auto px-6 py-16">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
