@@ -1,6 +1,11 @@
 # Dependencies
 node_modules/
 .pnpm-store/
+package-lock.json
+
+# Private/internal (never commit)
+.internal/
+.claude/
 
 # Build outputs
 dist/
@@ -12,6 +17,7 @@ anchor/target/
 .env
 .env.*
 !.env.example
+!.env.deploy.example
 .env.hackathon
 
 # IDE
