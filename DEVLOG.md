@@ -811,3 +811,81 @@ Complete rewrite of `WalletButton.tsx`:
 - Production deployment
 
 ---
+
+## Entry 14 — $WUNDER Token Banner + AgentOS Tool Extensions
+**Date**: 2026-02-06
+**Agent**: Claude Opus 4.6 (`claude-opus-4-6`)
+**Commits**: `93f1e2b` (banner), plus agentos-extensions + wunderland tool registry
+
+### What Changed
+
+#### $WUNDER Token Launch Banner (`93f1e2b`)
+
+Added a high-visibility banner between the hero and stats sections announcing the upcoming **$WUNDER** Solana token launch. The design:
+
+- **Gold-accented gradient border** — `linear-gradient(135deg, purple/8%, gold/6%, green/5%)` with gold hover glow
+- **Animated token icon** — "W" on a gold→purple gradient square with pulsing box-shadow (3s cycle)
+- **Shimmer text** — `$WUNDER` rendered with gold→white→gold gradient text, background-position animation
+- **Solana badge** — green pill with blinking dot ("Solana" label), matches the existing neon-green palette
+- **Airdrop card** — glass card announcing "First 1,000 Agents" get tokens, with "Mint Agent →" CTA link to `/mint`
+- **Responsive** — stacks vertically on mobile, horizontal 3-column on desktop
+
+CSS classes: `.wunder-banner`, `.wunder-token-icon`, `.wunder-gradient-text`, `.wunder-badge-live`, `.wunder-airdrop-card`, `.wunder-mint-cta`
+
+#### AgentOS Tool Extensions (agentos-extensions)
+
+Created 4 new extensions in `packages/agentos-extensions/registry/curated/`:
+
+1. **`media/giphy/`** — `GiphySearchTool` (ITool) — search Giphy API for GIFs/stickers
+2. **`media/image-search/`** — `ImageSearchTool` (ITool) — unified search across Pexels, Unsplash, Pixabay with auto-fallback
+3. **`media/voice-synthesis/`** — `TextToSpeechTool` (ITool) — ElevenLabs TTS, returns base64 MP3 audio
+4. **`research/news-search/`** — `NewsSearchTool` (ITool) — NewsAPI article search for current events
+
+Each follows the ExtensionPack pattern: `manifest.json` + `src/index.ts` (factory) + `src/tools/*.ts` (ITool implementation).
+
+#### Wunderland ToolRegistry Refactor
+
+- **`ToolRegistry.ts`** imports from agentos-extensions (canonical source) — not local copies
+- **`SerperSearchTool`** stays local (simpler than the multi-provider web-search extension)
+- Old local files (`GiphyTool.ts`, `ElevenLabsTool.ts`, `MediaSearchTool.ts`, `NewsSearchTool.ts`) converted to thin re-export wrappers with backward-compat type aliases
+- **Barrel exports** updated: canonical names (`GiphySearchTool`, `ImageSearchTool`, etc.) + deprecated aliases
+- **ContextFirewall** updated: all 5 new tools added to `DEFAULT_PUBLIC_TOOLS`
+- **Pixabay fix**: `per_page` clamped to minimum 3 (API requirement)
+
+#### Integration Test Results
+
+All 8 tool tests passed with live API keys:
+
+| Tool | Provider | Time |
+|------|----------|------|
+| Serper Web Search | Serper.dev | ~1000ms |
+| Serper News | Serper.dev | ~795ms |
+| NewsAPI | NewsAPI.org | ~154ms |
+| Giphy GIFs | Giphy | ~72ms |
+| Pexels Images | Pexels | ~131ms |
+| Unsplash Images | Unsplash | ~69ms |
+| Pixabay Images | Pixabay | ~305ms |
+| ElevenLabs TTS | ElevenLabs | ~883ms |
+
+### Self-Reflection
+
+**What went well**: The agentos-extensions pattern is clean — `manifest.json` + ExtensionPack factory + ITool class is a good separation. All 8 API integrations worked on the first full test run (after the Pixabay per_page fix). The $WUNDER banner sits well in the page flow and doesn't feel intrusive.
+
+**What I'd do differently**: I initially created the tool implementations directly in `packages/wunderland/src/tools/` before the user pointed out they should be in agentos-extensions. Should have recognized the canonical source pattern earlier from the existing web-search extension. The re-export wrapper approach works but adds indirection — in a fresh project I'd just use the canonical names everywhere.
+
+**Design tension**: The banner needs to feel premium and exciting without looking like a scam crypto ad. The gold-on-dark palette with subtle animations (token pulse, text shimmer, dot blink) strikes a balance. The "Coming Soon" + "Follow social channels" wording avoids making promises about dates or token economics.
+
+**Open question**: The `NewsroomAgency.llmWriterPhase()` now has tool-calling infrastructure but hasn't been tested with a real LLM callback yet. The next step is wiring Anthropic/OpenAI API calls into the writer phase and watching agents actually use tools in their posts.
+
+### Build Status
+- `pnpm build`: ✓ (27 routes, 0 errors)
+- Production server: localhost:3011, banner renders correctly
+- Tool integration test: 8/8 passed
+
+### Next Steps
+- Wire LLM API calls into NewsroomAgency for live tool-calling
+- Test agents generating tool-enriched posts (news + GIFs + images)
+- Deploy $WUNDER banner to production
+- Finalize token economics before official announcement
+
+---
