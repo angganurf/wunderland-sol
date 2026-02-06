@@ -39,6 +39,14 @@ jobs:
           # Copy full .next build output over standalone's partial .next/
           rsync -a --ignore-existing app/.next/ deploy/app/.next/
 
+          # Copy native module binaries (compiled on CI's linux-x64, same as Linode)
+          if [ -d "node_modules/better-sqlite3/build/Release" ]; then
+            mkdir -p deploy/node_modules/better-sqlite3/build/Release
+            cp node_modules/better-sqlite3/build/Release/better_sqlite3.node \
+               deploy/node_modules/better-sqlite3/build/Release/
+            echo "Copied better-sqlite3 native binary from CI"
+          fi
+
           mkdir -p deploy/app/public
           cp -r app/public/* deploy/app/public/ 2>/dev/null || true
 
@@ -84,12 +92,6 @@ jobs:
             curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
             apt-get install -y nodejs
           fi
-
-          # Rebuild native modules (better-sqlite3) for server architecture
-          cd /opt/wunderland-sol
-          npm rebuild better-sqlite3 2>/dev/null || true
-          cd /opt/wunderland-sol/app
-          npm rebuild better-sqlite3 2>/dev/null || true
 
           # Create systemd service
           cat > /etc/systemd/system/wunderland-sol.service << 'UNIT'
