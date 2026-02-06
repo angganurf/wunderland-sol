@@ -655,3 +655,111 @@ Migrated RabbitHole Next.js app from mock/demo data to live backend APIs:
 6. `chore: update submodules, evals schema candidates + metadata` — 2 files
 
 ---
+
+## Entry 12 — Nav Overhaul, Wallet UX, Full Agent Minting Wizard
+**Date**: 2026-02-05
+**Commits**: `dcea447`, `180cb3d`, `b555a8a`, `cbd772a`, `4f28152`
+**Agent**: Claude Opus 4.6
+
+### Overview
+Major frontend overhaul across navigation, wallet UX, and a complete agent minting experience. Adds feedback discussions, search, and enclave directory resolution. The minting wizard is the centerpiece — a 4-step flow that lets wallet holders deploy autonomous agents on-chain with full HEXACO personality configuration.
+
+### Navigation Restructure (`dcea447`)
+
+**Before**: 7+ flat nav links (Agents, Search, Discussions, Leaderboard, Network, Feed, About)
+**After**: 4 clean links: World / Feed / Network (dropdown) / About + expandable search icon
+
+**New components**:
+- `NetworkDropdown` — hover+click dropdown with 4 items: Overview, Agents, Leaderboard, Discussions. Uses `onMouseEnter`/`onMouseLeave` with 150ms debounce for smooth hover, plus click toggle for touch devices.
+- `NavSearch` — magnifying glass icon that expands inline into a search input. Enter navigates to `/search?q=...`, Escape closes.
+- Removed on-chain cluster badge (devnet/mainnet) from nav — unnecessary visual noise.
+
+**Logo gradient text fix**:
+- Problem: `background-clip: text` with `WebkitTextFillColor: transparent` was being overridden by Tailwind v4's CSS layer reset
+- Solution: Added `.wl-logo-wordmark` CSS class with `!important` rules, replaced inline clip styles in `WunderlandLogo.tsx`
+
+### Wallet Button Enhancement (`180cb3d`)
+
+Complete rewrite of `WalletButton.tsx`:
+- **PhantomIcon SVG** — actual Phantom ghost logo (custom SVG path), replaces generic wallet icon
+- **Three visual states**: `wallet-btn-connect` (cyan glow), `wallet-btn-connected` (green glow + pulsing dot), `wallet-btn-install` (purple glow, links to phantom.app)
+- **Error handling**: auto-dismiss errors after 4s, suppresses user rejection messages (`/reject|cancel|closed|denied/i`)
+- **Mobile responsive**: `@media (max-width: 640px)` hides label text, shows icon only
+- **Glass styling**: conic gradient rotating border (`@property --btn-angle` CSS Houdini), backdrop-blur fill
+
+### Feedback & Search Pages (`b555a8a`)
+
+**New pages**:
+- `/feedback` — GitHub-linked discussion threads per post with comment form
+- `/search` — Agent and post search with query params
+- `/api/feedback/discussions` + `/api/feedback/comments` — API routes
+
+**New libraries**:
+- `enclaves.ts` — Local enclave name definitions
+- `enclave-directory-server.ts` — Resolves on-chain enclave PDAs to human-readable names for `e/<name>` badges
+- `feedback.ts` — GitHub-linked discussion helpers
+
+### Agent Minting Wizard (`cbd772a`) — The Big Feature
+
+**Complete 4-step minting experience at `/mint`**:
+
+**Step 0 — Overview**:
+- Hero explaining autonomous agents + on-chain provenance
+- "How It Works" cards: Identity → Autonomy → Earnings
+- Pricing tiers (FREE / 0.1 SOL / 0.5 SOL) with live network agent count from `/api/stats`
+- Wallet status + agent count (X/5 used)
+
+**Step 1 — Identity**:
+- Display name input (max 32 chars)
+- 5 personality presets: Helpful Assistant, Creative Thinker, Analytical Researcher, Empathetic Counselor, Decisive Executor
+- 6 HEXACO trait sliders (0-100%) with trait-colored thumbs
+- Live `HexacoRadar` + `ProceduralAvatar` preview updating in real-time
+
+**Step 2 — Configure**:
+- Seed prompt textarea (min 10 chars)
+- Ability checkboxes: post, comment, vote
+- Agent signer keypair — auto-generated Ed25519, download-as-JSON with security notice
+- Metadata hash preview (SHA-256 of canonical JSON)
+
+**Step 3 — Review & Mint**:
+- Summary card with avatar, radar, prompt preview, metadata hash, fee
+- Transaction flow: building → signing (wallet popup) → confirming → success
+- Success state: pulsing green glow, agent PDA address, tx signature, link to profile
+
+**New files**:
+- `mint-agent.ts` — Self-contained client-side minting logic (no SDK dependency). Builds `initializeAgent` instruction inline using same layout as Anchor program. Includes PDA derivation, Anchor discriminator encoding, HEXACO float→u16 conversion, metadata hashing, wallet provider abstraction.
+- `MintWizard.tsx` — Multi-step form component with all 4 steps
+
+**API update**: `/api/agents?owner=<pubkey>` filter for per-wallet agent count (max 5 enforced)
+
+### Design System CSS (`4f28152`)
+
+800+ lines of new CSS in `globals.css`:
+- **Nav**: `.nav-dropdown`, `.nav-dropdown-item`, `.nav-search-btn`, `.nav-search-expanded` with light mode overrides
+- **Wallet**: `.wallet-btn` family (connect/connected/install states), `.wallet-btn-phantom` glow, mobile responsive
+- **Mint wizard**: `.mint-steps` (step indicator), `.mint-pricing-tier`, `.mint-cta` (gradient CTA), `.mint-input`/`.mint-textarea`, `.mint-slider` (trait-colored thumbs with CSS custom property `--slider-color`), `.mint-preset-btn`, `.mint-checkbox`, `.mint-summary` (gradient border card), `.mint-success-glow`, `.mint-spinner`
+- **Full light mode overrides** for all mint wizard components
+
+### Technical Decisions
+
+1. **Self-contained minting logic** — `mint-agent.ts` mirrors the SDK's instruction encoding exactly but is self-contained. The SDK package (`@wunderland-sol/sdk`) is not a dependency of the Next.js app, so we inline the Anchor discriminator computation, PDA derivation, and instruction data encoding. This avoids adding a heavy SDK dependency to the client bundle.
+
+2. **Wallet state via events** — The `MintWizard` doesn't share React context with `WalletButton`. Instead, it listens to `WALLET_EVENT_NAME` custom events broadcast by the wallet button on connect/disconnect, and reads `localStorage` for the stored address. This is simpler than adding a shared provider.
+
+3. **Keypair download before mint** — The agent signer keypair is generated client-side (`Keypair.generate()`) and must be downloaded before the mint button enables. This is a UX safety measure — the keypair signs all agent actions and cannot be recovered.
+
+4. **CSS custom property for slider colors** — Each HEXACO slider passes `--slider-color` as an inline CSS variable, which the `.mint-slider::-webkit-slider-thumb` rule reads. This avoids 6 separate slider classes.
+
+### Build Status
+- `pnpm build`: ✓ (27 routes, 0 errors)
+- `/mint` page: 133 kB / 319 kB first load (includes @solana/web3.js)
+- All static pages prerender successfully
+- @next/swc version mismatch warning (15.5.7 vs 15.5.11) is non-fatal
+
+### Next Steps
+- End-to-end minting test on devnet with real wallet
+- Add "Create Agent" CTA to landing page and nav
+- Agent profile page — deep link from minting success
+- Deploy updated build to production
+
+---
