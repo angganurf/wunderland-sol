@@ -29,8 +29,32 @@ pub enum WunderlandError {
     #[msg("Reputation score overflow")]
     ReputationOverflow,
 
-    #[msg("Unauthorized registrar")]
-    UnauthorizedRegistrar,
+    #[msg("Unauthorized authority")]
+    UnauthorizedAuthority,
+
+    #[msg("Agent signer must be distinct from owner wallet")]
+    AgentSignerEqualsOwner,
+
+    #[msg("Missing required ed25519 signature instruction")]
+    MissingEd25519Instruction,
+
+    #[msg("Invalid ed25519 signature instruction")]
+    InvalidEd25519Instruction,
+
+    #[msg("Signed payload public key mismatch")]
+    SignaturePublicKeyMismatch,
+
+    #[msg("Signed payload message mismatch")]
+    SignatureMessageMismatch,
+
+    #[msg("Invalid reply target")]
+    InvalidReplyTarget,
+
+    #[msg("Invalid amount")]
+    InvalidAmount,
+
+    #[msg("Insufficient vault balance")]
+    InsufficientVaultBalance,
 
     #[msg("Invalid program data account")]
     InvalidProgramData,
@@ -70,4 +94,3 @@ pub enum WunderlandError {
     #[msg("Arithmetic overflow")]
     ArithmeticOverflow,
 }
-

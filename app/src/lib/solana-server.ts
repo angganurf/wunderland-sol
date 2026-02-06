@@ -11,9 +11,15 @@ import {
 // On-chain only (no demo / off-chain fallback)
 // ============================================================================
 
-const ACCOUNT_SIZE_AGENT_IDENTITY = 123;
-const ACCOUNT_SIZE_POST_ANCHOR = 125;
+/**
+ * Supports both current account layouts and legacy layouts still present on older deployments.
+ */
+const ACCOUNT_SIZE_AGENT_IDENTITY_CURRENT = 219;
+const ACCOUNT_SIZE_AGENT_IDENTITY_LEGACY = 123;
+const ACCOUNT_SIZE_POST_ANCHOR_CURRENT = 202;
+const ACCOUNT_SIZE_POST_ANCHOR_LEGACY = 125;
 const ACCOUNT_SIZE_REPUTATION_VOTE = 82;
+const DISCRIMINATOR_LEN = 8;
 
 const LEVEL_NAMES: Record<number, string> = {
   1: 'Newcomer',
@@ -67,7 +73,66 @@ function decodeTraits(data: Buffer, offset: number): Agent['traits'] {
 }
 
 function decodeAgentIdentity(_pda: PublicKey, data: Buffer): Agent {
-  let offset = 8;
+  // Current layout:
+  // discriminator(8) + owner(32) + agent_id(32) + agent_signer(32) + display_name(32) +
+  // traits(12) + level(1) + xp(8) + total_entries(4) + reputation(8) +
+  // metadata_hash(32) + created_at(8) + updated_at(8) + is_active(1) + bump(1)
+  let offset = DISCRIMINATOR_LEN;
+
+  const owner = new PublicKey(data.subarray(offset, offset + 32)).toBase58();
+  offset += 32;
+
+  // agent_id (skip)
+  offset += 32;
+  // agent_signer (skip)
+  offset += 32;
+
+  const displayName = decodeDisplayName(data.subarray(offset, offset + 32));
+  offset += 32;
+
+  const traits = decodeTraits(data, offset);
+  offset += 12;
+
+  const levelNum = data.readUInt8(offset);
+  offset += 1;
+
+  // xp (skip)
+  offset += 8;
+
+  const totalPosts = data.readUInt32LE(offset); // total_entries
+  offset += 4;
+
+  const reputationScore = Number(data.readBigInt64LE(offset));
+  offset += 8;
+
+  // metadata_hash (skip)
+  offset += 32;
+
+  const createdAtSec = Number(data.readBigInt64LE(offset));
+  offset += 8;
+
+  // updated_at (skip)
+  offset += 8;
+
+  const isActive = data.readUInt8(offset) === 1;
+
+  return {
+    address: owner,
+    name: displayName,
+    traits,
+    level: LEVEL_NAMES[levelNum] || `Level ${levelNum}`,
+    reputation: reputationScore,
+    totalPosts,
+    createdAt: new Date(createdAtSec * 1000).toISOString(),
+    isActive,
+  };
+}
+
+function decodeAgentIdentityLegacy(_pda: PublicKey, data: Buffer): Agent {
+  // Legacy layout:
+  // discriminator(8) + authority(32) + display_name(32) + traits(12) + level(1) +
+  // xp(8) + total_posts(4) + reputation(8) + created_at(8) + updated_at(8) + is_active(1) + bump(1)
+  let offset = DISCRIMINATOR_LEN;
 
   const authority = new PublicKey(data.subarray(offset, offset + 32)).toBase58();
   offset += 32;
@@ -110,8 +175,88 @@ function decodeAgentIdentity(_pda: PublicKey, data: Buffer): Agent {
   };
 }
 
-function decodePostAnchor(postPda: PublicKey, data: Buffer, agentByPda: Map<string, Agent>): Post {
-  let offset = 8;
+function decodePostAnchorCurrent(postPda: PublicKey, data: Buffer, agentByPda: Map<string, Agent>): Post {
+  // Current layout:
+  // discriminator(8) + agent(32) + enclave(32) + kind(1) + reply_to(32) +
+  // post_index(4) + content_hash(32) + manifest_hash(32) + upvotes(4) + downvotes(4) +
+  // comment_count(4) + timestamp(8) + created_slot(8) + bump(1)
+  let offset = DISCRIMINATOR_LEN;
+
+  const agentPda = new PublicKey(data.subarray(offset, offset + 32));
+  const agentPdaStr = agentPda.toBase58();
+  offset += 32;
+
+  const enclavePda = new PublicKey(data.subarray(offset, offset + 32)).toBase58();
+  offset += 32;
+
+  const kindByte = data.readUInt8(offset);
+  const kind: Post['kind'] = kindByte === 1 ? 'comment' : 'post';
+  offset += 1;
+
+  const replyToRaw = new PublicKey(data.subarray(offset, offset + 32));
+  const replyTo = replyToRaw.equals(PublicKey.default) ? undefined : replyToRaw.toBase58();
+  offset += 32;
+
+  const postIndex = data.readUInt32LE(offset);
+  offset += 4;
+
+  const contentHash = Buffer.from(data.subarray(offset, offset + 32)).toString('hex');
+  offset += 32;
+
+  const manifestHash = Buffer.from(data.subarray(offset, offset + 32)).toString('hex');
+  offset += 32;
+
+  const upvotes = data.readUInt32LE(offset);
+  offset += 4;
+
+  const downvotes = data.readUInt32LE(offset);
+  offset += 4;
+
+  const commentCount = data.readUInt32LE(offset);
+  offset += 4;
+
+  const timestampSec = Number(data.readBigInt64LE(offset));
+  offset += 8;
+
+  const createdSlot = Number(data.readBigUInt64LE(offset));
+
+  const agent = agentByPda.get(agentPdaStr);
+  const agentAddress = agent?.address || agentPdaStr;
+
+  return {
+    id: postPda.toBase58(),
+    kind,
+    replyTo,
+    agentAddress,
+    agentPda: agentPdaStr,
+    agentName: agent?.name || 'Unknown',
+    agentLevel: agent?.level || 'Newcomer',
+    agentTraits: agent?.traits || {
+      honestyHumility: 0.5,
+      emotionality: 0.5,
+      extraversion: 0.5,
+      agreeableness: 0.5,
+      conscientiousness: 0.5,
+      openness: 0.5,
+    },
+    enclavePda,
+    postIndex,
+    content: '',
+    contentHash,
+    manifestHash,
+    upvotes,
+    downvotes,
+    commentCount,
+    timestamp: new Date(timestampSec * 1000).toISOString(),
+    createdSlot,
+  };
+}
+
+function decodePostAnchorLegacy(postPda: PublicKey, data: Buffer, agentByPda: Map<string, Agent>): Post {
+  // Legacy layout:
+  // discriminator(8) + agent(32) + post_index(4) + content_hash(32) + manifest_hash(32) +
+  // upvotes(4) + downvotes(4) + timestamp(8) + bump(1)
+  let offset = DISCRIMINATOR_LEN;
 
   const agentPda = new PublicKey(data.subarray(offset, offset + 32));
   const agentPdaStr = agentPda.toBase58();
@@ -139,7 +284,9 @@ function decodePostAnchor(postPda: PublicKey, data: Buffer, agentByPda: Map<stri
 
   return {
     id: postPda.toBase58(),
+    kind: 'post',
     agentAddress,
+    agentPda: agentPdaStr,
     agentName: agent?.name || 'Unknown',
     agentLevel: agent?.level || 'Newcomer',
     agentTraits: agent?.traits || {
@@ -156,8 +303,44 @@ function decodePostAnchor(postPda: PublicKey, data: Buffer, agentByPda: Map<stri
     manifestHash,
     upvotes,
     downvotes,
+    commentCount: 0,
     timestamp: new Date(timestampSec * 1000).toISOString(),
   };
+}
+
+function decodePostAnchor(postPda: PublicKey, data: Buffer, agentByPda: Map<string, Agent>): Post {
+  try {
+    return decodePostAnchorCurrent(postPda, data, agentByPda);
+  } catch {
+    return decodePostAnchorLegacy(postPda, data, agentByPda);
+  }
+}
+
+function decodeAgentIdentityWithFallback(pda: PublicKey, data: Buffer): Agent {
+  try {
+    return decodeAgentIdentity(pda, data);
+  } catch {
+    return decodeAgentIdentityLegacy(pda, data);
+  }
+}
+
+async function getProgramAccountsBySize(
+  connection: Connection,
+  programId: PublicKey,
+  sizes: number[],
+) {
+  const dedup = new Map<string, Awaited<ReturnType<Connection['getProgramAccounts']>>[number]>();
+
+  for (const size of sizes) {
+    const accounts = await connection.getProgramAccounts(programId, {
+      filters: [{ dataSize: size }],
+    });
+    for (const account of accounts) {
+      dedup.set(account.pubkey.toBase58(), account);
+    }
+  }
+
+  return [...dedup.values()];
 }
 
 export async function getAllAgentsServer(): Promise<Agent[]> {
@@ -166,14 +349,15 @@ export async function getAllAgentsServer(): Promise<Agent[]> {
   try {
     const connection = new Connection(cfg.rpcUrl, 'confirmed');
     const programId = new PublicKey(cfg.programId);
-    const accounts = await connection.getProgramAccounts(programId, {
-      filters: [{ dataSize: ACCOUNT_SIZE_AGENT_IDENTITY }],
-    });
+    const accounts = await getProgramAccountsBySize(connection, programId, [
+      ACCOUNT_SIZE_AGENT_IDENTITY_CURRENT,
+      ACCOUNT_SIZE_AGENT_IDENTITY_LEGACY,
+    ]);
 
     return accounts
       .map((acc) => {
         try {
-          return decodeAgentIdentity(acc.pubkey, acc.account.data);
+          return decodeAgentIdentityWithFallback(acc.pubkey, acc.account.data);
         } catch {
           return null;
         }
@@ -185,31 +369,41 @@ export async function getAllAgentsServer(): Promise<Agent[]> {
   }
 }
 
-export async function getAllPostsServer(opts?: { limit?: number; agentAddress?: string }): Promise<Post[]> {
+export async function getAllPostsServer(opts?: {
+  limit?: number;
+  agentAddress?: string;
+  kind?: Post['kind'];
+}): Promise<Post[]> {
   const cfg = getOnChainConfig();
   const limit = opts?.limit ?? 20;
   const agentAddress = opts?.agentAddress;
+  const kind = opts?.kind ?? 'post';
 
   try {
     const connection = new Connection(cfg.rpcUrl, 'confirmed');
     const programId = new PublicKey(cfg.programId);
 
     // Fetch agents first so posts can be resolved to authority + display name.
-    const agentAccounts = await connection.getProgramAccounts(programId, {
-      filters: [{ dataSize: ACCOUNT_SIZE_AGENT_IDENTITY }],
-    });
+    const agentAccounts = await getProgramAccountsBySize(connection, programId, [
+      ACCOUNT_SIZE_AGENT_IDENTITY_CURRENT,
+      ACCOUNT_SIZE_AGENT_IDENTITY_LEGACY,
+    ]);
     const agentByPda = new Map<string, Agent>();
     for (const acc of agentAccounts) {
       try {
-        agentByPda.set(acc.pubkey.toBase58(), decodeAgentIdentity(acc.pubkey, acc.account.data));
+        agentByPda.set(
+          acc.pubkey.toBase58(),
+          decodeAgentIdentityWithFallback(acc.pubkey, acc.account.data),
+        );
       } catch {
         continue;
       }
     }
 
-    const postAccounts = await connection.getProgramAccounts(programId, {
-      filters: [{ dataSize: ACCOUNT_SIZE_POST_ANCHOR }],
-    });
+    const postAccounts = await getProgramAccountsBySize(connection, programId, [
+      ACCOUNT_SIZE_POST_ANCHOR_CURRENT,
+      ACCOUNT_SIZE_POST_ANCHOR_LEGACY,
+    ]);
 
     const posts = postAccounts
       .map((acc) => {
@@ -221,8 +415,14 @@ export async function getAllPostsServer(opts?: { limit?: number; agentAddress?: 
       })
       .filter((p): p is Post => p !== null);
 
-    const filtered = agentAddress ? posts.filter((p) => p.agentAddress === agentAddress) : posts;
-    filtered.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const filtered = posts
+      .filter((p) => p.kind === kind)
+      .filter((p) => (agentAddress ? p.agentAddress === agentAddress : true));
+    filtered.sort(
+      (a, b) =>
+        (b.createdSlot ?? 0) - (a.createdSlot ?? 0) ||
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    );
     return filtered.slice(0, limit);
   } catch (error) {
     console.warn('[solana-server] Failed to fetch on-chain posts:', error);
@@ -254,7 +454,7 @@ export async function getLeaderboardServer(): Promise<(Agent & { rank: number; d
 
 export async function getNetworkStatsServer(): Promise<Stats> {
   const agents = await getAllAgentsServer();
-  const posts = await getAllPostsServer({ limit: 100000 });
+  const posts = await getAllPostsServer({ limit: 100000, kind: 'post' });
 
   const activeAgents = agents.filter((a) => a.isActive).length;
   const totalVotes = posts.reduce((sum, p) => sum + p.upvotes + p.downvotes, 0);
@@ -285,7 +485,7 @@ export type NetworkEdge = {
 };
 
 function decodeReputationVote(data: Buffer): { voter: string; post: string; value: 1 | -1; timestamp: string } | null {
-  let offset = 8;
+  let offset = DISCRIMINATOR_LEN;
 
   const voter = new PublicKey(data.subarray(offset, offset + 32)).toBase58();
   offset += 32;
@@ -314,16 +514,17 @@ export async function getNetworkGraphServer(opts?: {
   const connection = new Connection(cfg.rpcUrl, 'confirmed');
   const programId = new PublicKey(cfg.programId);
 
-  const agentAccounts = await connection.getProgramAccounts(programId, {
-    filters: [{ dataSize: ACCOUNT_SIZE_AGENT_IDENTITY }],
-  });
+  const agentAccounts = await getProgramAccountsBySize(connection, programId, [
+    ACCOUNT_SIZE_AGENT_IDENTITY_CURRENT,
+    ACCOUNT_SIZE_AGENT_IDENTITY_LEGACY,
+  ]);
 
   const agents: Agent[] = [];
   const agentByPda = new Map<string, Agent>();
   const agentByAuthority = new Map<string, Agent>();
   for (const acc of agentAccounts) {
     try {
-      const agent = decodeAgentIdentity(acc.pubkey, acc.account.data);
+      const agent = decodeAgentIdentityWithFallback(acc.pubkey, acc.account.data);
       agents.push(agent);
       agentByPda.set(acc.pubkey.toBase58(), agent);
       agentByAuthority.set(agent.address, agent);
@@ -332,15 +533,16 @@ export async function getNetworkGraphServer(opts?: {
     }
   }
 
-  const postAccounts = await connection.getProgramAccounts(programId, {
-    filters: [{ dataSize: ACCOUNT_SIZE_POST_ANCHOR }],
-  });
+  const postAccounts = await getProgramAccountsBySize(connection, programId, [
+    ACCOUNT_SIZE_POST_ANCHOR_CURRENT,
+    ACCOUNT_SIZE_POST_ANCHOR_LEGACY,
+  ]);
 
   const postAuthorByPostPda = new Map<string, string>();
   for (const acc of postAccounts) {
     try {
-      const agentPda = new PublicKey(acc.account.data.subarray(8, 8 + 32)).toBase58();
-      const agent = agentByPda.get(agentPda);
+      const post = decodePostAnchor(acc.pubkey, acc.account.data, agentByPda);
+      const agent = agentByPda.get(post.agentPda || '');
       if (!agent) continue;
       postAuthorByPostPda.set(acc.pubkey.toBase58(), agent.address);
     } catch {
@@ -405,4 +607,3 @@ export async function getNetworkGraphServer(opts?: {
 
   return { nodes, edges };
 }
-

@@ -11,9 +11,11 @@
 import {
   clusterApiUrl,
   Connection,
+  Ed25519Program,
   Keypair,
   PublicKey,
   sendAndConfirmTransaction,
+  SYSVAR_INSTRUCTIONS_PUBKEY,
   SystemProgram,
   Transaction,
   TransactionInstruction,
@@ -55,6 +57,52 @@ export function registrationFeeLamports(currentAgentCount: number): bigint {
   if (currentAgentCount < FREE_AGENT_CAP) return 0n;
   if (currentAgentCount < LOW_FEE_AGENT_CAP) return LOW_FEE_LAMPORTS;
   return HIGH_FEE_LAMPORTS;
+}
+
+// ============================================================
+// Agent-signed payloads (ed25519 verify)
+// ============================================================
+
+export const SIGN_DOMAIN = Buffer.from('WUNDERLAND_SOL_V2', 'utf8');
+export const ACTION_CREATE_ENCLAVE = 1;
+export const ACTION_ANCHOR_POST = 2;
+export const ACTION_ANCHOR_COMMENT = 3;
+export const ACTION_CAST_VOTE = 4;
+export const ACTION_ROTATE_AGENT_SIGNER = 5;
+
+export function buildAgentMessage(opts: {
+  action: number;
+  programId: PublicKey;
+  agentIdentityPda: PublicKey;
+  payload: Uint8Array;
+}): Uint8Array {
+  const payload = Buffer.from(opts.payload);
+  return Buffer.concat([
+    SIGN_DOMAIN,
+    Buffer.from([opts.action & 0xff]),
+    opts.programId.toBuffer(),
+    opts.agentIdentityPda.toBuffer(),
+    payload,
+  ]);
+}
+
+export function buildEd25519VerifyIx(opts: {
+  publicKey: PublicKey;
+  message: Uint8Array;
+  signature: Uint8Array;
+}): TransactionInstruction {
+  return Ed25519Program.createInstructionWithPublicKey({
+    publicKey: opts.publicKey.toBytes(),
+    message: opts.message,
+    signature: opts.signature,
+  });
+}
+
+export function buildEd25519VerifyIxFromKeypair(keypair: Keypair, message: Uint8Array): TransactionInstruction {
+  return Ed25519Program.createInstructionWithPrivateKey({
+    privateKey: keypair.secretKey,
+    message,
+  });
 }
 
 function anchorDiscriminator(methodName: string): Buffer {
@@ -142,6 +190,14 @@ export function hashSha256Utf8(text: string): Uint8Array {
   return hashSha256Bytes(Buffer.from(text, 'utf8'));
 }
 
+export function normalizeEnclaveName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+export function enclaveNameHash(name: string): Uint8Array {
+  return hashSha256Utf8(normalizeEnclaveName(name));
+}
+
 // ============================================================
 // PDA derivation (program is canonical)
 // ============================================================
@@ -180,10 +236,12 @@ export function deriveVaultPDA(agentIdentityPda: PublicKey, programId: PublicKey
 
 /**
  * Derive Enclave PDA.
- * Seeds: ["enclave", name_bytes]
+ * Seeds: ["enclave", name_hash]
+ * Where: name_hash = sha256(lowercase(trim(name)))
  */
 export function deriveEnclavePDA(name: string, programId: PublicKey): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync([Buffer.from('enclave'), Buffer.from(name, 'utf8')], programId);
+  const nameHash = enclaveNameHash(name);
+  return PublicKey.findProgramAddressSync([Buffer.from('enclave'), Buffer.from(nameHash)], programId);
 }
 
 /**
@@ -274,12 +332,14 @@ export function buildInitializeConfigIx(opts: {
   programId: PublicKey;
   authority: PublicKey;
   configPda: PublicKey;
+  treasuryPda: PublicKey;
   programDataPda: PublicKey;
 }): TransactionInstruction {
   return new TransactionInstruction({
     programId: opts.programId,
     keys: [
       { pubkey: opts.configPda, isSigner: false, isWritable: true },
+      { pubkey: opts.treasuryPda, isSigner: false, isWritable: true },
       { pubkey: opts.programDataPda, isSigner: false, isWritable: false },
       { pubkey: opts.authority, isSigner: true, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
@@ -291,6 +351,7 @@ export function buildInitializeConfigIx(opts: {
 export function buildInitializeAgentIx(opts: {
   programId: PublicKey;
   configPda: PublicKey;
+  treasuryPda: PublicKey;
   owner: PublicKey;
   agentIdentityPda: PublicKey;
   vaultPda: PublicKey;
@@ -321,6 +382,7 @@ export function buildInitializeAgentIx(opts: {
     programId: opts.programId,
     keys: [
       { pubkey: opts.configPda, isSigner: false, isWritable: true },
+      { pubkey: opts.treasuryPda, isSigner: false, isWritable: true },
       { pubkey: opts.owner, isSigner: true, isWritable: true },
       { pubkey: opts.agentIdentityPda, isSigner: false, isWritable: true },
       { pubkey: opts.vaultPda, isSigner: false, isWritable: true },
@@ -335,26 +397,22 @@ export function buildCreateEnclaveIx(opts: {
   configPda: PublicKey;
   enclavePda: PublicKey;
   creatorAgentPda: PublicKey;
-  agentSigner: PublicKey;
   payer: PublicKey;
-  name: string;
+  nameHash: Uint8Array; // 32
   metadataHash: Uint8Array;
 }): TransactionInstruction {
+  const nameHashBytes = encodeFixedBytes(opts.nameHash, 32, 'nameHash');
   const metadataHashBytes = encodeFixedBytes(opts.metadataHash, 32, 'metadataHash');
-  const data = Buffer.concat([
-    anchorDiscriminator('create_enclave'),
-    encodeString(opts.name),
-    metadataHashBytes,
-  ]);
+  const data = Buffer.concat([anchorDiscriminator('create_enclave'), nameHashBytes, metadataHashBytes]);
 
   return new TransactionInstruction({
     programId: opts.programId,
     keys: [
       { pubkey: opts.configPda, isSigner: false, isWritable: true },
-      { pubkey: opts.enclavePda, isSigner: false, isWritable: true },
       { pubkey: opts.creatorAgentPda, isSigner: false, isWritable: false },
-      { pubkey: opts.agentSigner, isSigner: true, isWritable: false },
+      { pubkey: opts.enclavePda, isSigner: false, isWritable: true },
       { pubkey: opts.payer, isSigner: true, isWritable: true },
+      { pubkey: SYSVAR_INSTRUCTIONS_PUBKEY, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data,
@@ -366,7 +424,6 @@ export function buildAnchorPostIx(opts: {
   postAnchorPda: PublicKey;
   agentIdentityPda: PublicKey;
   enclavePda: PublicKey;
-  agentSigner: PublicKey;
   payer: PublicKey;
   contentHash: Uint8Array;
   manifestHash: Uint8Array;
@@ -385,8 +442,8 @@ export function buildAnchorPostIx(opts: {
       { pubkey: opts.postAnchorPda, isSigner: false, isWritable: true },
       { pubkey: opts.agentIdentityPda, isSigner: false, isWritable: true },
       { pubkey: opts.enclavePda, isSigner: false, isWritable: false },
-      { pubkey: opts.agentSigner, isSigner: true, isWritable: false },
       { pubkey: opts.payer, isSigner: true, isWritable: true },
+      { pubkey: SYSVAR_INSTRUCTIONS_PUBKEY, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data,
@@ -399,7 +456,6 @@ export function buildAnchorCommentIx(opts: {
   agentIdentityPda: PublicKey;
   enclavePda: PublicKey;
   parentPostPda: PublicKey;
-  agentSigner: PublicKey;
   payer: PublicKey;
   contentHash: Uint8Array;
   manifestHash: Uint8Array;
@@ -419,8 +475,8 @@ export function buildAnchorCommentIx(opts: {
       { pubkey: opts.agentIdentityPda, isSigner: false, isWritable: true },
       { pubkey: opts.enclavePda, isSigner: false, isWritable: false },
       { pubkey: opts.parentPostPda, isSigner: false, isWritable: true },
-      { pubkey: opts.agentSigner, isSigner: true, isWritable: false },
       { pubkey: opts.payer, isSigner: true, isWritable: true },
+      { pubkey: SYSVAR_INSTRUCTIONS_PUBKEY, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data,
@@ -433,7 +489,6 @@ export function buildCastVoteIx(opts: {
   postAnchorPda: PublicKey;
   postAgentPda: PublicKey;
   voterAgentPda: PublicKey;
-  agentSigner: PublicKey;
   payer: PublicKey;
   value: 1 | -1;
 }): TransactionInstruction {
@@ -448,8 +503,8 @@ export function buildCastVoteIx(opts: {
       { pubkey: opts.postAnchorPda, isSigner: false, isWritable: true },
       { pubkey: opts.postAgentPda, isSigner: false, isWritable: true },
       { pubkey: opts.voterAgentPda, isSigner: false, isWritable: false },
-      { pubkey: opts.agentSigner, isSigner: true, isWritable: false },
       { pubkey: opts.payer, isSigner: true, isWritable: true },
+      { pubkey: SYSVAR_INSTRUCTIONS_PUBKEY, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data,
@@ -503,7 +558,6 @@ export function buildWithdrawFromVaultIx(opts: {
 
 export function buildRotateAgentSignerIx(opts: {
   programId: PublicKey;
-  agentSigner: PublicKey;
   agentIdentityPda: PublicKey;
   newAgentSigner: PublicKey;
 }): TransactionInstruction {
@@ -511,8 +565,8 @@ export function buildRotateAgentSignerIx(opts: {
   return new TransactionInstruction({
     programId: opts.programId,
     keys: [
-      { pubkey: opts.agentSigner, isSigner: true, isWritable: false },
       { pubkey: opts.agentIdentityPda, isSigner: false, isWritable: true },
+      { pubkey: SYSVAR_INSTRUCTIONS_PUBKEY, isSigner: false, isWritable: false },
     ],
     data,
   });
@@ -596,6 +650,7 @@ export function buildSubmitTipIx(opts: {
 
 export function buildSettleTipIx(opts: {
   programId: PublicKey;
+  configPda: PublicKey;
   authority: PublicKey;
   tipPda: PublicKey;
   escrowPda: PublicKey;
@@ -608,6 +663,7 @@ export function buildSettleTipIx(opts: {
   return new TransactionInstruction({
     programId: opts.programId,
     keys: [
+      { pubkey: opts.configPda, isSigner: false, isWritable: false },
       { pubkey: opts.authority, isSigner: true, isWritable: false },
       { pubkey: opts.tipPda, isSigner: false, isWritable: true },
       { pubkey: opts.escrowPda, isSigner: false, isWritable: true },
@@ -622,6 +678,7 @@ export function buildSettleTipIx(opts: {
 
 export function buildRefundTipIx(opts: {
   programId: PublicKey;
+  configPda: PublicKey;
   authority: PublicKey;
   tipPda: PublicKey;
   escrowPda: PublicKey;
@@ -632,6 +689,7 @@ export function buildRefundTipIx(opts: {
   return new TransactionInstruction({
     programId: opts.programId,
     keys: [
+      { pubkey: opts.configPda, isSigner: false, isWritable: false },
       { pubkey: opts.authority, isSigner: true, isWritable: false },
       { pubkey: opts.tipPda, isSigner: false, isWritable: true },
       { pubkey: opts.escrowPda, isSigner: false, isWritable: true },
@@ -856,11 +914,13 @@ export class WunderlandSolClient {
 
   async initializeConfig(authority: Keypair): Promise<TransactionSignature> {
     const [configPda] = this.getConfigPDA();
+    const [treasuryPda] = this.getTreasuryPDA();
     const [programDataPda] = this.getProgramDataPDA();
     const ix = buildInitializeConfigIx({
       programId: this.programId,
       authority: authority.publicKey,
       configPda,
+      treasuryPda,
       programDataPda,
     });
     const tx = new Transaction().add(ix);
@@ -876,12 +936,14 @@ export class WunderlandSolClient {
     agentSigner: PublicKey;
   }): Promise<{ signature: TransactionSignature; agentIdentityPda: PublicKey; vaultPda: PublicKey }> {
     const [configPda] = this.getConfigPDA();
+    const [treasuryPda] = this.getTreasuryPDA();
     const [agentIdentityPda] = this.getAgentPDA(opts.owner.publicKey, opts.agentId);
     const [vaultPda] = this.getVaultPDA(agentIdentityPda);
 
     const ix = buildInitializeAgentIx({
       programId: this.programId,
       configPda,
+      treasuryPda,
       owner: opts.owner.publicKey,
       agentIdentityPda,
       vaultPda,
@@ -907,19 +969,28 @@ export class WunderlandSolClient {
     const [configPda] = this.getConfigPDA();
     const [enclavePda] = this.getEnclavePDA(opts.name);
 
+    const nameHash = enclaveNameHash(opts.name);
+    const payload = Buffer.concat([Buffer.from(nameHash), Buffer.from(encodeFixedBytes(opts.metadataHash, 32, 'metadataHash'))]);
+    const message = buildAgentMessage({
+      action: ACTION_CREATE_ENCLAVE,
+      programId: this.programId,
+      agentIdentityPda: opts.creatorAgentPda,
+      payload,
+    });
+    const ed25519Ix = buildEd25519VerifyIxFromKeypair(opts.agentSigner, message);
+
     const ix = buildCreateEnclaveIx({
       programId: this.programId,
       configPda,
       enclavePda,
       creatorAgentPda: opts.creatorAgentPda,
-      agentSigner: opts.agentSigner.publicKey,
       payer: opts.payer.publicKey,
-      name: opts.name,
+      nameHash,
       metadataHash: opts.metadataHash,
     });
 
-    const tx = new Transaction().add(ix);
-    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.agentSigner, opts.payer]);
+    const tx = new Transaction().add(ed25519Ix, ix);
+    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.payer]);
     return { signature, enclavePda };
   }
 
@@ -935,22 +1006,43 @@ export class WunderlandSolClient {
     if (!agentInfo) throw new Error(`AgentIdentity not found: ${opts.agentIdentityPda.toBase58()}`);
     const decodedAgent = decodeAgentIdentityAccount(agentInfo.data as Buffer);
 
-    const entryIndex = decodedAgent.totalPosts;
+    const entryIndex = decodedAgent.totalEntries;
     const [postAnchorPda] = this.getPostPDA(opts.agentIdentityPda, entryIndex);
+
+    const replyTo = PublicKey.default.toBuffer();
+    const kindByte = Buffer.from([0]);
+    const indexBuf = Buffer.alloc(4);
+    indexBuf.writeUInt32LE(entryIndex >>> 0, 0);
+
+    const payload = Buffer.concat([
+      opts.enclavePda.toBuffer(),
+      kindByte,
+      replyTo,
+      indexBuf,
+      Buffer.from(encodeFixedBytes(opts.contentHash, 32, 'contentHash')),
+      Buffer.from(encodeFixedBytes(opts.manifestHash, 32, 'manifestHash')),
+    ]);
+
+    const message = buildAgentMessage({
+      action: ACTION_ANCHOR_POST,
+      programId: this.programId,
+      agentIdentityPda: opts.agentIdentityPda,
+      payload,
+    });
+    const ed25519Ix = buildEd25519VerifyIxFromKeypair(opts.agentSigner, message);
 
     const ix = buildAnchorPostIx({
       programId: this.programId,
       postAnchorPda,
       agentIdentityPda: opts.agentIdentityPda,
       enclavePda: opts.enclavePda,
-      agentSigner: opts.agentSigner.publicKey,
       payer: opts.payer.publicKey,
       contentHash: opts.contentHash,
       manifestHash: opts.manifestHash,
     });
 
-    const tx = new Transaction().add(ix);
-    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.agentSigner, opts.payer]);
+    const tx = new Transaction().add(ed25519Ix, ix);
+    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.payer]);
     return { signature, postAnchorPda, entryIndex };
   }
 
@@ -967,8 +1059,29 @@ export class WunderlandSolClient {
     if (!agentInfo) throw new Error(`AgentIdentity not found: ${opts.agentIdentityPda.toBase58()}`);
     const decodedAgent = decodeAgentIdentityAccount(agentInfo.data as Buffer);
 
-    const entryIndex = decodedAgent.totalPosts;
+    const entryIndex = decodedAgent.totalEntries;
     const [commentAnchorPda] = this.getPostPDA(opts.agentIdentityPda, entryIndex);
+
+    const kindByte = Buffer.from([1]);
+    const indexBuf = Buffer.alloc(4);
+    indexBuf.writeUInt32LE(entryIndex >>> 0, 0);
+
+    const payload = Buffer.concat([
+      opts.enclavePda.toBuffer(),
+      opts.parentPostPda.toBuffer(),
+      kindByte,
+      indexBuf,
+      Buffer.from(encodeFixedBytes(opts.contentHash, 32, 'contentHash')),
+      Buffer.from(encodeFixedBytes(opts.manifestHash, 32, 'manifestHash')),
+    ]);
+
+    const message = buildAgentMessage({
+      action: ACTION_ANCHOR_COMMENT,
+      programId: this.programId,
+      agentIdentityPda: opts.agentIdentityPda,
+      payload,
+    });
+    const ed25519Ix = buildEd25519VerifyIxFromKeypair(opts.agentSigner, message);
 
     const ix = buildAnchorCommentIx({
       programId: this.programId,
@@ -976,14 +1089,13 @@ export class WunderlandSolClient {
       agentIdentityPda: opts.agentIdentityPda,
       enclavePda: opts.enclavePda,
       parentPostPda: opts.parentPostPda,
-      agentSigner: opts.agentSigner.publicKey,
       payer: opts.payer.publicKey,
       contentHash: opts.contentHash,
       manifestHash: opts.manifestHash,
     });
 
-    const tx = new Transaction().add(ix);
-    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.agentSigner, opts.payer]);
+    const tx = new Transaction().add(ed25519Ix, ix);
+    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.payer]);
     return { signature, commentAnchorPda, entryIndex };
   }
 
@@ -996,18 +1108,29 @@ export class WunderlandSolClient {
     value: 1 | -1;
   }): Promise<{ signature: TransactionSignature; votePda: PublicKey }> {
     const [votePda] = this.getVotePDA(opts.postAnchorPda, opts.voterAgentPda);
+
+    const valueBuf = Buffer.alloc(1);
+    valueBuf.writeInt8(opts.value, 0);
+    const payload = Buffer.concat([opts.postAnchorPda.toBuffer(), valueBuf]);
+    const message = buildAgentMessage({
+      action: ACTION_CAST_VOTE,
+      programId: this.programId,
+      agentIdentityPda: opts.voterAgentPda,
+      payload,
+    });
+    const ed25519Ix = buildEd25519VerifyIxFromKeypair(opts.agentSigner, message);
+
     const ix = buildCastVoteIx({
       programId: this.programId,
       reputationVotePda: votePda,
       postAnchorPda: opts.postAnchorPda,
       postAgentPda: opts.postAgentPda,
       voterAgentPda: opts.voterAgentPda,
-      agentSigner: opts.agentSigner.publicKey,
       payer: opts.payer.publicKey,
       value: opts.value,
     });
-    const tx = new Transaction().add(ix);
-    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.agentSigner, opts.payer]);
+    const tx = new Transaction().add(ed25519Ix, ix);
+    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.payer]);
     return { signature, votePda };
   }
 
@@ -1048,16 +1171,25 @@ export class WunderlandSolClient {
   async rotateAgentSigner(opts: {
     agentIdentityPda: PublicKey;
     currentAgentSigner: Keypair;
+    payer: Keypair;
     newAgentSigner: PublicKey;
   }): Promise<TransactionSignature> {
+    const payload = opts.newAgentSigner.toBuffer();
+    const message = buildAgentMessage({
+      action: ACTION_ROTATE_AGENT_SIGNER,
+      programId: this.programId,
+      agentIdentityPda: opts.agentIdentityPda,
+      payload,
+    });
+    const ed25519Ix = buildEd25519VerifyIxFromKeypair(opts.currentAgentSigner, message);
+
     const ix = buildRotateAgentSignerIx({
       programId: this.programId,
-      agentSigner: opts.currentAgentSigner.publicKey,
       agentIdentityPda: opts.agentIdentityPda,
       newAgentSigner: opts.newAgentSigner,
     });
-    const tx = new Transaction().add(ix);
-    return sendAndConfirmTransaction(this.connection, tx, [opts.currentAgentSigner]);
+    const tx = new Transaction().add(ed25519Ix, ix);
+    return sendAndConfirmTransaction(this.connection, tx, [opts.payer]);
   }
 
   // ---------- tip methods ----------
@@ -1123,6 +1255,7 @@ export class WunderlandSolClient {
     enclavePda?: PublicKey; // SystemProgram.programId for global
     enclaveCreator?: PublicKey; // Required for enclave-targeted tips
   }): Promise<TransactionSignature> {
+    const [configPda] = this.getConfigPDA();
     const [escrowPda] = this.getTipEscrowPDA(opts.tipPda);
     const [treasuryPda] = this.getTreasuryPDA();
     const enclavePda = opts.enclavePda ?? SystemProgram.programId;
@@ -1130,6 +1263,7 @@ export class WunderlandSolClient {
 
     const ix = buildSettleTipIx({
       programId: this.programId,
+      configPda,
       authority: opts.authority.publicKey,
       tipPda: opts.tipPda,
       escrowPda,
@@ -1151,10 +1285,12 @@ export class WunderlandSolClient {
     tipPda: PublicKey;
     tipper: PublicKey;
   }): Promise<TransactionSignature> {
+    const [configPda] = this.getConfigPDA();
     const [escrowPda] = this.getTipEscrowPDA(opts.tipPda);
 
     const ix = buildRefundTipIx({
       programId: this.programId,
+      configPda,
       authority: opts.authority.publicKey,
       tipPda: opts.tipPda,
       escrowPda,
@@ -1230,7 +1366,7 @@ export function decodeAgentIdentityAccount(data: Buffer): AgentIdentityAccount {
   const xp = data.readBigUInt64LE(offset);
   offset += 8;
 
-  const totalPosts = data.readUInt32LE(offset);
+  const totalEntries = data.readUInt32LE(offset);
   offset += 4;
 
   const reputationScore = data.readBigInt64LE(offset);
@@ -1258,7 +1394,7 @@ export function decodeAgentIdentityAccount(data: Buffer): AgentIdentityAccount {
     hexacoTraits: traitsFromOnChain(traitValues),
     citizenLevel,
     xp,
-    totalPosts,
+    totalEntries,
     reputationScore,
     metadataHash,
     createdAt,
@@ -1279,7 +1415,7 @@ export function decodeAgentProfile(agentIdentityPda: PublicKey, data: Buffer): A
     hexacoTraits: decoded.hexacoTraits,
     citizenLevel: decoded.citizenLevel,
     xp: Number(decoded.xp),
-    totalPosts: decoded.totalPosts,
+    totalEntries: decoded.totalEntries,
     reputationScore: Number(decoded.reputationScore),
     metadataHash: Buffer.from(decoded.metadataHash).toString('hex'),
     createdAt: new Date(Number(decoded.createdAt) * 1000),
@@ -1289,12 +1425,13 @@ export function decodeAgentProfile(agentIdentityPda: PublicKey, data: Buffer): A
 
 export function decodeEnclaveAccount(data: Buffer): EnclaveAccount {
   let offset = DISCRIMINATOR_LEN;
-  const nameLen = data.readUInt32LE(offset);
-  offset += 4;
-  const name = Buffer.from(data.subarray(offset, offset + nameLen)).toString('utf8');
-  offset += nameLen;
+  const nameHash = data.subarray(offset, offset + 32);
+  offset += 32;
 
-  const creator = new PublicKey(data.subarray(offset, offset + 32));
+  const creatorAgent = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+
+  const creatorOwner = new PublicKey(data.subarray(offset, offset + 32));
   offset += 32;
 
   const metadataHash = data.subarray(offset, offset + 32);
@@ -1303,22 +1440,20 @@ export function decodeEnclaveAccount(data: Buffer): EnclaveAccount {
   const createdAt = data.readBigInt64LE(offset);
   offset += 8;
 
-  const updatedAt = data.readBigInt64LE(offset);
-  offset += 8;
-
   const isActive = data.readUInt8(offset) === 1;
   offset += 1;
 
   const bump = data.readUInt8(offset);
-  return { name, creator, metadataHash, createdAt, updatedAt, isActive, bump };
+  return { nameHash, creatorAgent, creatorOwner, metadataHash, createdAt, isActive, bump };
 }
 
 export function decodeEnclaveProfile(enclavePda: PublicKey, data: Buffer): EnclaveProfile {
   const decoded = decodeEnclaveAccount(data);
   return {
     id: enclavePda.toBase58(),
-    name: decoded.name,
-    creator: decoded.creator.toBase58(),
+    nameHash: Buffer.from(decoded.nameHash).toString('hex'),
+    creatorAgent: decoded.creatorAgent.toBase58(),
+    creatorOwner: decoded.creatorOwner.toBase58(),
     metadataHash: Buffer.from(decoded.metadataHash).toString('hex'),
     createdAt: new Date(Number(decoded.createdAt) * 1000),
     isActive: decoded.isActive,

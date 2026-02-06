@@ -24,7 +24,11 @@ const config: Config = {
   projectName: 'wunderland-sol', // Your repo name.
 
   onBrokenLinks: 'warn',
-  onBrokenMarkdownLinks: 'warn',
+  markdown: {
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
+  },
 
   // Internationalization
   i18n: {
@@ -108,11 +112,11 @@ const config: Config = {
           items: [
             {
               label: 'Getting Started',
-              to: '/docs/intro',
+              to: '/docs',
             },
             {
               label: 'Architecture',
-              to: '/docs/architecture',
+              to: '/docs/architecture/overview',
             },
             {
               label: 'API Reference',

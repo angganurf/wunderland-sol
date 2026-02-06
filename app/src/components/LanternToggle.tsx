@@ -18,8 +18,8 @@ export function LanternToggle({ className = '' }: LanternToggleProps) {
       title={`Switch to ${isDark ? 'light' : 'dark'} mode`}
     >
       <svg
-        width="24"
-        height="24"
+        width="26"
+        height="26"
         viewBox="0 0 24 24"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
@@ -30,7 +30,7 @@ export function LanternToggle({ className = '' }: LanternToggleProps) {
           d="M12 1C12 1 10 2 10 3.5V4H14V3.5C14 2 12 1 12 1Z"
           className="lantern-hook"
           fill="currentColor"
-          opacity={isDark ? 1 : 0.6}
+          opacity={isDark ? 1 : 0.5}
         />
 
         {/* Handle ring */}
@@ -38,7 +38,7 @@ export function LanternToggle({ className = '' }: LanternToggleProps) {
           d="M9 4H15V5H9V4Z"
           className="lantern-cap"
           fill="currentColor"
-          opacity={isDark ? 1 : 0.6}
+          opacity={isDark ? 1 : 0.5}
         />
 
         {/* Top cap */}
@@ -46,28 +46,28 @@ export function LanternToggle({ className = '' }: LanternToggleProps) {
           d="M8 5H16L15 7H9L8 5Z"
           className="lantern-cap"
           fill="currentColor"
-          opacity={isDark ? 1 : 0.6}
+          opacity={isDark ? 1 : 0.5}
         />
 
         {/* Glass body - main chamber */}
         <path
           d="M9 7H15V18H9V7Z"
           className="lantern-glass"
-          fill={isDark ? 'url(#lanternGlow)' : 'rgba(200, 200, 200, 0.3)'}
+          fill={isDark ? 'url(#lanternGlow)' : 'url(#lanternGlowDim)'}
           stroke="currentColor"
           strokeWidth="0.5"
-          opacity={isDark ? 1 : 0.5}
+          opacity={isDark ? 1 : 0.7}
         />
 
-        {/* Flame - only visible when lit */}
-        <g className="lantern-flame" style={{ opacity: isDark ? 1 : 0, transition: 'opacity 0.3s ease' }}>
+        {/* Flame - visible in both modes, just dimmer in light */}
+        <g className="lantern-flame" style={{ opacity: isDark ? 1 : 0.4, transition: 'opacity 0.4s ease' }}>
           {/* Outer flame glow */}
           <ellipse
             cx="12"
             cy="13"
             rx="2.5"
             ry="4"
-            fill="url(#flameGlow)"
+            fill={isDark ? 'url(#flameGlow)' : 'url(#flameGlowDim)'}
             opacity="0.6"
           >
             <animate
@@ -87,7 +87,7 @@ export function LanternToggle({ className = '' }: LanternToggleProps) {
           {/* Inner flame */}
           <path
             d="M12 9C12 9 10 11 10 13C10 14.5 10.8 15.5 12 16C13.2 15.5 14 14.5 14 13C14 11 12 9 12 9Z"
-            fill="url(#flameInner)"
+            fill={isDark ? 'url(#flameInner)' : 'url(#flameInnerDim)'}
           >
             <animate
               attributeName="d"
@@ -98,7 +98,7 @@ export function LanternToggle({ className = '' }: LanternToggleProps) {
           </path>
 
           {/* Flame core */}
-          <ellipse cx="12" cy="14" rx="1" ry="1.5" fill="#fff">
+          <ellipse cx="12" cy="14" rx="1" ry="1.5" fill={isDark ? '#fff' : 'rgba(255,255,255,0.7)'}>
             <animate
               attributeName="ry"
               values="1.5;2;1.5"
@@ -113,7 +113,7 @@ export function LanternToggle({ className = '' }: LanternToggleProps) {
           d="M9 18H15L16 20H8L9 18Z"
           className="lantern-cap"
           fill="currentColor"
-          opacity={isDark ? 1 : 0.6}
+          opacity={isDark ? 1 : 0.5}
         />
 
         {/* Bottom foot */}
@@ -121,11 +121,12 @@ export function LanternToggle({ className = '' }: LanternToggleProps) {
           d="M10 20H14V21C14 21.5 13.5 22 13 22H11C10.5 22 10 21.5 10 21V20Z"
           className="lantern-base"
           fill="currentColor"
-          opacity={isDark ? 1 : 0.6}
+          opacity={isDark ? 1 : 0.5}
         />
 
         {/* Gradient definitions */}
         <defs>
+          {/* Lit state gradients */}
           <radialGradient id="lanternGlow" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="#fde047" stopOpacity="0.9" />
             <stop offset="50%" stopColor="#f59e0b" stopOpacity="0.6" />
@@ -141,6 +142,24 @@ export function LanternToggle({ className = '' }: LanternToggleProps) {
             <stop offset="0%" stopColor="#fef08a" />
             <stop offset="50%" stopColor="#fbbf24" />
             <stop offset="100%" stopColor="#f59e0b" />
+          </linearGradient>
+
+          {/* Dim state gradients (for light mode) */}
+          <radialGradient id="lanternGlowDim" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#fcd34d" stopOpacity="0.5" />
+            <stop offset="50%" stopColor="#d97706" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#92400e" stopOpacity="0.15" />
+          </radialGradient>
+
+          <radialGradient id="flameGlowDim" cx="50%" cy="70%" r="50%">
+            <stop offset="0%" stopColor="#fef3c7" stopOpacity="0.8" />
+            <stop offset="100%" stopColor="#d97706" stopOpacity="0" />
+          </radialGradient>
+
+          <linearGradient id="flameInnerDim" x1="50%" y1="0%" x2="50%" y2="100%">
+            <stop offset="0%" stopColor="#fef3c7" />
+            <stop offset="50%" stopColor="#fcd34d" />
+            <stop offset="100%" stopColor="#d97706" />
           </linearGradient>
         </defs>
       </svg>

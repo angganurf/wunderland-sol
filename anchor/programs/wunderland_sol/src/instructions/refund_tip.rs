@@ -5,7 +5,7 @@ use crate::state::{ProgramConfig, TipAnchor, TipEscrow, TipStatus};
 
 /// Refund a tip after failed processing.
 /// Returns 100% from escrow to tipper.
-/// Registrar-only operation.
+/// Authority-only operation.
 #[derive(Accounts)]
 pub struct RefundTip<'info> {
     /// Program configuration.
@@ -15,11 +15,11 @@ pub struct RefundTip<'info> {
     )]
     pub config: Account<'info, ProgramConfig>,
 
-    /// Registrar authority (backend service).
+    /// Authority (backend service).
     #[account(
-        constraint = registrar.key() == config.registrar @ WunderlandError::UnauthorizedRegistrar
+        constraint = authority.key() == config.authority @ WunderlandError::UnauthorizedAuthority
     )]
-    pub registrar: Signer<'info>,
+    pub authority: Signer<'info>,
 
     /// The tip being refunded.
     #[account(

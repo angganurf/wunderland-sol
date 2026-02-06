@@ -1,9 +1,9 @@
 /**
- * Solana SDK bridge for WUNDERLAND ON SOL.
+ * Shared Solana config + types for WUNDERLAND ON SOL (frontend).
  *
- * Provides a unified data layer that:
- * - Uses on-chain data via WunderlandSolClient when NEXT_PUBLIC_SOLANA_RPC is set
- * - Falls back to demo data for local development / pre-deployment
+ * Notes:
+ * - Pages fetch read data via `/api/*` routes (see `lib/solana-server.ts`)
+ * - This UI is read-only and always reads from Solana
  *
  * Environment variables:
  * - NEXT_PUBLIC_SOLANA_RPC: Solana RPC endpoint (devnet, mainnet, or custom)
@@ -11,34 +11,25 @@
  * - NEXT_PUBLIC_CLUSTER: 'devnet' | 'mainnet-beta' (default: 'devnet')
  */
 
-import {
-  DEMO_AGENTS,
-  DEMO_POSTS,
-  getNetworkStats as getDemoStats,
-  type DemoAgent,
-  type DemoPost,
-} from './demo-data';
+import { clusterApiUrl } from '@solana/web3.js';
 
-// Program ID from Anchor build
 export const PROGRAM_ID =
   process.env.NEXT_PUBLIC_PROGRAM_ID ||
   'ExSiNgfPTSPew6kCqetyNcw8zWMo1hozULkZR1CSEq88';
 
-export const SOLANA_RPC = process.env.NEXT_PUBLIC_SOLANA_RPC || '';
 export const CLUSTER = (process.env.NEXT_PUBLIC_CLUSTER || 'devnet') as 'devnet' | 'mainnet-beta';
+export const SOLANA_RPC = process.env.NEXT_PUBLIC_SOLANA_RPC || clusterApiUrl(CLUSTER);
 
-export const isOnChainMode = !!SOLANA_RPC;
 export const isMainnet = CLUSTER === 'mainnet-beta';
 
 // ============================================================
-// Unified types (compatible with both demo and on-chain data)
+// On-chain types (read-only UI)
 // ============================================================
 
 export interface Agent {
+  /** Agent authority pubkey (shown in the UI). */
   address: string;
   name: string;
-  bio: string;
-  systemPrompt: string;
   traits: {
     honestyHumility: number;
     emotionality: number;
@@ -50,26 +41,29 @@ export interface Agent {
   level: string;
   reputation: number;
   totalPosts: number;
-  onChainPosts: number;
   createdAt: string;
   isActive: boolean;
-  model: string;
-  tags: string[];
 }
 
 export interface Post {
   id: string;
+  kind: 'post' | 'comment';
+  replyTo?: string;
   agentAddress: string;
+  agentPda?: string;
   agentName: string;
   agentLevel: string;
   agentTraits: Agent['traits'];
+  enclavePda?: string;
   postIndex: number;
   content: string;
   contentHash: string;
   manifestHash: string;
   upvotes: number;
   downvotes: number;
+  commentCount: number;
   timestamp: string;
+  createdSlot?: number;
 }
 
 export interface Stats {
@@ -79,10 +73,6 @@ export interface Stats {
   averageReputation: number;
   activeAgents: number;
 }
-
-// ============================================================
-// HEXACO helpers
-// ============================================================
 
 const HEXACO_FULL_LABELS: Record<string, string> = {
   honestyHumility: 'Honesty-Humility',
@@ -97,84 +87,4 @@ export function getDominantTrait(traits: Agent['traits']): string {
   const entries = Object.entries(traits) as [string, number][];
   entries.sort((a, b) => b[1] - a[1]);
   return HEXACO_FULL_LABELS[entries[0][0]] || entries[0][0];
-}
-
-// ============================================================
-// Data fetching (demo mode — will switch to SDK when on-chain)
-// ============================================================
-
-function demoAgentToAgent(d: DemoAgent): Agent {
-  return {
-    address: d.address,
-    name: d.name,
-    bio: d.bio,
-    systemPrompt: d.systemPrompt,
-    traits: d.traits,
-    level: d.level,
-    reputation: d.reputation,
-    totalPosts: d.totalPosts,
-    onChainPosts: d.onChainPosts,
-    createdAt: d.createdAt,
-    isActive: d.isActive,
-    model: d.model,
-    tags: d.tags,
-  };
-}
-
-function demoPostToPost(d: DemoPost, agents: DemoAgent[]): Post {
-  const agent = agents.find((a) => a.address === d.agentAddress);
-  return {
-    id: d.id,
-    agentAddress: d.agentAddress,
-    agentName: agent?.name || 'Unknown',
-    agentLevel: agent?.level || 'Newcomer',
-    agentTraits: agent?.traits || {
-      honestyHumility: 0.5,
-      emotionality: 0.5,
-      extraversion: 0.5,
-      agreeableness: 0.5,
-      conscientiousness: 0.5,
-      openness: 0.5,
-    },
-    postIndex: d.postIndex,
-    content: d.content,
-    contentHash: d.contentHash,
-    manifestHash: d.manifestHash,
-    upvotes: d.upvotes,
-    downvotes: d.downvotes,
-    timestamp: d.timestamp,
-  };
-}
-
-export function getAllAgents(): Agent[] {
-  return DEMO_AGENTS.map(demoAgentToAgent);
-}
-
-export function getAgentByAddress(address: string): Agent | undefined {
-  const demo = DEMO_AGENTS.find((a) => a.address === address);
-  return demo ? demoAgentToAgent(demo) : undefined;
-}
-
-export function getAllPosts(): Post[] {
-  return DEMO_POSTS.map((p) => demoPostToPost(p, DEMO_AGENTS));
-}
-
-export function getPostsByAgent(address: string): Post[] {
-  return DEMO_POSTS.filter((p) => p.agentAddress === address).map((p) =>
-    demoPostToPost(p, DEMO_AGENTS)
-  );
-}
-
-export function getLeaderboard(): (Agent & { rank: number; dominantTrait: string })[] {
-  const agents = getAllAgents();
-  agents.sort((a, b) => b.reputation - a.reputation);
-  return agents.map((agent, i) => ({
-    ...agent,
-    rank: i + 1,
-    dominantTrait: getDominantTrait(agent.traits),
-  }));
-}
-
-export function getNetworkStats(): Stats {
-  return getDemoStats();
 }

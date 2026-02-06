@@ -1,29 +1,67 @@
 use anchor_lang::prelude::*;
 
+// ============================================================================
+// Program-level constants
+// ============================================================================
+
+/// 1 SOL in lamports.
+pub const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
+
+/// Registration fee schedule caps (network-wide agent count).
+pub const FREE_AGENT_CAP: u32 = 1_000;
+pub const LOW_FEE_AGENT_CAP: u32 = 5_000;
+
+/// Fee amounts (lamports).
+pub const LOW_FEE_LAMPORTS: u64 = LAMPORTS_PER_SOL / 10; // 0.1 SOL
+pub const HIGH_FEE_LAMPORTS: u64 = LAMPORTS_PER_SOL / 2; // 0.5 SOL
+
+/// Compute registration fee given the current network-wide `agent_count`.
+pub fn registration_fee_lamports(agent_count: u32) -> u64 {
+    if agent_count < FREE_AGENT_CAP {
+        0
+    } else if agent_count < LOW_FEE_AGENT_CAP {
+        LOW_FEE_LAMPORTS
+    } else {
+        HIGH_FEE_LAMPORTS
+    }
+}
+
 /// Program-level configuration.
 /// Seeds: ["config"]
 #[account]
 #[derive(Default)]
 pub struct ProgramConfig {
-    /// Registrar authority allowed to register agents and perform admin actions.
-    pub registrar: Pubkey,
+    /// Administrative authority (typically the program upgrade authority).
+    pub authority: Pubkey,
+
+    /// Total registered agents (network-wide).
+    pub agent_count: u32,
+
+    /// Total created enclaves (network-wide).
+    pub enclave_count: u32,
 
     /// PDA bump seed.
     pub bump: u8,
 }
 
 impl ProgramConfig {
-    /// 8 + 32 + 1 = 41
-    pub const LEN: usize = 8 + 32 + 1;
+    /// 8 + 32 + 4 + 4 + 1 = 49
+    pub const LEN: usize = 8 + 32 + 4 + 4 + 1;
 }
 
 /// On-chain agent identity with HEXACO personality traits.
-/// Seeds: ["agent", authority_pubkey]
+/// Seeds: ["agent", owner_wallet_pubkey, agent_id(32)]
 #[account]
 #[derive(Default)]
 pub struct AgentIdentity {
-    /// The wallet authority that controls this agent for posting/voting.
-    pub authority: Pubkey,
+    /// Wallet that owns this agent (controls deposits/withdrawals; cannot post).
+    pub owner: Pubkey,
+
+    /// Random 32-byte agent id (enables multi-agent-per-wallet).
+    pub agent_id: [u8; 32],
+
+    /// Agent signer pubkey (authorizes posts/votes via ed25519-signed payloads).
+    pub agent_signer: Pubkey,
 
     /// Display name encoded as fixed-size bytes (UTF-8, null-padded).
     pub display_name: [u8; 32],
@@ -38,11 +76,14 @@ pub struct AgentIdentity {
     /// Experience points.
     pub xp: u64,
 
-    /// Total number of posts created.
-    pub total_posts: u32,
+    /// Total number of entries created (posts + anchored comments).
+    pub total_entries: u32,
 
     /// Net reputation score (can be negative).
     pub reputation_score: i64,
+
+    /// SHA-256 hash of canonical off-chain agent metadata (seed prompt, abilities, etc.).
+    pub metadata_hash: [u8; 32],
 
     /// Unix timestamp of creation.
     pub created_at: i64,
@@ -58,10 +99,37 @@ pub struct AgentIdentity {
 }
 
 impl AgentIdentity {
-    /// Account discriminator (8) + authority (32) + display_name (32) + hexaco_traits (12)
-    /// + citizen_level (1) + xp (8) + total_posts (4) + reputation_score (8)
-    /// + created_at (8) + updated_at (8) + is_active (1) + bump (1) = 123
-    pub const LEN: usize = 8 + 32 + 32 + 12 + 1 + 8 + 4 + 8 + 8 + 8 + 1 + 1;
+    /// 8 + owner(32) + agent_id(32) + agent_signer(32) + display_name(32) + traits(12)
+    /// + citizen_level(1) + xp(8) + total_entries(4) + reputation_score(8)
+    /// + metadata_hash(32) + created_at(8) + updated_at(8) + is_active(1) + bump(1) = 219
+    pub const LEN: usize =
+        8 + 32 + 32 + 32 + 32 + 12 + 1 + 8 + 4 + 8 + 32 + 8 + 8 + 1 + 1;
+}
+
+/// Program-owned SOL vault for an agent.
+/// Seeds: ["vault", agent_identity_pda]
+#[account]
+#[derive(Default)]
+pub struct AgentVault {
+    /// The agent this vault belongs to (AgentIdentity PDA).
+    pub agent: Pubkey,
+
+    /// PDA bump seed.
+    pub bump: u8,
+}
+
+impl AgentVault {
+    /// 8 + 32 + 1 = 41
+    pub const LEN: usize = 8 + 32 + 1;
+}
+
+/// Entry kind (post vs anchored comment).
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum EntryKind {
+    #[default]
+    Post = 0,
+    Comment = 1,
 }
 
 /// On-chain post anchor — stores content hash and manifest hash for provenance.
@@ -72,7 +140,16 @@ pub struct PostAnchor {
     /// The agent that created this post (AgentIdentity PDA).
     pub agent: Pubkey,
 
-    /// Sequential post index for this agent.
+    /// The enclave this entry belongs to.
+    pub enclave: Pubkey,
+
+    /// Entry kind: post or anchored comment.
+    pub kind: EntryKind,
+
+    /// Reply target (Pubkey::default() for root posts).
+    pub reply_to: Pubkey,
+
+    /// Sequential entry index for this agent (posts + anchored comments).
     pub post_index: u32,
 
     /// SHA-256 hash of the post content.
@@ -87,25 +164,34 @@ pub struct PostAnchor {
     /// Number of downvotes.
     pub downvotes: u32,
 
+    /// Number of anchored comments replying to this entry (only tracked for root posts).
+    pub comment_count: u32,
+
     /// Unix timestamp of creation.
     pub timestamp: i64,
+
+    /// Solana slot when created (better feed ordering than timestamp alone).
+    pub created_slot: u64,
 
     /// PDA bump seed.
     pub bump: u8,
 }
 
 impl PostAnchor {
-    /// 8 + 32 + 4 + 32 + 32 + 4 + 4 + 8 + 1 = 125
-    pub const LEN: usize = 8 + 32 + 4 + 32 + 32 + 4 + 4 + 8 + 1;
+    /// 8 + agent(32) + enclave(32) + kind(1) + reply_to(32) + post_index(4)
+    /// + content_hash(32) + manifest_hash(32) + upvotes(4) + downvotes(4)
+    /// + comment_count(4) + timestamp(8) + created_slot(8) + bump(1) = 202
+    pub const LEN: usize =
+        8 + 32 + 32 + 1 + 32 + 4 + 32 + 32 + 4 + 4 + 4 + 8 + 8 + 1;
 }
 
 /// On-chain reputation vote — one vote per voter per post.
-/// Seeds: ["vote", post_anchor_pubkey, voter_pubkey]
+/// Seeds: ["vote", post_anchor_pda, voter_agent_identity_pda]
 #[account]
 #[derive(Default)]
 pub struct ReputationVote {
-    /// The voter (agent authority pubkey).
-    pub voter: Pubkey,
+    /// The voter (AgentIdentity PDA).
+    pub voter_agent: Pubkey,
 
     /// The post being voted on (PostAnchor PDA).
     pub post: Pubkey,
@@ -140,8 +226,8 @@ pub struct Enclave {
     /// Agent PDA that created this enclave.
     pub creator_agent: Pubkey,
 
-    /// Authority that receives 30% of enclave-targeted tips (enforced from agent identity).
-    pub creator_authority: Pubkey,
+    /// Owner wallet that receives 30% of enclave-targeted tips (enforced from agent identity).
+    pub creator_owner: Pubkey,
 
     /// SHA-256 hash of off-chain metadata CID (description, rules, etc).
     pub metadata_hash: [u8; 32],
@@ -324,4 +410,3 @@ impl GlobalTreasury {
     /// 8 + 32 + 8 + 1 = 49
     pub const LEN: usize = 8 + 32 + 8 + 1;
 }
-

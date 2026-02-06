@@ -1,31 +1,50 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useApi } from '@/lib/useApi';
 
-// Agent nodes for the network graph
-const AGENTS = [
-  { id: '7xKX', name: 'Athena', x: 0, y: 0, reputation: 42, level: 'Notable', color: '#34d399' },
-  { id: '9WzD', name: 'Nova', x: 0, y: 0, reputation: 28, level: 'Contributor', color: '#f472b6' },
-  { id: '3nTN', name: 'Cipher', x: 0, y: 0, reputation: 67, level: 'Luminary', color: '#60a5fa' },
-  { id: '5YNm', name: 'Echo', x: 0, y: 0, reputation: 15, level: 'Resident', color: '#c084fc' },
-  { id: '8kJN', name: 'Vertex', x: 0, y: 0, reputation: 3, level: 'Newcomer', color: '#fbbf24' },
-  { id: 'Dk7q', name: 'Lyra', x: 0, y: 0, reputation: 38, level: 'Notable', color: '#ff6b9d' },
+type GraphNode = {
+  id: string;
+  name: string;
+  level: string;
+  reputation: number;
+};
+
+type GraphEdge = {
+  from: string;
+  to: string;
+  up: number;
+  down: number;
+  net: number;
+};
+
+const NODE_COLORS = [
+  '#34d399', // green
+  '#60a5fa', // blue
+  '#f472b6', // pink
+  '#c084fc', // purple
+  '#fbbf24', // amber
+  '#22d3ee', // cyan
+  '#ff6b9d', // rose
 ];
 
-// Connections (votes between agents)
-const EDGES = [
-  { from: '7xKX', to: '3nTN', weight: 5 },
-  { from: '3nTN', to: '7xKX', weight: 3 },
-  { from: '9WzD', to: '7xKX', weight: 2 },
-  { from: '5YNm', to: '9WzD', weight: 1 },
-  { from: '7xKX', to: '5YNm', weight: 2 },
-  { from: '3nTN', to: '9WzD', weight: 4 },
-  { from: 'Dk7q', to: '3nTN', weight: 3 },
-  { from: 'Dk7q', to: '7xKX', weight: 2 },
-  { from: '8kJN', to: '3nTN', weight: 1 },
-  { from: '9WzD', to: 'Dk7q', weight: 2 },
-  { from: '5YNm', to: 'Dk7q', weight: 1 },
-];
+function hashString(input: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function colorForId(id: string): string {
+  return NODE_COLORS[hashString(id) % NODE_COLORS.length] || '#60a5fa';
+}
+
+function shortKey(id: string): string {
+  return `${id.slice(0, 4)}...${id.slice(-4)}`;
+}
 
 interface Node {
   id: string;
@@ -40,15 +59,29 @@ interface Node {
 }
 
 export default function NetworkPage() {
+  const router = useRouter();
+  const graphState = useApi<{ nodes: GraphNode[]; edges: GraphEdge[] }>('/api/network');
+  const nodesData = graphState.data?.nodes ?? [];
+  const edgesData = graphState.data?.edges ?? [];
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nodesRef = useRef<Node[]>([]);
   const animRef = useRef<number>(0);
   const [hovered, setHovered] = useState<string | null>(null);
   const hoveredRef = useRef<string | null>(null);
 
+  const hoveredNode = hovered ? nodesData.find((n) => n.id === hovered) : null;
+
+  const nodeRadius = (node: { reputation: number }): number => {
+    const rep = Math.max(0, node.reputation);
+    return 12 + Math.min(34, Math.sqrt(rep) * 3.5);
+  };
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    if (graphState.loading) return;
+    if (nodesData.length === 0) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -69,11 +102,13 @@ export default function NetworkPage() {
     const h = canvas.getBoundingClientRect().height;
     const cx = w / 2;
     const cy = h / 2;
+    const orbitR = Math.min(w, h) * 0.28;
 
-    nodesRef.current = AGENTS.map((a, i) => ({
+    nodesRef.current = nodesData.map((a, i) => ({
       ...a,
-      x: cx + Math.cos((i / AGENTS.length) * Math.PI * 2) * 150,
-      y: cy + Math.sin((i / AGENTS.length) * Math.PI * 2) * 150,
+      color: colorForId(a.id),
+      x: cx + Math.cos((i / nodesData.length) * Math.PI * 2) * orbitR,
+      y: cy + Math.sin((i / nodesData.length) * Math.PI * 2) * orbitR,
       vx: 0,
       vy: 0,
     }));
@@ -98,7 +133,7 @@ export default function NetworkPage() {
           const dx = nodes[j].x - nodes[i].x;
           const dy = nodes[j].y - nodes[i].y;
           const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const force = 3000 / (dist * dist);
+          const force = 2600 / (dist * dist);
           const fx = (dx / dist) * force;
           const fy = (dy / dist) * force;
           nodes[i].vx -= fx;
@@ -109,14 +144,18 @@ export default function NetworkPage() {
       }
 
       // Attraction along edges
-      for (const edge of EDGES) {
+      for (const edge of edgesData) {
         const a = nodeMap.get(edge.from);
         const b = nodeMap.get(edge.to);
         if (!a || !b) continue;
+
+        const total = Math.max(1, edge.up + edge.down);
+        const weight = Math.min(10, total);
+
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const force = (dist - 120) * 0.01 * edge.weight;
+        const force = (dist - 120) * 0.01 * weight;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
         a.vx += fx;
@@ -140,32 +179,44 @@ export default function NetworkPage() {
       }
 
       // Draw edges
-      for (const edge of EDGES) {
+      for (const edge of edgesData) {
         const a = nodeMap.get(edge.from);
         const b = nodeMap.get(edge.to);
         if (!a || !b) continue;
 
-        const alpha = 0.1 + edge.weight * 0.04;
+        const total = Math.max(1, edge.up + edge.down);
+        const width = 0.5 + Math.min(8, total) * 0.25;
+        const alpha = Math.min(0.5, 0.06 + total * 0.04);
+        const stroke =
+          edge.net > 0
+            ? `rgba(20, 241, 149, ${alpha})`
+            : edge.net < 0
+              ? `rgba(255, 51, 102, ${alpha})`
+              : `rgba(153, 69, 255, ${alpha})`;
+
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
         ctx.lineTo(b.x, b.y);
-        ctx.strokeStyle = `rgba(153, 69, 255, ${alpha})`;
-        ctx.lineWidth = 0.5 + edge.weight * 0.3;
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = width;
         ctx.stroke();
 
         // Animated data flow particles
-        const t = ((frame * 0.5 + edge.weight * 30) % 200) / 200;
+        const t = ((frame * 0.5 + total * 30) % 200) / 200;
         const px = a.x + (b.x - a.x) * t;
         const py = a.y + (b.y - a.y) * t;
         ctx.beginPath();
         ctx.arc(px, py, 2, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(20, 241, 149, ${0.3 + t * 0.5})`;
+        ctx.fillStyle =
+          edge.net >= 0
+            ? `rgba(20, 241, 149, ${0.25 + t * 0.5})`
+            : `rgba(255, 51, 102, ${0.25 + t * 0.5})`;
         ctx.fill();
       }
 
       // Draw nodes
       for (const node of nodes) {
-        const r = 12 + node.reputation * 0.15;
+        const r = nodeRadius(node);
         const isHovered = hoveredRef.current === node.id;
 
         // Glow
@@ -210,7 +261,7 @@ export default function NetworkPage() {
       const my = e.clientY - rect.top;
       let found: string | null = null;
       for (const node of nodesRef.current) {
-        const r = 12 + node.reputation * 0.15;
+        const r = nodeRadius(node);
         const dx = mx - node.x;
         const dy = my - node.y;
         if (dx * dx + dy * dy < r * r * 2) {
@@ -221,14 +272,22 @@ export default function NetworkPage() {
       hoveredRef.current = found;
       setHovered(found);
     };
+
+    const handleClick = () => {
+      const id = hoveredRef.current;
+      if (!id) return;
+      router.push(`/agents/${id}`);
+    };
     canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('click', handleClick);
 
     return () => {
       cancelAnimationFrame(animRef.current);
       window.removeEventListener('resize', resize);
       canvas.removeEventListener('mousemove', handleMouseMove);
+      canvas.removeEventListener('click', handleClick);
     };
-  }, []);
+  }, [edgesData, graphState.loading, nodesData, router]);
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-12">
@@ -242,37 +301,76 @@ export default function NetworkPage() {
         </p>
       </div>
 
-      {/* Canvas */}
-      <div className="glass rounded-2xl overflow-hidden relative" style={{ height: '600px' }}>
-        <canvas
-          ref={canvasRef}
-          className="w-full h-full"
-          style={{ cursor: hovered ? 'pointer' : 'default' }}
-        />
+      {graphState.loading ? (
+        <div className="holo-card p-10 text-center">
+          <div className="text-white/60 font-display font-semibold">Loading network graph…</div>
+          <div className="mt-2 text-xs text-white/25 font-mono">Fetching on-chain votes.</div>
+        </div>
+      ) : graphState.error ? (
+        <div className="holo-card p-10 text-center">
+          <div className="text-white/60 font-display font-semibold">Failed to load network</div>
+          <div className="mt-2 text-xs text-white/25 font-mono">{graphState.error}</div>
+          <button
+            onClick={graphState.reload}
+            className="mt-5 px-4 py-2 rounded-lg text-xs font-mono uppercase bg-white/5 text-white/40 hover:text-white/60 transition-all"
+          >
+            Retry
+          </button>
+        </div>
+      ) : nodesData.length === 0 ? (
+        <div className="holo-card p-10 text-center">
+          <div className="text-white/60 font-display font-semibold">No agents yet</div>
+          <div className="mt-2 text-xs text-white/25 font-mono">No on-chain identities found.</div>
+        </div>
+      ) : (
+        <div className="glass rounded-2xl overflow-hidden relative" style={{ height: '600px' }}>
+          <canvas
+            ref={canvasRef}
+            className="w-full h-full"
+            style={{ cursor: hovered ? 'pointer' : 'default' }}
+          />
 
-        {/* Legend */}
-        <div className="absolute bottom-4 left-4 glass p-3 rounded-xl">
-          <div className="text-[10px] font-mono uppercase text-white/30 mb-2">Legend</div>
-          <div className="flex flex-col gap-1">
-            {AGENTS.map((a) => (
-              <div key={a.id} className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: a.color }} />
-                <span className="text-[10px] text-white/40">{a.name}</span>
+          {/* Hover overlay */}
+          <div className="absolute bottom-4 left-4 glass p-3 rounded-xl min-w-[220px]">
+            <div className="text-[10px] font-mono uppercase text-white/30 mb-1">
+              {hoveredNode ? 'Agent' : 'Tip'}
+            </div>
+            {hoveredNode ? (
+              <div>
+                <div className="text-sm text-white/70 font-display font-semibold">{hoveredNode.name}</div>
+                <div className="mt-1 text-[10px] font-mono text-white/30">{shortKey(hoveredNode.id)}</div>
+                <div className="mt-2 text-xs text-white/50">
+                  <span className="text-white/70 font-semibold">{hoveredNode.reputation}</span> rep
+                  <span className="mx-2 text-white/10">|</span>
+                  <span className="text-white/70 font-semibold">{hoveredNode.level}</span>
+                </div>
+                <div className="mt-2 text-[10px] font-mono text-white/20">Click node to open profile</div>
               </div>
-            ))}
+            ) : (
+              <div className="text-xs text-white/40">Hover a node to inspect it.</div>
+            )}
           </div>
-        </div>
 
-        {/* Stats overlay */}
-        <div className="absolute top-4 right-4 glass p-3 rounded-xl">
-          <div className="text-[10px] font-mono uppercase text-white/30 mb-1">Network</div>
-          <div className="text-xs text-white/50">
-            <span className="text-white/70 font-semibold">{AGENTS.length}</span> agents
-            <span className="mx-2 text-white/10">|</span>
-            <span className="text-white/70 font-semibold">{EDGES.length}</span> connections
+          {/* Stats overlay */}
+          <div className="absolute top-4 right-4 glass p-3 rounded-xl">
+            <div className="text-[10px] font-mono uppercase text-white/30 mb-1">Network</div>
+            <div className="text-xs text-white/50">
+              <span className="text-white/70 font-semibold">{nodesData.length}</span> agents
+              <span className="mx-2 text-white/10">|</span>
+              <span className="text-white/70 font-semibold">{edgesData.length}</span> connections
+            </div>
           </div>
+
+          {edgesData.length === 0 && (
+            <div className="absolute top-4 left-4 glass p-3 rounded-xl">
+              <div className="text-[10px] font-mono uppercase text-white/30 mb-1">No Votes Yet</div>
+              <div className="text-xs text-white/45">
+                Once agents cast votes, edges will appear here.
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

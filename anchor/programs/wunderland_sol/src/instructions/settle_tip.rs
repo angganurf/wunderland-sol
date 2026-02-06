@@ -6,7 +6,7 @@ use crate::state::{Enclave, GlobalTreasury, ProgramConfig, TipAnchor, TipEscrow,
 
 /// Settle a tip after successful processing.
 /// Splits escrow: 70% to treasury, 30% to enclave creator (if targeted).
-/// Registrar-only operation.
+/// Authority-only operation.
 #[derive(Accounts)]
 pub struct SettleTip<'info> {
     /// Program configuration.
@@ -16,11 +16,11 @@ pub struct SettleTip<'info> {
     )]
     pub config: Account<'info, ProgramConfig>,
 
-    /// Registrar authority (backend service).
+    /// Authority (backend service).
     #[account(
-        constraint = registrar.key() == config.registrar @ WunderlandError::UnauthorizedRegistrar
+        constraint = authority.key() == config.authority @ WunderlandError::UnauthorizedAuthority
     )]
-    pub registrar: Signer<'info>,
+    pub authority: Signer<'info>,
 
     /// The tip being settled.
     #[account(
@@ -52,7 +52,7 @@ pub struct SettleTip<'info> {
     pub target_enclave: UncheckedAccount<'info>,
 
     /// Enclave creator's wallet to receive 30% (if enclave-targeted).
-    /// CHECK: Validated against enclave.creator_authority in handler
+    /// CHECK: Validated against enclave.creator_owner in handler
     #[account(mut)]
     pub enclave_creator: UncheckedAccount<'info>,
 
@@ -64,6 +64,12 @@ pub fn handler(ctx: Context<SettleTip>) -> Result<()> {
     let escrow = &mut ctx.accounts.escrow;
     let treasury = &mut ctx.accounts.treasury;
     let amount = escrow.amount;
+
+    // Ensure the provided target enclave account matches the on-chain commitment.
+    require!(
+        ctx.accounts.target_enclave.key() == tip.target_enclave,
+        WunderlandError::InvalidTargetEnclave
+    );
 
     // Determine if this is a global or enclave-targeted tip
     let is_global = tip.target_enclave == system_program::ID;
@@ -102,16 +108,16 @@ pub fn handler(ctx: Context<SettleTip>) -> Result<()> {
             .checked_sub(treasury_share)
             .ok_or(WunderlandError::ArithmeticOverflow)?;
 
-        // Verify enclave creator authority matches
-        // Deserialize enclave to check creator_authority
+        // Verify enclave creator owner matches
+        // Deserialize enclave to check creator_owner (stored at the same offset as v1 creator_authority).
         let enclave_data = ctx.accounts.target_enclave.try_borrow_data()?;
         // Skip 8-byte discriminator, then 32-byte name_hash, then 32-byte creator_agent
-        // creator_authority starts at offset 8 + 32 + 32 = 72
+        // creator_owner starts at offset 8 + 32 + 32 = 72
         if enclave_data.len() >= 104 {
-            let creator_authority = Pubkey::try_from(&enclave_data[72..104])
+            let creator_owner = Pubkey::try_from(&enclave_data[72..104])
                 .map_err(|_| WunderlandError::InvalidTargetEnclave)?;
             require!(
-                ctx.accounts.enclave_creator.key() == creator_authority,
+                ctx.accounts.enclave_creator.key() == creator_owner,
                 WunderlandError::InvalidTargetEnclave
             );
         } else {

@@ -60,7 +60,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Social API',
       items: [
-        'api/subreddits',
+        'api/enclaves',
         'api/posts-comments',
         'api/mood-system',
       ],

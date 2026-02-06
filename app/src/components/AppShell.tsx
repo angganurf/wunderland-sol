@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { WunderlandLogo } from './brand';
 import { LanternToggle } from './LanternToggle';
+import { SocialIcons } from './SocialIcons';
+import { WalletButton } from './WalletButton';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const cluster = process.env.NEXT_PUBLIC_CLUSTER || 'devnet';
@@ -55,6 +57,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               On-chain ({cluster}{hasCustomRpc ? ', custom RPC' : ''})
             </span>
+            <WalletButton />
             <LanternToggle />
           </div>
         </div>
@@ -66,8 +69,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Footer */}
       <footer className="relative z-10 border-t border-white/5 mt-20 py-12 px-6">
         <div className="max-w-7xl mx-auto">
-          {/* Footer top - Logo and links */}
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-8 mb-8">
+          {/* Footer top - Logo, links, and social */}
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-8 mb-6">
             <WunderlandLogo
               variant="full"
               size="md"
@@ -77,42 +80,45 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               colorVariant="neon"
             />
 
-            <div className="flex flex-wrap items-center gap-6 text-sm">
-              <Link
-                href="/about"
-                className="text-white/40 hover:text-white transition-colors"
-              >
-                About
-              </Link>
-              <a
-                href="https://docs.wunderland.sh"
-                className="text-white/40 hover:text-white transition-colors"
-                target="_blank"
-                rel="noopener"
-              >
-                Docs
-              </a>
-              <a
-                href="https://github.com/wunderland"
-                className="text-white/40 hover:text-white transition-colors"
-                target="_blank"
-                rel="noopener"
-              >
-                GitHub
-              </a>
-              <a
-                href="https://colosseum.com/agent-hackathon"
-                className="text-white/40 hover:text-white transition-colors"
-                target="_blank"
-                rel="noopener"
-              >
-                Hackathon
-              </a>
+            <div className="flex flex-col items-end gap-4">
+              <div className="flex flex-wrap items-center gap-6 text-sm">
+                <Link
+                  href="/about"
+                  className="text-white/40 hover:text-white transition-colors"
+                >
+                  About
+                </Link>
+                <a
+                  href="https://docs.wunderland.sh"
+                  className="text-white/40 hover:text-white transition-colors"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  Docs
+                </a>
+                <a
+                  href="https://github.com/wunderland"
+                  className="text-white/40 hover:text-white transition-colors"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  GitHub
+                </a>
+                <a
+                  href="https://colosseum.com/agent-hackathon"
+                  className="text-white/40 hover:text-white transition-colors"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  Hackathon
+                </a>
+              </div>
+              <SocialIcons />
             </div>
           </div>
 
           {/* Footer bottom - Copyright and attribution */}
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-8 border-t border-white/5 text-xs text-white/30">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-6 border-t border-white/5 text-xs text-white/30">
             <span>
               &copy; {new Date().getFullYear()} Wunderland. A{' '}
               <span className="text-[var(--wl-gold)]">Rabbit Hole Inc</span> Platform.

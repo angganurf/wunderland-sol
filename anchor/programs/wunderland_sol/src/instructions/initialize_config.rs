@@ -5,24 +5,33 @@ use anchor_lang::solana_program::{
 };
 
 use crate::errors::WunderlandError;
-use crate::state::ProgramConfig;
+use crate::state::{GlobalTreasury, ProgramConfig};
 
 #[derive(Accounts)]
 pub struct InitializeConfig<'info> {
     #[account(
         init,
-        payer = registrar,
+        payer = authority,
         space = ProgramConfig::LEN,
         seeds = [b"config"],
         bump
     )]
     pub config: Account<'info, ProgramConfig>,
 
+    #[account(
+        init,
+        payer = authority,
+        space = GlobalTreasury::LEN,
+        seeds = [b"treasury"],
+        bump
+    )]
+    pub treasury: Account<'info, GlobalTreasury>,
+
     /// CHECK: Upgradeable loader ProgramData account for this program.
     pub program_data: UncheckedAccount<'info>,
 
     #[account(mut)]
-    pub registrar: Signer<'info>,
+    pub authority: Signer<'info>,
 
     pub system_program: Program<'info, System>,
 }
@@ -61,18 +70,27 @@ pub fn handler(ctx: Context<InitializeConfig>) -> Result<()> {
                 .ok_or(error!(WunderlandError::ProgramImmutable))?;
             require_keys_eq!(
                 upgrade_authority,
-                ctx.accounts.registrar.key(),
-                WunderlandError::UnauthorizedRegistrar
+                ctx.accounts.authority.key(),
+                WunderlandError::UnauthorizedAuthority
             );
         }
         _ => return err!(WunderlandError::InvalidProgramData),
     }
 
     let cfg = &mut ctx.accounts.config;
-    cfg.registrar = ctx.accounts.registrar.key();
+    cfg.authority = ctx.accounts.authority.key();
+    cfg.agent_count = 0;
+    cfg.enclave_count = 0;
     cfg.bump = ctx.bumps.config;
 
-    msg!("Program config initialized. Registrar: {}", cfg.registrar);
+    let treasury = &mut ctx.accounts.treasury;
+    treasury.authority = ctx.accounts.authority.key();
+    treasury.total_collected = 0;
+    treasury.bump = ctx.bumps.treasury;
+
+    msg!(
+        "Program config initialized. Authority: {}",
+        cfg.authority
+    );
     Ok(())
 }
-

@@ -50,7 +50,41 @@ describe("wunderland-sol", () => {
     );
   }
 
+  function deriveConfigPDA() {
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("config")],
+      program.programId
+    );
+  }
+
+  function deriveProgramDataPDA() {
+    const loaderId = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
+    return PublicKey.findProgramAddressSync(
+      [program.programId.toBuffer()],
+      loaderId
+    );
+  }
+
+  it("initializes config", async () => {
+    const [configPda] = deriveConfigPDA();
+    const [programDataPda] = deriveProgramDataPDA();
+
+    await program.methods
+      .initializeConfig()
+      .accounts({
+        config: configPda,
+        programData: programDataPda,
+        registrar: authority.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    const cfg = await program.account.programConfig.fetch(configPda);
+    expect(cfg.registrar.toBase58()).to.equal(authority.publicKey.toBase58());
+  });
+
   it("initializes an agent", async () => {
+    const [configPda] = deriveConfigPDA();
     const [agentPda] = deriveAgentPDA(authority.publicKey);
 
     const traits: number[] = [850, 450, 700, 900, 850, 600]; // HEXACO values (0-1000)
@@ -58,8 +92,10 @@ describe("wunderland-sol", () => {
     await program.methods
       .initializeAgent(encodeName("Athena"), traits)
       .accounts({
+        config: configPda,
         agentIdentity: agentPda,
-        authority: authority.publicKey,
+        agentAuthority: authority.publicKey,
+        registrar: authority.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
       .rpc();
@@ -106,6 +142,22 @@ describe("wunderland-sol", () => {
     );
     await provider.connection.confirmTransaction(sig);
 
+    // Register voter as agent so it can vote.
+    const [configPda] = deriveConfigPDA();
+    const [voterAgentPda] = deriveAgentPDA(voter.publicKey);
+
+    const voterTraits: number[] = [600, 250, 850, 450, 800, 500];
+    await program.methods
+      .initializeAgent(encodeName("Voter"), voterTraits)
+      .accounts({
+        config: configPda,
+        agentIdentity: voterAgentPda,
+        agentAuthority: voter.publicKey,
+        registrar: authority.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
     const [agentPda] = deriveAgentPDA(authority.publicKey);
     const [postPda] = derivePostPDA(agentPda, 0);
     const [votePda] = deriveVotePDA(postPda, voter.publicKey);
@@ -116,6 +168,7 @@ describe("wunderland-sol", () => {
         reputationVote: votePda,
         postAnchor: postPda,
         postAgent: agentPda,
+        voterAgent: voterAgentPda,
         voter: voter.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
@@ -133,13 +186,16 @@ describe("wunderland-sol", () => {
   });
 
   it("updates agent level", async () => {
+    const [configPda] = deriveConfigPDA();
     const [agentPda] = deriveAgentPDA(authority.publicKey);
 
     await program.methods
       .updateAgentLevel(2, new anchor.BN(100))
       .accounts({
+        config: configPda,
         agentIdentity: agentPda,
-        authority: authority.publicKey,
+        agentAuthority: authority.publicKey,
+        registrar: authority.publicKey,
       })
       .rpc();
 
@@ -149,13 +205,16 @@ describe("wunderland-sol", () => {
   });
 
   it("deactivates an agent", async () => {
+    const [configPda] = deriveConfigPDA();
     const [agentPda] = deriveAgentPDA(authority.publicKey);
 
     await program.methods
       .deactivateAgent()
       .accounts({
+        config: configPda,
         agentIdentity: agentPda,
-        authority: authority.publicKey,
+        agentAuthority: authority.publicKey,
+        registrar: authority.publicKey,
       })
       .rpc();
 

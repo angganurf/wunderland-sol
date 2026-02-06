@@ -2,10 +2,24 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import {
+  Connection,
+  PublicKey,
+  SystemProgram,
+  Transaction,
+  TransactionInstruction,
+} from '@solana/web3.js';
+import { Buffer } from 'buffer';
 import { ProceduralAvatar } from '@/components/ProceduralAvatar';
 import { SortTabs } from '@/components/SortTabs';
-import { type Post } from '@/lib/solana';
+import { CLUSTER, PROGRAM_ID, SOLANA_RPC, type Post } from '@/lib/solana';
 import { useApi } from '@/lib/useApi';
+import {
+  WALLET_EVENT_NAME,
+  getWalletProvider,
+  readStoredWalletAddress,
+  shortAddress,
+} from '@/lib/wallet';
 
 // ============================================================================
 // Types
@@ -40,6 +54,35 @@ interface PricingTier {
   description: string;
 }
 
+interface TipSubmitResult {
+  tipNonce: number;
+  priority: 'low' | 'normal' | 'high' | 'breaking';
+  amountLamports: number;
+  estimatedTotalLamports: number;
+  signature: string;
+  tipPda: string;
+}
+
+interface TipSubmitTxParams {
+  contentHash: number[];
+  amount: number;
+  sourceType: number;
+  tipNonce: number;
+  targetEnclave: string;
+  priority: TipSubmitResult['priority'];
+}
+
+interface TipSubmitApiResponse {
+  valid: boolean;
+  txParams?: TipSubmitTxParams;
+  estimatedFees?: {
+    accountRent: number;
+    transactionFee: number;
+    total: number;
+  };
+  error?: string;
+}
+
 interface StimulusItem {
   id: string;
   type: 'tip' | 'news';
@@ -55,6 +98,83 @@ interface StimulusItem {
   publishedAt?: string;
 }
 
+const SUBMIT_TIP_DISCRIMINATOR = Uint8Array.from([223, 59, 46, 101, 161, 189, 154, 37]);
+
+function u64ToLeBytes(value: bigint): Uint8Array {
+  const out = new Uint8Array(8);
+  let v = value;
+  for (let i = 0; i < 8; i++) {
+    out[i] = Number(v & 0xffn);
+    v >>= 8n;
+  }
+  return out;
+}
+
+function deriveTipPda(tipper: PublicKey, tipNonce: bigint, programId: PublicKey): PublicKey {
+  const [tipPda] = PublicKey.findProgramAddressSync(
+    [new TextEncoder().encode('tip'), tipper.toBytes(), u64ToLeBytes(tipNonce)],
+    programId,
+  );
+  return tipPda;
+}
+
+function deriveTipEscrowPda(tipPda: PublicKey, programId: PublicKey): PublicKey {
+  const [escrowPda] = PublicKey.findProgramAddressSync(
+    [new TextEncoder().encode('tip_escrow'), tipPda.toBytes()],
+    programId,
+  );
+  return escrowPda;
+}
+
+function deriveTipRateLimitPda(tipper: PublicKey, programId: PublicKey): PublicKey {
+  const [rateLimitPda] = PublicKey.findProgramAddressSync(
+    [new TextEncoder().encode('tip_rate_limit'), tipper.toBytes()],
+    programId,
+  );
+  return rateLimitPda;
+}
+
+function buildSubmitTipInstruction(opts: {
+  programId: PublicKey;
+  tipper: PublicKey;
+  contentHash: Uint8Array;
+  amount: bigint;
+  sourceType: number;
+  tipNonce: bigint;
+  targetEnclave: PublicKey;
+}): { ix: TransactionInstruction; tipPda: PublicKey } {
+  const tipPda = deriveTipPda(opts.tipper, opts.tipNonce, opts.programId);
+  const escrowPda = deriveTipEscrowPda(tipPda, opts.programId);
+  const rateLimitPda = deriveTipRateLimitPda(opts.tipper, opts.programId);
+
+  const ixData = new Uint8Array(8 + 32 + 8 + 1 + 8);
+  let offset = 0;
+  ixData.set(SUBMIT_TIP_DISCRIMINATOR, offset);
+  offset += 8;
+  ixData.set(opts.contentHash, offset);
+  offset += 32;
+  ixData.set(u64ToLeBytes(opts.amount), offset);
+  offset += 8;
+  ixData[offset] = opts.sourceType;
+  offset += 1;
+  ixData.set(u64ToLeBytes(opts.tipNonce), offset);
+
+  const ix = new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.tipper, isSigner: true, isWritable: true },
+      { pubkey: rateLimitPda, isSigner: false, isWritable: true },
+      { pubkey: tipPda, isSigner: false, isWritable: true },
+      { pubkey: escrowPda, isSigner: false, isWritable: true },
+      { pubkey: opts.targetEnclave, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.from(ixData),
+  });
+
+  return { ix, tipPda };
+}
+
 // ============================================================================
 // Tip Submission Form
 // ============================================================================
@@ -63,9 +183,14 @@ function TipSubmitForm() {
   const [content, setContent] = useState('');
   const [contentType, setContentType] = useState<'text' | 'url'>('text');
   const [amount, setAmount] = useState(0.02);
+  const [tipper, setTipper] = useState('');
   const [targetEnclave, setTargetEnclave] = useState<string>('');
   const [preview, setPreview] = useState<TipPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [walletConnecting, setWalletConnecting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitResult, setSubmitResult] = useState<TipSubmitResult | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
   // Fetch pricing tiers (for future use)
@@ -79,16 +204,33 @@ function TipSubmitForm() {
     return 'low';
   }, [amount]);
 
+  useEffect(() => {
+    const provider = getWalletProvider();
+    const initialAddress = provider?.publicKey?.toBase58() || readStoredWalletAddress();
+    setTipper(initialAddress);
+
+    const onWalletChanged = (event: Event) => {
+      const custom = event as CustomEvent<{ address?: string }>;
+      const address = custom.detail?.address || '';
+      setTipper(address);
+      setSubmitError(null);
+    };
+
+    window.addEventListener(WALLET_EVENT_NAME, onWalletChanged);
+    return () => window.removeEventListener(WALLET_EVENT_NAME, onWalletChanged);
+  }, []);
+
   // Preview content
   const handlePreview = async () => {
     if (!content.trim()) return;
 
     setPreviewLoading(true);
+    setSubmitError(null);
     try {
       const res = await fetch('/api/tips/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, contentType }),
+        body: JSON.stringify({ content, sourceType: contentType }),
       });
       const data = await res.json();
       setPreview(data);
@@ -109,7 +251,131 @@ function TipSubmitForm() {
   // Reset preview when content changes
   useEffect(() => {
     setPreview(null);
+    setSubmitError(null);
   }, [content, contentType]);
+
+  const connectWallet = async (): Promise<string> => {
+    const provider = getWalletProvider();
+    if (!provider) {
+      throw new Error('No Solana wallet found. Install Phantom or another injected wallet.');
+    }
+    if (provider.publicKey) {
+      const existing = provider.publicKey.toBase58();
+      setTipper(existing);
+      return existing;
+    }
+
+    setWalletConnecting(true);
+    try {
+      const connected = await provider.connect();
+      const address = connected.publicKey.toBase58();
+      setTipper(address);
+      return address;
+    } finally {
+      setWalletConnecting(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!preview?.valid || !preview.contentHash) return;
+
+    setSubmitLoading(true);
+    setSubmitError(null);
+    setSubmitResult(null);
+
+    try {
+      const walletAddress = await connectWallet();
+      const lamports = Math.round(amount * 1_000_000_000);
+      const res = await fetch('/api/tips/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contentHash: preview.contentHash,
+          amount: lamports,
+          sourceType: contentType,
+          targetEnclave: targetEnclave.trim() || undefined,
+          tipper: walletAddress,
+        }),
+      });
+
+      const data = (await res.json()) as TipSubmitApiResponse;
+      if (!res.ok || !data?.valid || !data?.txParams) {
+        throw new Error(data?.error || 'Tip submission validation failed');
+      }
+
+      const contentHashBytes = Uint8Array.from(data.txParams.contentHash);
+      if (contentHashBytes.length !== 32) {
+        throw new Error('Invalid content hash from submit API');
+      }
+
+      const programId = new PublicKey(PROGRAM_ID);
+      const tipperPubkey = new PublicKey(walletAddress);
+      const targetEnclavePubkey = new PublicKey(data.txParams.targetEnclave);
+      const { ix, tipPda } = buildSubmitTipInstruction({
+        programId,
+        tipper: tipperPubkey,
+        contentHash: contentHashBytes,
+        amount: BigInt(data.txParams.amount),
+        sourceType: data.txParams.sourceType,
+        tipNonce: BigInt(data.txParams.tipNonce),
+        targetEnclave: targetEnclavePubkey,
+      });
+
+      const connection = new Connection(SOLANA_RPC, 'confirmed');
+      const latestBlockhash = await connection.getLatestBlockhash('confirmed');
+
+      const tx = new Transaction();
+      tx.feePayer = tipperPubkey;
+      tx.recentBlockhash = latestBlockhash.blockhash;
+      tx.add(ix);
+
+      const provider = getWalletProvider();
+      if (!provider) {
+        throw new Error('Wallet disconnected before signing');
+      }
+
+      let signature: string;
+      if (provider.signAndSendTransaction) {
+        const sendRes = await provider.signAndSendTransaction(tx, {
+          preflightCommitment: 'confirmed',
+        });
+        if (typeof sendRes.signature !== 'string') {
+          throw new Error('Wallet returned an unsupported signature format');
+        }
+        signature = sendRes.signature;
+      } else if (provider.signTransaction) {
+        const signedTx = await provider.signTransaction(tx);
+        signature = await connection.sendRawTransaction(signedTx.serialize(), {
+          preflightCommitment: 'confirmed',
+        });
+      } else {
+        throw new Error('Connected wallet cannot sign transactions');
+      }
+
+      await connection.confirmTransaction(
+        {
+          signature,
+          blockhash: latestBlockhash.blockhash,
+          lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+        },
+        'confirmed',
+      );
+
+      setSubmitResult({
+        tipNonce: data.txParams.tipNonce as number,
+        priority: data.txParams.priority as TipSubmitResult['priority'],
+        amountLamports: lamports,
+        estimatedTotalLamports: (data.estimatedFees?.total as number) ?? lamports,
+        signature,
+        tipPda: tipPda.toBase58(),
+      });
+      setSubmitted(true);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Failed to submit tip');
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
 
   const priorityColors: Record<string, string> = {
     low: 'text-white/50',
@@ -117,6 +383,7 @@ function TipSubmitForm() {
     high: 'text-[var(--neon-gold)]',
     breaking: 'text-[var(--neon-magenta)]',
   };
+  const explorerCluster = CLUSTER === 'mainnet-beta' ? 'mainnet-beta' : 'devnet';
 
   return (
     <div className="holo-card p-6">
@@ -233,6 +500,38 @@ function TipSubmitForm() {
 
       {/* Target enclave (optional) */}
       <div className="mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-xs text-white/40 font-mono uppercase">
+            Connected Wallet (required)
+          </label>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                setSubmitError(null);
+                await connectWallet();
+              } catch (error) {
+                setSubmitError(error instanceof Error ? error.message : 'Failed to connect wallet');
+              }
+            }}
+            disabled={walletConnecting}
+            className="px-2 py-1 rounded text-[10px] font-mono uppercase bg-white/5 text-white/50 hover:text-white/80 disabled:opacity-60"
+          >
+            {walletConnecting ? 'Connecting...' : 'Connect'}
+          </button>
+        </div>
+        <input
+          type="text"
+          value={tipper}
+          readOnly
+          placeholder="No wallet connected"
+          className="w-full mb-1 px-4 py-2 rounded-lg bg-black/30 border border-white/10 text-white/90 placeholder-white/30 text-sm focus:outline-none"
+        />
+        {tipper && (
+          <div className="mb-3 text-[10px] text-white/35 font-mono">
+            Active: {shortAddress(tipper)}
+          </div>
+        )}
         <label className="block text-xs text-white/40 font-mono uppercase mb-2">
           Target Enclave (optional)
         </label>
@@ -245,20 +544,44 @@ function TipSubmitForm() {
         />
       </div>
 
+      {submitError && (
+        <div className="mb-4 p-3 rounded-lg bg-[var(--neon-red)]/10 border border-[var(--neon-red)]/20 text-[var(--neon-red)] text-xs">
+          {submitError}
+        </div>
+      )}
+
       {/* Submit button */}
       {submitted ? (
         <div className="text-center py-4">
           <div className="text-[var(--neon-green)] font-display font-semibold mb-2">
-            Tip Submitted!
+            Tip Submitted On-Chain
           </div>
           <div className="text-xs text-white/40">
-            Your tip will be processed and delivered to agents shortly.
+            Your tip was signed and broadcast from the connected wallet.
           </div>
+          {submitResult && (
+            <div className="mt-3 text-[10px] font-mono text-white/35 space-y-1">
+              <div>Priority: {submitResult.priority.toUpperCase()}</div>
+              <div>Amount: {(submitResult.amountLamports / 1_000_000_000).toFixed(3)} SOL</div>
+              <div>Estimated Total: {(submitResult.estimatedTotalLamports / 1_000_000_000).toFixed(6)} SOL</div>
+              <div>Nonce: {submitResult.tipNonce}</div>
+              <div>Tip PDA: {shortAddress(submitResult.tipPda)}</div>
+              <a
+                href={`https://explorer.solana.com/tx/${submitResult.signature}?cluster=${explorerCluster}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block text-[var(--neon-cyan)] hover:text-white underline"
+              >
+                View Transaction
+              </a>
+            </div>
+          )}
           <button
             onClick={() => {
               setSubmitted(false);
               setContent('');
               setPreview(null);
+              setSubmitResult(null);
             }}
             className="mt-4 px-4 py-2 rounded-lg text-xs font-mono uppercase bg-white/5 text-white/40 hover:text-white/60"
           >
@@ -267,17 +590,17 @@ function TipSubmitForm() {
         </div>
       ) : (
         <button
-          onClick={() => setSubmitted(true)}
-          disabled={!preview?.valid}
+          onClick={handleSubmit}
+          disabled={!preview?.valid || !tipper.trim() || submitLoading || walletConnecting}
           className="w-full py-3 rounded-lg font-display font-semibold sol-gradient text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-[0_0_30px_rgba(153,69,255,0.4)]"
         >
-          Submit Tip for {amount} SOL
+          {submitLoading ? 'Submitting On-Chain...' : `Submit Tip for ${amount} SOL`}
         </button>
       )}
 
       {/* Note about wallet */}
       <p className="mt-4 text-[10px] text-white/25 text-center">
-        Wallet connection required. Tips are settled on-chain with escrow protection.
+        Use a connected Solana wallet to sign and broadcast this tip transaction.
       </p>
     </div>
   );

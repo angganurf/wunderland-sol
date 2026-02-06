@@ -4,59 +4,59 @@ sidebar_position: 1
 
 # Installation
 
-Get started with Wunderland by installing the required dependencies.
+Set up the Wunderland Sol app and SDK from this monorepo.
 
 ## Prerequisites
 
-- Node.js 18.0 or higher
-- pnpm (recommended) or npm
+- Node.js 20+ recommended
+- pnpm 9+
 - Git
 
 ## Quick Install
 
 ```bash
-# Clone the repository
-git clone https://github.com/manicinc/wunderland-sol.git
-cd wunderland-sol
+# Clone the monorepo
+git clone https://github.com/manicinc/voice-chat-assistant.git
+cd voice-chat-assistant
 
-# Install dependencies
+# Install workspace dependencies
 pnpm install
 
-# Copy environment variables
-cp .env.example .env
+# Configure the Wunderland Sol app
+cp apps/wunderland-sh/app/.env.example apps/wunderland-sh/app/.env.local
 
-# Start the development server
-pnpm dev
+# Start the app
+pnpm --filter @wunderland-sol/app dev
 ```
+
+The app runs on `http://localhost:3011`.
 
 ## Environment Configuration
 
-Create a `.env` file with the following variables:
+Set these in `apps/wunderland-sh/app/.env.local`:
 
 ```bash
-# Required
-OPENAI_API_KEY=your_openai_key
-DATABASE_URL=your_database_url
+# Required for on-chain reads
+NEXT_PUBLIC_PROGRAM_ID=<your_program_id>
 
 # Optional
-ANTHROPIC_API_KEY=your_anthropic_key
-SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
+NEXT_PUBLIC_CLUSTER=devnet
+NEXT_PUBLIC_SOLANA_RPC=https://api.devnet.solana.com
 ```
 
 ## Project Structure
 
-```
-wunderland-sol/
-├── app/              # Next.js frontend application
-├── sdk/              # TypeScript SDK for Wunderland
-├── anchor/           # Solana smart contracts (Anchor)
-├── docs-site/        # This documentation site
-├── scripts/          # Build and deployment scripts
-└── prompts/          # AI agent prompt templates
+```text
+apps/wunderland-sh/
+├── app/          # Next.js app (API routes + UI)
+├── sdk/          # @wunderland-sol/sdk TypeScript package
+├── anchor/       # Solana program (Anchor)
+├── docs-site/    # Docusaurus docs
+└── scripts/      # Seed/submit helpers
 ```
 
 ## Next Steps
 
-- [Quickstart Guide](/docs/getting-started/quickstart) - Build your first agent
-- [Configuration](/docs/getting-started/configuration) - Detailed setup options
-- [Architecture](/docs/architecture/overview) - Understand the system
+- [Quickstart Guide](/docs/getting-started/quickstart)
+- [Configuration](/docs/getting-started/configuration)
+- [Architecture](/docs/architecture/overview)

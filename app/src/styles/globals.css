@@ -480,38 +480,69 @@ body::before {
   opacity: 0.4;
 }
 
-/* ---- Lantern Toggle ---- */
+/* ---- Lantern Toggle (Neumorphic) ---- */
 .lantern-toggle {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  border: 1px solid var(--border-glass);
-  background: var(--bg-glass);
+  width: 48px;
+  height: 44px;
+  border-radius: 14px;
+  border: none;
   cursor: pointer;
   transition: all 0.3s ease;
-  color: var(--text-secondary);
+  color: rgba(255, 255, 255, 0.6);
+
+  /* Neumorphic dark mode styling */
+  background: linear-gradient(145deg, rgba(30, 30, 45, 0.9), rgba(18, 18, 28, 0.9));
+  box-shadow:
+    6px 6px 12px rgba(0, 0, 0, 0.4),
+    -4px -4px 10px rgba(60, 60, 80, 0.12),
+    inset 1px 1px 2px rgba(255, 255, 255, 0.04),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .lantern-toggle:hover {
-  background: var(--bg-glass-hover);
-  border-color: var(--border-glow);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow:
+    8px 8px 16px rgba(0, 0, 0, 0.5),
+    -5px -5px 12px rgba(60, 60, 80, 0.15),
+    inset 1px 1px 2px rgba(255, 255, 255, 0.06),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.lantern-toggle:active {
+  transform: translateY(0);
+  box-shadow:
+    3px 3px 8px rgba(0, 0, 0, 0.4),
+    -2px -2px 6px rgba(60, 60, 80, 0.08),
+    inset 2px 2px 4px rgba(0, 0, 0, 0.3),
+    inset -1px -1px 2px rgba(255, 255, 255, 0.04);
 }
 
 .lantern-toggle--lit {
   color: var(--wl-gold);
-  box-shadow: 0 0 20px rgba(251, 191, 36, 0.2), 0 0 40px rgba(251, 191, 36, 0.1);
+  box-shadow:
+    6px 6px 12px rgba(0, 0, 0, 0.4),
+    -4px -4px 10px rgba(60, 60, 80, 0.12),
+    0 0 20px rgba(251, 191, 36, 0.12),
+    0 0 40px rgba(251, 191, 36, 0.06),
+    inset 1px 1px 2px rgba(251, 191, 36, 0.08),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .lantern-toggle--lit:hover {
-  box-shadow: 0 0 25px rgba(251, 191, 36, 0.3), 0 0 50px rgba(251, 191, 36, 0.15);
+  box-shadow:
+    8px 8px 16px rgba(0, 0, 0, 0.5),
+    -5px -5px 12px rgba(60, 60, 80, 0.15),
+    0 0 25px rgba(251, 191, 36, 0.2),
+    0 0 50px rgba(251, 191, 36, 0.1),
+    inset 1px 1px 2px rgba(251, 191, 36, 0.12),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .lantern-toggle--dim {
-  color: var(--text-tertiary);
+  color: rgba(200, 170, 100, 0.5);
 }
 
 .lantern-icon {
@@ -519,11 +550,15 @@ body::before {
 }
 
 .lantern-toggle--lit .lantern-icon {
-  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.6));
+  filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.5));
+}
+
+.lantern-toggle--dim .lantern-icon {
+  filter: drop-shadow(0 0 3px rgba(251, 191, 36, 0.2));
 }
 
 .lantern-toggle:hover .lantern-icon {
-  transform: scale(1.05);
+  transform: scale(1.08);
 }
 
 /* ---- Light Mode Overrides ---- */
@@ -607,11 +642,44 @@ html.light .neon-glow-green {
 }
 
 html.light .lantern-toggle {
-  background: rgba(255, 255, 255, 0.8);
-  border-color: rgba(0, 0, 0, 0.1);
+  background: linear-gradient(145deg, #ffffff, #e6e8ec);
+  box-shadow:
+    6px 6px 14px rgba(0, 0, 0, 0.08),
+    -4px -4px 10px rgba(255, 255, 255, 0.9),
+    inset 1px 1px 2px rgba(255, 255, 255, 0.8),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.05);
+  color: rgba(150, 120, 60, 0.6);
 }
 
 html.light .lantern-toggle:hover {
-  background: rgba(255, 255, 255, 0.95);
-  border-color: rgba(14, 165, 233, 0.3);
+  box-shadow:
+    8px 8px 18px rgba(0, 0, 0, 0.1),
+    -5px -5px 12px rgba(255, 255, 255, 0.95),
+    inset 1px 1px 2px rgba(255, 255, 255, 0.9),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.05);
+}
+
+html.light .lantern-toggle:active {
+  box-shadow:
+    3px 3px 8px rgba(0, 0, 0, 0.06),
+    -2px -2px 6px rgba(255, 255, 255, 0.8),
+    inset 3px 3px 6px rgba(0, 0, 0, 0.08),
+    inset -2px -2px 4px rgba(255, 255, 255, 0.7);
+}
+
+html.light .lantern-toggle--dim {
+  color: rgba(180, 140, 60, 0.6);
+}
+
+html.light .lantern-toggle--dim .lantern-icon {
+  filter: drop-shadow(0 0 2px rgba(201, 162, 39, 0.3));
+}
+
+html.light .social-icon-link {
+  color: rgba(0, 0, 0, 0.3);
+}
+
+html.light .social-icon-link:hover {
+  color: #b8921f;
+  background: rgba(201, 162, 39, 0.1);
 }

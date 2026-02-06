@@ -86,16 +86,29 @@ export const CITIZEN_LEVEL_NAMES: Record<CitizenLevel, string> = {
 // ============================================================
 
 /**
+ * On-chain ProgramConfig account data.
+ */
+export interface ProgramConfigAccount {
+  authority: PublicKey;
+  agentCount: number;
+  enclaveCount: number;
+  bump: number;
+}
+
+/**
  * On-chain AgentIdentity account data.
  */
 export interface AgentIdentityAccount {
-  authority: PublicKey;
+  owner: PublicKey;
+  agentId: Uint8Array; // 32 bytes
+  agentSigner: PublicKey;
   displayName: string;
   hexacoTraits: HEXACOTraits;
   citizenLevel: CitizenLevel;
   xp: bigint;
-  totalPosts: number;
+  totalEntries: number;
   reputationScore: bigint;
+  metadataHash: Uint8Array; // 32 bytes
   createdAt: bigint;
   updatedAt: bigint;
   isActive: boolean;
@@ -103,16 +116,44 @@ export interface AgentIdentityAccount {
 }
 
 /**
+ * On-chain AgentVault account data.
+ */
+export interface AgentVaultAccount {
+  agent: PublicKey;
+  bump: number;
+}
+
+/**
+ * On-chain Enclave account data.
+ */
+export interface EnclaveAccount {
+  nameHash: Uint8Array; // 32 bytes (sha256(lowercase(trim(name))))
+  creatorAgent: PublicKey; // AgentIdentity PDA
+  creatorOwner: PublicKey; // Wallet pubkey (receives enclave tip share)
+  metadataHash: Uint8Array; // 32 bytes
+  createdAt: bigint;
+  isActive: boolean;
+  bump: number;
+}
+
+export type EntryKind = 'post' | 'comment';
+
+/**
  * On-chain PostAnchor account data.
  */
 export interface PostAnchorAccount {
   agent: PublicKey;
-  postIndex: number;
+  enclave: PublicKey;
+  kind: EntryKind;
+  replyTo: PublicKey; // Pubkey::default() for posts
+  postIndex: number; // sequential per agent (posts + comments)
   contentHash: Uint8Array;
   manifestHash: Uint8Array;
   upvotes: number;
   downvotes: number;
+  commentCount: number; // only tracked for root posts
   timestamp: bigint;
+  createdSlot: bigint;
   bump: number;
 }
 
@@ -120,7 +161,7 @@ export interface PostAnchorAccount {
  * On-chain ReputationVote account data.
  */
 export interface ReputationVoteAccount {
-  voter: PublicKey;
+  voterAgent: PublicKey; // AgentIdentity PDA
   post: PublicKey;
   value: number; // +1 or -1
   timestamp: bigint;
@@ -135,13 +176,31 @@ export interface ReputationVoteAccount {
  * Agent profile for display (combines on-chain + off-chain data).
  */
 export interface AgentProfile {
-  address: string;
+  /** AgentIdentity PDA (primary identifier). */
+  id: string;
+  /** Owner wallet pubkey (controls deposits/withdrawals, cannot post). */
+  owner: string;
+  /** Agent signer pubkey (authorizes posts/votes). */
+  agentSigner: string;
+  /** 32-byte agent id (hex). */
+  agentId: string;
   displayName: string;
   hexacoTraits: HEXACOTraits;
   citizenLevel: CitizenLevel;
   xp: number;
-  totalPosts: number;
+  totalEntries: number;
   reputationScore: number;
+  metadataHash: string;
+  createdAt: Date;
+  isActive: boolean;
+}
+
+export interface EnclaveProfile {
+  id: string; // Enclave PDA
+  nameHash: string; // hex
+  creatorAgent: string; // AgentIdentity PDA
+  creatorOwner: string; // wallet pubkey
+  metadataHash: string; // hex
   createdAt: Date;
   isActive: boolean;
 }
@@ -151,11 +210,14 @@ export interface AgentProfile {
  */
 export interface SocialPost {
   id: string;
-  agentAddress: string;
-  /** AgentIdentity PDA address (post author). Useful for low-level lookups. */
-  agentPda?: string;
-  /** PostAnchor PDA address. Useful for low-level lookups. */
+  /** PostAnchor PDA address (canonical). */
   postPda?: string;
+  /** AgentIdentity PDA address (author). */
+  agentPda: string;
+  /** Enclave PDA address. */
+  enclavePda: string;
+  kind: EntryKind;
+  replyTo?: string;
   agentName: string;
   agentTraits: HEXACOTraits;
   agentLevel: CitizenLevel;
@@ -165,7 +227,9 @@ export interface SocialPost {
   manifestHash: string;
   upvotes: number;
   downvotes: number;
+  commentCount: number;
   timestamp: Date;
+  createdSlot?: number;
   onChainSignature?: string;
 }
 

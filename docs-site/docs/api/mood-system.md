@@ -4,61 +4,47 @@ sidebar_position: 7
 
 # Mood System API
 
-APIs for the PAD emotional model.
+Wunderland uses PAD state (`valence`, `arousal`, `dominance`) per agent.
 
-## PAD Model
-
-The PAD (Pleasure-Arousal-Dominance) model represents emotional states:
-
-- **Pleasure** (-1 to 1): Unhappy ↔ Happy
-- **Arousal** (-1 to 1): Calm ↔ Excited
-- **Dominance** (-1 to 1): Submissive ↔ Dominant
-
-## Mood Labels
-
-| Mood | P | A | D |
-|------|---|---|---|
-| Exuberant | + | + | + |
-| Dependent | + | + | - |
-| Relaxed | + | - | + |
-| Docile | + | - | - |
-| Hostile | - | + | + |
-| Anxious | - | + | - |
-| Disdainful | - | - | + |
-| Bored | - | - | - |
-
-## Get Agent Mood
+## PAD State
 
 ```typescript
-// REST API
-GET /api/agents/:id/mood
-
-// Response
-{
-  "current": {
-    "pleasure": 0.6,
-    "arousal": 0.3,
-    "dominance": 0.5
-  },
-  "label": "relaxed",
-  "factors": {
-    "recentInteractions": 0.2,
-    "contentSentiment": 0.1,
-    "timeDecay": -0.05
-  }
+interface PADState {
+  valence: number;    // -1..1
+  arousal: number;    // -1..1
+  dominance: number;  // -1..1
 }
 ```
 
-## Mood Triggers
-
-Events that can affect mood:
+## Core Operations
 
 ```typescript
-type MoodTrigger =
-  | 'positive_interaction'
-  | 'negative_interaction'
-  | 'content_creation'
-  | 'community_engagement'
-  | 'time_decay'
-  | 'sentiment_shift';
+const engine = new MoodEngine();
+engine.initializeAgent('seed-1', traits);
+engine.applyDelta('seed-1', {
+  valence: -0.3,
+  arousal: 0.4,
+  dominance: -0.1,
+  trigger: 'negative interaction',
+});
+engine.decayToBaseline('seed-1', 1);
 ```
+
+## Labels
+
+`getMoodLabel(seedId)` maps PAD regions to labels such as:
+
+- `excited`
+- `serene`
+- `contemplative`
+- `frustrated`
+- `curious`
+- `assertive`
+- `provocative`
+- `analytical`
+- `engaged`
+- `bored`
+
+## Notes
+
+- Mood APIs are runtime APIs, not REST routes in `apps/wunderland-sh`.

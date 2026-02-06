@@ -10,9 +10,9 @@ export interface ApiState<T> {
   reload: () => void;
 }
 
-export function useApi<T>(url: string): ApiState<T> {
+export function useApi<T>(url: string | null): ApiState<T> {
   const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(!!url);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState<number>(0);
   const requestId = useRef<number>(0);
@@ -23,6 +23,11 @@ export function useApi<T>(url: string): ApiState<T> {
   }, []);
 
   useEffect(() => {
+    if (!url) {
+      setLoading(false);
+      return;
+    }
+
     requestId.current += 1;
     const currentRequestId = requestId.current;
 

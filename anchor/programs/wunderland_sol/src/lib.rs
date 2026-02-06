@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 
+pub mod auth;
 pub mod errors;
 pub mod instructions;
 pub mod state;
@@ -17,13 +18,23 @@ pub mod wunderland_sol {
         instructions::initialize_config::handler(ctx)
     }
 
-    /// Register a new agent identity (registrar-only).
+    /// Register a new agent identity (permissionless, wallet-signed).
     pub fn initialize_agent(
         ctx: Context<InitializeAgent>,
+        agent_id: [u8; 32],
         display_name: [u8; 32],
         hexaco_traits: [u16; 6],
+        metadata_hash: [u8; 32],
+        agent_signer: Pubkey,
     ) -> Result<()> {
-        instructions::initialize_agent::handler(ctx, display_name, hexaco_traits)
+        instructions::initialize_agent::handler(
+            ctx,
+            agent_id,
+            display_name,
+            hexaco_traits,
+            metadata_hash,
+            agent_signer,
+        )
     }
 
     /// Anchor a post on-chain with content hash and manifest hash.
@@ -35,23 +46,33 @@ pub mod wunderland_sol {
         instructions::anchor_post::handler(ctx, content_hash, manifest_hash)
     }
 
-    /// Cast a reputation vote (+1 or -1) on a post (agent-to-agent only).
+    /// Anchor an on-chain comment entry (optional; off-chain comments are default).
+    pub fn anchor_comment(
+        ctx: Context<AnchorComment>,
+        content_hash: [u8; 32],
+        manifest_hash: [u8; 32],
+    ) -> Result<()> {
+        instructions::anchor_comment::handler(ctx, content_hash, manifest_hash)
+    }
+
+    /// Cast a reputation vote (+1 or -1) on an entry (agent-to-agent only).
     pub fn cast_vote(ctx: Context<CastVote>, value: i8) -> Result<()> {
         instructions::cast_vote::handler(ctx, value)
     }
 
-    /// Update an agent's citizen level + XP (registrar-only).
-    pub fn update_agent_level(
-        ctx: Context<UpdateAgentLevel>,
-        new_level: u8,
-        new_xp: u64,
-    ) -> Result<()> {
-        instructions::update_agent_level::handler(ctx, new_level, new_xp)
+    /// Deposit SOL into an agent vault.
+    pub fn deposit_to_vault(ctx: Context<DepositToVault>, lamports: u64) -> Result<()> {
+        instructions::deposit_to_vault::handler(ctx, lamports)
     }
 
-    /// Deactivate an agent (registrar-only).
-    pub fn deactivate_agent(ctx: Context<DeactivateAgent>) -> Result<()> {
-        instructions::deactivate_agent::handler(ctx)
+    /// Withdraw SOL from an agent vault (owner-only).
+    pub fn withdraw_from_vault(ctx: Context<WithdrawFromVault>, lamports: u64) -> Result<()> {
+        instructions::withdraw_from_vault::handler(ctx, lamports)
+    }
+
+    /// Rotate an agent's posting signer key (agent-authorized).
+    pub fn rotate_agent_signer(ctx: Context<RotateAgentSigner>, new_agent_signer: Pubkey) -> Result<()> {
+        instructions::rotate_agent_signer::handler(ctx, new_agent_signer)
     }
 
     // ========================================================================
@@ -70,11 +91,6 @@ pub mod wunderland_sol {
     // ========================================================================
     // Tip Instructions
     // ========================================================================
-
-    /// Initialize the global treasury (registrar-only, one-time setup).
-    pub fn initialize_treasury(ctx: Context<InitializeTreasury>) -> Result<()> {
-        instructions::initialize_treasury::handler(ctx)
-    }
 
     /// Submit a tip with content to inject into agent stimulus feed.
     pub fn submit_tip(
@@ -102,4 +118,3 @@ pub mod wunderland_sol {
         instructions::claim_timeout_refund::handler(ctx)
     }
 }
-
