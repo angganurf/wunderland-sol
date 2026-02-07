@@ -158,9 +158,114 @@ function NetworkDropdown() {
   );
 }
 
+// ---- Mobile menu ----
+function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [networkOpen, setNetworkOpen] = useState(false);
+
+  // Lock body scroll when open
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+      setNetworkOpen(false);
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [open]);
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className={`mobile-menu-backdrop ${open ? 'mobile-menu-backdrop-open' : ''}`}
+        onClick={onClose}
+      />
+
+      {/* Panel */}
+      <div className={`mobile-menu-panel ${open ? 'mobile-menu-panel-open' : ''}`}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 h-16 border-b border-white/5">
+          <span className="font-display font-bold text-sm text-[var(--text-secondary)] tracking-[0.2em] uppercase">Menu</span>
+          <button type="button" onClick={onClose} className="mobile-menu-close" aria-label="Close menu">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Links */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
+          <Link href="/world" onClick={onClose} className="mobile-menu-link">
+            <span className="mobile-menu-link-icon">◎</span>
+            World
+          </Link>
+          <Link href="/feed" onClick={onClose} className="mobile-menu-link">
+            <span className="mobile-menu-link-icon">◈</span>
+            Feed
+          </Link>
+
+          {/* Network section */}
+          <button
+            type="button"
+            onClick={() => setNetworkOpen(!networkOpen)}
+            className="mobile-menu-link w-full"
+          >
+            <span className="mobile-menu-link-icon">⬡</span>
+            <span className="flex-1 text-left">Network</span>
+            <svg
+              width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              className={`transition-transform duration-200 text-[var(--text-tertiary)] ${networkOpen ? 'rotate-180' : ''}`}
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+          {networkOpen && (
+            <div className="pl-4 space-y-1">
+              {NETWORK_ITEMS.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onClose}
+                  className="mobile-menu-sublink"
+                >
+                  <span className="mobile-menu-link-icon text-xs">{item.icon}</span>
+                  <div>
+                    <div className="text-sm font-medium">{item.label}</div>
+                    <div className="text-[10px] text-[var(--text-tertiary)]">{item.desc}</div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+
+          <Link href="/mint" onClick={onClose} className="mobile-menu-link mobile-menu-link-accent">
+            <span className="mobile-menu-link-icon">✦</span>
+            Create Agent
+          </Link>
+          <Link href="/about" onClick={onClose} className="mobile-menu-link">
+            <span className="mobile-menu-link-icon">◉</span>
+            About
+          </Link>
+        </div>
+
+        {/* Bottom actions */}
+        <div className="px-6 py-4 border-t border-white/5 space-y-3">
+          <div className="flex items-center justify-between">
+            <WalletButton />
+            <LanternToggle />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { theme } = useTheme();
   const logoVariant = theme === 'light' ? 'gold' : 'neon';
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <>
@@ -174,7 +279,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             colorVariant={logoVariant}
             forLight={theme === 'light'}
           />
-          <div className="flex items-center gap-4 md:gap-6">
+
+          {/* Desktop nav */}
+          <div className="hidden md:flex items-center gap-4 md:gap-6">
             <Link
               href="/world"
               className="nav-link font-semibold text-[var(--text-primary)] hover:text-[var(--neon-cyan)] transition-colors"
@@ -196,7 +303,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
             <Link
               href="/about"
-              className="nav-link hidden md:inline font-semibold text-[var(--text-primary)] hover:text-[var(--neon-cyan)] transition-colors"
+              className="nav-link font-semibold text-[var(--text-primary)] hover:text-[var(--neon-cyan)] transition-colors"
             >
               About
             </Link>
@@ -204,8 +311,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <WalletButton />
             <LanternToggle />
           </div>
+
+          {/* Mobile: search + hamburger */}
+          <div className="flex md:hidden items-center gap-3">
+            <NavSearch />
+            <button
+              type="button"
+              onClick={() => setMobileOpen(true)}
+              className="hamburger-btn"
+              aria-label="Open menu"
+            >
+              <span className="hamburger-line" />
+              <span className="hamburger-line" />
+              <span className="hamburger-line" />
+            </button>
+          </div>
         </div>
       </nav>
+
+      {/* Mobile menu */}
+      <MobileMenu open={mobileOpen} onClose={() => setMobileOpen(false)} />
 
       {/* Main content */}
       <main className="relative z-10 pt-16">{children}</main>
