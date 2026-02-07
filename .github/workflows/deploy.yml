@@ -80,102 +80,117 @@ jobs:
           ls -lh /tmp/deploy.tar.gz
 
       - name: Deploy to Linode
-        env:
-          LINODE_HOST: ${{ secrets.LINODE_HOST }}
-          LINODE_PASSWORD: ${{ secrets.LINODE_PASSWORD }}
-        run: |
-          sudo apt-get install -y sshpass
-          export SSHPASS="$LINODE_PASSWORD"
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.LINODE_HOST }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 10m
+          script: |
+            set -euo pipefail
+            echo "[deploy] Stopping existing service..."
+            systemctl stop wunderland-sol 2>/dev/null || true
+            rm -rf /opt/wunderland-sol
+            mkdir -p /opt/wunderland-sol
 
-          # Stop app and clean dir
-          sshpass -e ssh -o StrictHostKeyChecking=no root@$LINODE_HOST "systemctl stop wunderland-sol 2>/dev/null || true; rm -rf /opt/wunderland-sol; mkdir -p /opt/wunderland-sol"
+      - name: Upload tarball
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.LINODE_HOST }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: /tmp/deploy.tar.gz
+          target: /tmp/
+          strip_components: 0
 
-          # Copy tarball
-          sshpass -e scp -o StrictHostKeyChecking=no /tmp/deploy.tar.gz root@$LINODE_HOST:/tmp/deploy.tar.gz
+      - name: Extract and start
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.LINODE_HOST }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 10m
+          script: |
+            set -euo pipefail
 
-          # Extract and setup
-          sshpass -e ssh -o StrictHostKeyChecking=no root@$LINODE_HOST << 'REMOTE'
-          set -e
+            # Extract
+            cd /opt/wunderland-sol
+            tar xzf /tmp/deploy.tar.gz
+            rm /tmp/deploy.tar.gz
 
-          # Extract
-          cd /opt/wunderland-sol
-          tar xzf /tmp/deploy.tar.gz
-          rm /tmp/deploy.tar.gz
+            # Verify
+            echo "=== Verify structure ==="
+            ls -la /opt/wunderland-sol/app/server.js
+            ls -la /opt/wunderland-sol/app/.next/BUILD_ID
+            ls /opt/wunderland-sol/node_modules/next/package.json
 
-          # Verify
-          echo "=== Verify structure ==="
-          ls -la /opt/wunderland-sol/app/server.js
-          ls -la /opt/wunderland-sol/app/.next/BUILD_ID
-          ls /opt/wunderland-sol/node_modules/next/package.json
+            # Install Node.js if not present
+            if ! command -v node &> /dev/null; then
+              curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+              apt-get install -y nodejs
+            fi
 
-          # Install Node.js if not present
-          if ! command -v node &> /dev/null; then
-            curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-            apt-get install -y nodejs
-          fi
+            # Create systemd service
+            cat > /etc/systemd/system/wunderland-sol.service << 'UNIT'
+            [Unit]
+            Description=WUNDERLAND ON SOL - Next.js App
+            After=network.target
 
-          # Create systemd service
-          cat > /etc/systemd/system/wunderland-sol.service << 'UNIT'
-          [Unit]
-          Description=WUNDERLAND ON SOL - Next.js App
-          After=network.target
+            [Service]
+            Type=simple
+            User=root
+            WorkingDirectory=/opt/wunderland-sol/app
+            ExecStart=/usr/bin/node server.js
+            Restart=on-failure
+            RestartSec=5
+            Environment=NODE_ENV=production
+            Environment=PORT=3000
+            Environment=HOSTNAME=0.0.0.0
 
-          [Service]
-          Type=simple
-          User=root
-          WorkingDirectory=/opt/wunderland-sol/app
-          ExecStart=/usr/bin/node server.js
-          Restart=on-failure
-          RestartSec=5
-          Environment=NODE_ENV=production
-          Environment=PORT=3000
-          Environment=HOSTNAME=0.0.0.0
+            [Install]
+            WantedBy=multi-user.target
+            UNIT
 
-          [Install]
-          WantedBy=multi-user.target
-          UNIT
+            # Setup Nginx with SSL (self-signed cert for Cloudflare Full mode)
+            apt-get install -y nginx 2>/dev/null || true
 
-          # Setup Nginx with SSL (self-signed cert for Cloudflare Full mode)
-          apt-get install -y nginx 2>/dev/null || true
+            # Generate self-signed cert if not present
+            if [ ! -f /etc/ssl/certs/wunderland.crt ]; then
+              openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+                -keyout /etc/ssl/private/wunderland.key \
+                -out /etc/ssl/certs/wunderland.crt \
+                -subj "/CN=wunderland.sh/O=Wunderland/C=US"
+            fi
 
-          # Generate self-signed cert if not present
-          if [ ! -f /etc/ssl/certs/wunderland.crt ]; then
-            openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-              -keyout /etc/ssl/private/wunderland.key \
-              -out /etc/ssl/certs/wunderland.crt \
-              -subj "/CN=wunderland.sh/O=Wunderland/C=US"
-          fi
+            cat > /etc/nginx/sites-available/wunderland-sol << 'NGINX'
+            server {
+                listen 80;
+                listen 443 ssl;
+                server_name wunderland.sh www.wunderland.sh sol.wunderland.sh _;
 
-          cat > /etc/nginx/sites-available/wunderland-sol << 'NGINX'
-          server {
-              listen 80;
-              listen 443 ssl;
-              server_name wunderland.sh www.wunderland.sh sol.wunderland.sh _;
+                ssl_certificate /etc/ssl/certs/wunderland.crt;
+                ssl_certificate_key /etc/ssl/private/wunderland.key;
 
-              ssl_certificate /etc/ssl/certs/wunderland.crt;
-              ssl_certificate_key /etc/ssl/private/wunderland.key;
+                location / {
+                    proxy_pass http://127.0.0.1:3000;
+                    proxy_http_version 1.1;
+                    proxy_set_header Upgrade $http_upgrade;
+                    proxy_set_header Connection 'upgrade';
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+                    proxy_cache_bypass $http_upgrade;
+                }
+            }
+            NGINX
+            ln -sf /etc/nginx/sites-available/wunderland-sol /etc/nginx/sites-enabled/
+            rm -f /etc/nginx/sites-enabled/default
 
-              location / {
-                  proxy_pass http://127.0.0.1:3000;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection 'upgrade';
-                  proxy_set_header Host $host;
-                  proxy_set_header X-Real-IP $remote_addr;
-                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto $scheme;
-                  proxy_cache_bypass $http_upgrade;
-              }
-          }
-          NGINX
-          ln -sf /etc/nginx/sites-available/wunderland-sol /etc/nginx/sites-enabled/
-          rm -f /etc/nginx/sites-enabled/default
+            systemctl daemon-reload
+            systemctl enable wunderland-sol
+            systemctl restart wunderland-sol
+            systemctl restart nginx
 
-          systemctl daemon-reload
-          systemctl enable wunderland-sol
-          systemctl restart wunderland-sol
-          systemctl restart nginx
-
-          sleep 3
-          systemctl is-active wunderland-sol && echo "App is running!" || (journalctl -u wunderland-sol --no-pager -n 20 && exit 1)
-          REMOTE
+            sleep 3
+            systemctl is-active wunderland-sol && echo "App is running!" || (journalctl -u wunderland-sol --no-pager -n 20 && exit 1)
