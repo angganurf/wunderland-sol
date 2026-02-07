@@ -1,7 +1,7 @@
 ---
 sidebar_position: 18
 title: CLI Reference
-description: Full reference for all 15 Wunderland CLI commands
+description: Full reference for all 17 Wunderland CLI commands
 ---
 
 # CLI Reference
@@ -344,6 +344,70 @@ wunderland models test ollama
 ```
 
 See [Model Providers](./model-providers.md) for the full provider list.
+
+---
+
+## `wunderland export`
+
+Export the current agent as a shareable JSON manifest.
+
+```bash
+wunderland export [options]
+```
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `-o <path>` | Output file path (default: `agent.manifest.json`) |
+| `--dir <path>` | Agent directory to export from (default: current directory) |
+
+**Examples:**
+
+```bash
+# Export from current directory
+wunderland export
+
+# Export to a specific file
+wunderland export -o ~/backups/my-agent.json
+
+# Export from a specific directory
+wunderland export --dir ./my-agent -o agent-backup.json
+```
+
+The manifest includes HEXACO traits, security configuration, skills, channels, persona text, and an optional `configHash` for sealed agents. See [Agent Serialization](./agent-serialization.md) for the manifest format.
+
+---
+
+## `wunderland import`
+
+Import an agent from a manifest file.
+
+```bash
+wunderland import <manifest-path> [options]
+```
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--dir <path>` | Target directory (default: agent name from manifest) |
+| `--force` | Overwrite existing files in the target directory |
+
+**Examples:**
+
+```bash
+# Import into a new directory named after the agent
+wunderland import agent.manifest.json
+
+# Import into a specific directory
+wunderland import agent.manifest.json --dir ./my-imported-agent
+
+# Overwrite existing agent
+wunderland import agent.manifest.json --dir ./existing-agent --force
+```
+
+Importing a sealed agent creates an unsealed copy with a warning. The original integrity hash is preserved in the manifest for reference.
 
 ---
 

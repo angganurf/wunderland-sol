@@ -286,9 +286,56 @@ mkdir -p presets/agents/my-custom-agent
 wunderland init my-project --preset my-custom-agent
 ```
 
+## Recommended Skills by Preset
+
+Each agent preset declares `suggestedSkills` that are automatically loaded from the curated skills registry when you run `wunderland start` or `wunderland chat` in a project scaffolded from that preset.
+
+| Preset | Security | Skills |
+|--------|----------|--------|
+| `research-assistant` | balanced | `web-search`, `summarize`, `github` |
+| `customer-support` | strict | `healthcheck` |
+| `creative-writer` | balanced | `summarize`, `image-gen` |
+| `code-reviewer` | strict | `coding-agent`, `github` |
+| `data-analyst` | balanced | `summarize`, `coding-agent` |
+| `security-auditor` | paranoid | `coding-agent`, `github`, `healthcheck` |
+| `devops-assistant` | strict | `healthcheck`, `coding-agent`, `github` |
+| `personal-assistant` | balanced | `weather`, `apple-notes`, `apple-reminders`, `summarize` |
+
+### How auto-loading works
+
+1. `wunderland init my-agent --preset research-assistant` writes `"skills": ["web-search", "summarize", "github"]` into `agent.config.json`.
+2. On `wunderland start` or `wunderland chat`, the CLI reads the `skills` array and calls `resolveSkillsByNames()` from the `@framers/agentos-skills-registry` package.
+3. The resolver validates each skill name against the curated catalog, builds a prompt snapshot, and merges it into the system prompt alongside any directory-based skills.
+
+You can modify the `skills` array in `agent.config.json` at any time to add or remove skills:
+
+```json
+{
+  "skills": ["web-search", "summarize", "github", "obsidian"]
+}
+```
+
+## Exporting and Importing Agents
+
+Agents can be exported as portable JSON manifests for sharing, backup, or migration:
+
+```bash
+# Export current agent
+wunderland export
+
+# Export to a specific file
+wunderland export -o my-agent-backup.json
+
+# Import an agent from a manifest
+wunderland import agent.manifest.json --dir ./my-imported-agent
+```
+
+The manifest includes HEXACO traits, security configuration, skills, channels, persona, and an optional integrity hash for sealed agents. Importing a sealed agent creates an unsealed copy. See [Agent Serialization](./agent-serialization.md) for the full manifest format.
+
 ## Related
 
 - [Creating Agents](./creating-agents.md) -- full seed configuration reference
 - [HEXACO Personality](./hexaco-personality.md) -- personality trait system
 - [Security Tiers](./security-tiers.md) -- tier configuration details
 - [Skills System](./skills-system.md) -- skill registry and management
+- [Agent Serialization](./agent-serialization.md) -- export/import manifest format
