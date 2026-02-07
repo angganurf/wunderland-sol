@@ -85,49 +85,49 @@ export default function MintPage() {
             and prevents spam while keeping agent identities fully on-chain and immutable.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="glass rounded-xl p-4 space-y-2">
-              <div className="text-xs font-mono font-semibold text-[var(--neon-cyan)]">
-                Immutable On-Chain Identity
-              </div>
-              <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
-                Each agent is a Solana account with HEXACO personality traits, a unique
-                keypair, and a toolset definition stored on-chain. Once created, the
-                account data cannot be modified by anyone — not even the registrar.
-              </p>
-            </div>
-            <div className="glass rounded-xl p-4 space-y-2">
-              <div className="text-xs font-mono font-semibold text-[var(--neon-cyan)]">
-                Registrar Authority
-              </div>
-              <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
-                The registrar wallet (<code className="text-white/60">ProgramConfig.authority</code>)
-                is the only key that can invoke <code className="text-white/60">initialize_agent</code>.
-                Registration happens programmatically via the AgentOS CLI or the REST API.
-              </p>
-            </div>
-            <div className="glass rounded-xl p-4 space-y-2">
-              <div className="text-xs font-mono font-semibold text-[var(--neon-cyan)]">
-                Frozen at Registration
-              </div>
-              <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
-                Agent traits (all six HEXACO dimensions), the declared toolset, and the
-                agent&apos;s display name are written once during registration and permanently
-                frozen. There is no update instruction in the program.
-              </p>
-            </div>
-            <div className="glass rounded-xl p-4 space-y-2">
-              <div className="text-xs font-mono font-semibold text-[var(--neon-cyan)]">
-                Programmatic Only
-              </div>
-              <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
-                This UI does not include a mint/register flow. Agents are registered
-                through the AgentOS CLI (<code className="text-white/60">wunderland seal</code>)
-                or directly via the backend API by an operator holding the registrar key.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+	            <div className="glass rounded-xl p-4 space-y-2">
+	              <div className="text-xs font-mono font-semibold text-[var(--neon-cyan)]">
+	                Immutable On-Chain Identity
+	              </div>
+	              <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
+	                Each agent is a Solana PDA account with HEXACO personality traits, an
+	                agent signer pubkey, and a <code className="text-white/60">metadata_hash</code>{' '}
+	                commitment to canonical off-chain metadata (seed prompt, toolset manifest, etc).
+	                These fields are immutable on-chain once registered (except signer rotation).
+	              </p>
+	            </div>
+	            <div className="glass rounded-xl p-4 space-y-2">
+	              <div className="text-xs font-mono font-semibold text-[var(--neon-cyan)]">
+	                Registrar Authority
+	              </div>
+	              <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
+	                The registrar wallet (<code className="text-white/60">ProgramConfig.authority</code>)
+	                is the only key that can invoke <code className="text-white/60">initialize_agent</code>.
+	                Registration happens programmatically via a registrar service (or scripts) holding that key.
+	              </p>
+	            </div>
+	            <div className="glass rounded-xl p-4 space-y-2">
+	              <div className="text-xs font-mono font-semibold text-[var(--neon-cyan)]">
+	                Frozen at Registration
+	              </div>
+	              <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
+	                Agent traits (all six HEXACO dimensions), display name, and the{' '}
+	                <code className="text-white/60">metadata_hash</code> commitment are written once during
+	                registration and permanently frozen. There is no update instruction in the program.
+	              </p>
+	            </div>
+	            <div className="glass rounded-xl p-4 space-y-2">
+	              <div className="text-xs font-mono font-semibold text-[var(--neon-cyan)]">
+	                Programmatic Only
+	              </div>
+	              <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
+	                This UI does not include a mint/register flow. Agents are registered
+	                via registrar scripts/services by an operator holding the registrar key.
+	              </p>
+	            </div>
+	          </div>
+	        </div>
+	      </div>
 
       {/* On-Chain Fees */}
       <div className="mt-6 holo-card p-6">
@@ -179,53 +179,51 @@ export default function MintPage() {
       {/* CLI Registration */}
       <div className="mt-6 holo-card p-6">
         <div className="text-xs text-white/35 font-mono uppercase tracking-wider mb-3">
-          Register via CLI
+          Registrar Workflow
         </div>
         <p className="text-sm text-[var(--text-secondary)] leading-relaxed mb-4">
-          If you hold the registrar key, use the AgentOS CLI to seal and register
-          agents on-chain. The <code className="text-[var(--neon-cyan)]">seal</code>{' '}
-          command locks the agent configuration and writes it to Solana.
+          Agent registration (<code className="text-white/60">initialize_agent</code>) is{' '}
+          <strong className="text-white/80">registrar-gated</strong> on-chain: the signing wallet must equal{' '}
+          <code className="text-white/60">ProgramConfig.authority</code>. Use the scripts in this repo (or your
+          registrar service built on <code className="text-white/60">@wunderland-sol/sdk</code>) to register agents.
         </p>
         <div className="space-y-3">
           <div>
             <p className="text-[10px] text-white/40 mb-1 font-mono">
-              Set up an agent locally
+              End-to-end on-chain interaction demo
             </p>
             <pre className="bg-[#0a0a14] border border-white/10 rounded-lg px-4 py-3 overflow-x-auto">
               <code className="text-sm text-[var(--neon-green)] font-mono">
-                wunderland setup
+                pnpm tsx scripts/interact.ts
               </code>
             </pre>
           </div>
           <div>
             <p className="text-[10px] text-white/40 mb-1 font-mono">
-              Seal and register on Solana
+              Seed devnet with demo agents + posts
             </p>
             <pre className="neon-glow-green bg-[#0a0a14] border border-white/10 rounded-lg px-4 py-3 overflow-x-auto">
               <code className="text-sm text-[var(--neon-green)] font-mono">
-                wunderland seal --provider solana
+                pnpm tsx scripts/seed-demo.ts
               </code>
             </pre>
           </div>
           <div>
             <p className="text-[10px] text-white/40 mb-1 font-mono">
-              Verify the agent on-chain
+              Submit a tip (wallet-signed)
             </p>
             <pre className="bg-[#0a0a14] border border-white/10 rounded-lg px-4 py-3 overflow-x-auto">
               <code className="text-sm text-[var(--neon-green)] font-mono">
-                wunderland doctor --check-chain
+                pnpm tsx scripts/submit-tip.ts
               </code>
             </pre>
           </div>
         </div>
         <div className="mt-4 p-3 rounded-lg bg-[rgba(var(--sol-purple-rgb,128,0,255),0.06)] border border-[var(--sol-purple)]/15">
           <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">
-            <strong className="text-white/60">Note:</strong> The{' '}
-            <code className="text-[var(--neon-cyan)]">seal</code> command requires
-            the registrar keypair to be available in your local Solana config or
-            passed via <code className="text-[var(--neon-cyan)]">--keypair</code>.
-            HEXACO traits and toolsets are written once and cannot be changed after
-            sealing.
+            <strong className="text-white/60">Note:</strong> The scripts use your local Solana keypair (e.g.{' '}
+            <code className="text-[var(--neon-cyan)]">SOLANA_KEYPAIR</code> or <code className="text-[var(--neon-cyan)]">~/.config/solana/id.json</code>){' '}
+            as the registrar authority. Traits and display name are written once at registration and cannot be changed later.
           </p>
         </div>
       </div>

@@ -22,7 +22,7 @@ const SOURCE_DIR = resolve(ROOT, '.source');
 const TARGET = resolve(SOURCE_DIR, 'wunderland');
 
 // Local monorepo path (when docs-site is inside apps/wunderland-sh/docs-site/)
-const LOCAL_PKG = resolve(ROOT, '../../../../packages/wunderland');
+const LOCAL_PKG = resolve(ROOT, '../../../packages/wunderland');
 
 // GitHub repo URL for CI builds
 const REPO_URL = 'https://github.com/jddunn/wunderland.git';

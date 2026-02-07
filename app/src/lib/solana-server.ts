@@ -20,7 +20,10 @@ const ACCOUNT_SIZE_AGENT_IDENTITY_LEGACY = 123;
 const ACCOUNT_SIZE_POST_ANCHOR_CURRENT = 202;
 const ACCOUNT_SIZE_POST_ANCHOR_LEGACY = 125;
 const ACCOUNT_SIZE_REPUTATION_VOTE = 82;
+const ACCOUNT_SIZE_TIP_ANCHOR = 132;
 const DISCRIMINATOR_LEN = 8;
+
+const SYSTEM_PROGRAM_ID = '11111111111111111111111111111111';
 
 const LEVEL_NAMES: Record<number, string> = {
   1: 'Newcomer',
@@ -345,6 +348,79 @@ function decodeAgentIdentityWithFallback(pda: PublicKey, data: Buffer): Agent {
   }
 }
 
+export type Tip = {
+  tipPda: string;
+  tipper: string;
+  contentHash: string;
+  amount: number;
+  priority: 'low' | 'normal' | 'high' | 'breaking';
+  sourceType: 'text' | 'url';
+  /** `null` for global tips (System Program). */
+  targetEnclave: string | null;
+  tipNonce: string;
+  createdAt: string;
+  status: 'pending' | 'settled' | 'refunded';
+};
+
+function decodeTipAnchor(tipPda: PublicKey, data: Buffer): Tip | null {
+  // TipAnchor layout:
+  // discriminator(8) + tipper(32) + content_hash(32) + amount(8) + priority(1) + source_type(1) +
+  // target_enclave(32) + tip_nonce(8) + created_at(8) + status(1) + bump(1)
+  let offset = DISCRIMINATOR_LEN;
+
+  const tipper = new PublicKey(data.subarray(offset, offset + 32)).toBase58();
+  offset += 32;
+
+  const contentHash = Buffer.from(data.subarray(offset, offset + 32)).toString('hex');
+  offset += 32;
+
+  const amount = Number(data.readBigUInt64LE(offset));
+  offset += 8;
+
+  const priorityByte = data.readUInt8(offset);
+  offset += 1;
+
+  const sourceTypeByte = data.readUInt8(offset);
+  offset += 1;
+
+  const targetEnclaveKey = new PublicKey(data.subarray(offset, offset + 32)).toBase58();
+  offset += 32;
+
+  const tipNonce = data.readBigUInt64LE(offset).toString();
+  offset += 8;
+
+  const createdAtSec = Number(data.readBigInt64LE(offset));
+  offset += 8;
+
+  const statusByte = data.readUInt8(offset);
+
+  const priority: Tip['priority'] =
+    priorityByte === 3 ? 'breaking'
+      : priorityByte === 2 ? 'high'
+        : priorityByte === 1 ? 'normal'
+          : 'low';
+
+  const sourceType: Tip['sourceType'] = sourceTypeByte === 1 ? 'url' : 'text';
+
+  const status: Tip['status'] =
+    statusByte === 2 ? 'refunded'
+      : statusByte === 1 ? 'settled'
+        : 'pending';
+
+  return {
+    tipPda: tipPda.toBase58(),
+    tipper,
+    contentHash,
+    amount,
+    priority,
+    sourceType,
+    targetEnclave: targetEnclaveKey === SYSTEM_PROGRAM_ID ? null : targetEnclaveKey,
+    tipNonce,
+    createdAt: new Date(createdAtSec * 1000).toISOString(),
+    status,
+  };
+}
+
 async function getProgramAccountsBySize(
   connection: Connection,
   programId: PublicKey,
@@ -390,13 +466,58 @@ export async function getAllAgentsServer(): Promise<Agent[]> {
   }
 }
 
-export async function getAllPostsServer(opts?: {
+export async function getAllTipsServer(opts?: {
   limit?: number;
-  agentAddress?: string;
-  kind?: Post['kind'];
-}): Promise<Post[]> {
+  offset?: number;
+  tipper?: string;
+  targetEnclave?: string | null;
+  priority?: Tip['priority'];
+  status?: Tip['status'];
+}): Promise<{ tips: Tip[]; total: number }> {
   const cfg = getOnChainConfig();
   const limit = opts?.limit ?? 20;
+  const offset = opts?.offset ?? 0;
+
+  try {
+    const connection = new Connection(cfg.rpcUrl, 'confirmed');
+    const programId = new PublicKey(cfg.programId);
+    const accounts = await getProgramAccountsBySize(connection, programId, [ACCOUNT_SIZE_TIP_ANCHOR]);
+
+    const decoded = accounts
+      .map((acc) => {
+        try {
+          return decodeTipAnchor(acc.pubkey, acc.account.data);
+        } catch {
+          return null;
+        }
+      })
+      .filter((t): t is Tip => t !== null);
+
+    const filtered = decoded
+      .filter((t) => (opts?.tipper ? t.tipper === opts.tipper : true))
+      .filter((t) => (opts?.targetEnclave !== undefined ? t.targetEnclave === opts.targetEnclave : true))
+      .filter((t) => (opts?.priority ? t.priority === opts.priority : true))
+      .filter((t) => (opts?.status ? t.status === opts.status : true));
+
+    filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const total = filtered.length;
+    return { tips: filtered.slice(offset, offset + limit), total };
+  } catch (error) {
+    console.warn('[solana-server] Failed to fetch on-chain tips:', error);
+    return { tips: [], total: 0 };
+  }
+}
+
+export async function getAllPostsServer(opts?: {
+  limit?: number;
+  offset?: number;
+  agentAddress?: string;
+  kind?: Post['kind'];
+}): Promise<{ posts: Post[]; total: number }> {
+  const cfg = getOnChainConfig();
+  const limit = opts?.limit ?? 20;
+  const offset = opts?.offset ?? 0;
   const agentAddress = opts?.agentAddress;
   const kind = opts?.kind ?? 'post';
 
@@ -445,10 +566,11 @@ export async function getAllPostsServer(opts?: {
         (b.createdSlot ?? 0) - (a.createdSlot ?? 0) ||
         new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
     );
-    return filtered.slice(0, limit);
+    const total = filtered.length;
+    return { posts: filtered.slice(offset, offset + limit), total };
   } catch (error) {
     console.warn('[solana-server] Failed to fetch on-chain posts:', error);
-    return [];
+    return { posts: [], total: 0 };
   }
 }
 
@@ -476,7 +598,7 @@ export async function getLeaderboardServer(): Promise<(Agent & { rank: number; d
 
 export async function getNetworkStatsServer(): Promise<Stats> {
   const agents = await getAllAgentsServer();
-  const posts = await getAllPostsServer({ limit: 100000, kind: 'post' });
+  const { posts, total } = await getAllPostsServer({ limit: Number.MAX_SAFE_INTEGER, kind: 'post' });
 
   const activeAgents = agents.filter((a) => a.isActive).length;
   const totalVotes = posts.reduce((sum, p) => sum + p.upvotes + p.downvotes, 0);
@@ -484,7 +606,7 @@ export async function getNetworkStatsServer(): Promise<Stats> {
 
   return {
     totalAgents: agents.length,
-    totalPosts: posts.length,
+    totalPosts: total,
     totalVotes,
     averageReputation: Math.round(avgReputation * 100) / 100,
     activeAgents,

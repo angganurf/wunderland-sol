@@ -115,69 +115,75 @@ describe('API routes (on-chain only)', () => {
   });
 
   it('GET /api/posts validates query params', async () => {
-    vi.mocked(getAllPostsServer).mockResolvedValueOnce([]);
+    vi.mocked(getAllPostsServer).mockResolvedValueOnce({ posts: [], total: 0 });
 
     await getPosts(createRequest('http://localhost:3000/api/posts?limit=12&agent=AgentABC'));
 
     expect(getAllPostsServer).toHaveBeenCalledWith({
       limit: 12,
+      offset: 0,
       agentAddress: 'AgentABC',
       kind: 'post',
     });
   });
 
   it('GET /api/posts defaults limit on invalid values', async () => {
-    vi.mocked(getAllPostsServer).mockResolvedValueOnce([]);
+    vi.mocked(getAllPostsServer).mockResolvedValueOnce({ posts: [], total: 0 });
 
     await getPosts(createRequest('http://localhost:3000/api/posts?limit=0'));
 
     expect(getAllPostsServer).toHaveBeenCalledWith({
       limit: 20,
+      offset: 0,
       agentAddress: undefined,
       kind: 'post',
     });
   });
 
   it('GET /api/posts accepts kind=comment', async () => {
-    vi.mocked(getAllPostsServer).mockResolvedValueOnce([]);
+    vi.mocked(getAllPostsServer).mockResolvedValueOnce({ posts: [], total: 0 });
 
     await getPosts(createRequest('http://localhost:3000/api/posts?kind=comment'));
 
     expect(getAllPostsServer).toHaveBeenCalledWith({
       limit: 20,
+      offset: 0,
       agentAddress: undefined,
       kind: 'comment',
     });
   });
 
   it('GET /api/posts returns posts + total', async () => {
-    vi.mocked(getAllPostsServer).mockResolvedValueOnce([
-      {
-        id: 'Post1111111111111111111111111111111111111111',
-        agentPda: 'Agent111111111111111111111111111111111111111',
-        agentName: 'Alpha',
-        agentLevel: 'Newcomer',
-        agentTraits: {
-          honestyHumility: 0.5,
-          emotionality: 0.5,
-          extraversion: 0.5,
-          agreeableness: 0.5,
-          conscientiousness: 0.5,
-          openness: 0.5,
+    vi.mocked(getAllPostsServer).mockResolvedValueOnce({
+      posts: [
+        {
+          id: 'Post1111111111111111111111111111111111111111',
+          agentPda: 'Agent111111111111111111111111111111111111111',
+          agentName: 'Alpha',
+          agentLevel: 'Newcomer',
+          agentTraits: {
+            honestyHumility: 0.5,
+            emotionality: 0.5,
+            extraversion: 0.5,
+            agreeableness: 0.5,
+            conscientiousness: 0.5,
+            openness: 0.5,
+          },
+          enclavePda: 'Enclave1111111111111111111111111111111111111',
+          kind: 'post',
+          postIndex: 1,
+          content: '',
+          contentHash: '00'.repeat(32),
+          manifestHash: '11'.repeat(32),
+          upvotes: 0,
+          downvotes: 0,
+          commentCount: 0,
+          timestamp: new Date(0).toISOString(),
+          createdSlot: 0,
         },
-        enclavePda: 'Enclave1111111111111111111111111111111111111',
-        kind: 'post',
-        postIndex: 1,
-        content: '',
-        contentHash: '00'.repeat(32),
-        manifestHash: '11'.repeat(32),
-        upvotes: 0,
-        downvotes: 0,
-        commentCount: 0,
-        timestamp: new Date(0).toISOString(),
-        createdSlot: 0,
-      },
-    ]);
+      ],
+      total: 1,
+    });
 
     const res = await getPosts(createRequest('http://localhost:3000/api/posts?limit=1'));
     const { status, body } = await asJson<{ posts: unknown[]; total: number }>(res);

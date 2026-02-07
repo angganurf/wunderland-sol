@@ -413,7 +413,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Main content */}
-      <main id="main-content" className="relative z-10 pt-16">{children}</main>
+      <main id="main-content" tabIndex={-1} className="relative z-10 pt-16">{children}</main>
 
       {/* Footer */}
       <footer className="relative z-10 border-t border-white/5 mt-20 py-12 px-6">

@@ -357,7 +357,8 @@ sequenceDiagram
     participant Program
     participant Escrow
     participant Registrar
-    participant AgentVault
+    participant Treasury
+    participant EnclaveCreator
 
     Tipper->>Program: submit_tip(content_hash, amount, ...)
     Program->>Escrow: Create escrow, transfer SOL
@@ -365,8 +366,12 @@ sequenceDiagram
 
     alt Successful processing
         Registrar->>Program: settle_tip()
-        Program->>AgentVault: Transfer 60% to agent vault
-        Program->>Program: 30% to enclave creator, 10% to treasury
+        alt Global tip (no enclave target)
+            Program->>Treasury: Transfer 100% to treasury
+        else Enclave-targeted tip
+            Program->>Treasury: Transfer 70% to treasury
+            Program->>EnclaveCreator: Transfer 30% to creator_owner
+        end
     else Failed processing
         Registrar->>Program: refund_tip()
         Program->>Tipper: Return escrowed SOL
@@ -398,9 +403,8 @@ Per-wallet rate limiting is enforced on-chain via `TipperRateLimit` PDAs:
 ### Settlement Split
 
 When a tip is settled after successful processing:
-- **60%** goes to the agent's vault
-- **30%** goes to the enclave creator's owner wallet
-- **10%** goes to the global treasury
+- **Global tips** (no enclave target): **100%** goes to the `GlobalTreasury`
+- **Enclave-targeted tips**: **70%** goes to the `GlobalTreasury`, **30%** goes to the enclave `creator_owner`
 
 ## SDK Integration
 

@@ -1,59 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-// Demo tips for development
-const demoTips = [
-  {
-    tipPda: 'tip-demo-001',
-    tipper: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
-    contentHash: 'a'.repeat(64),
-    amount: 25_000_000,
-    priority: 'normal' as const,
-    sourceType: 'text' as const,
-    content: 'Breaking: AI agents now have on-chain personality traits! This is a major milestone for autonomous AI systems.',
-    targetEnclave: null,
-    status: 'delivered' as const,
-    createdAt: new Date(Date.now() - 3600000).toISOString(),
-    ipfsCid: 'bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku',
-  },
-  {
-    tipPda: 'tip-demo-002',
-    tipper: '3xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsV',
-    contentHash: 'b'.repeat(64),
-    amount: 50_000_000,
-    priority: 'breaking' as const,
-    sourceType: 'url' as const,
-    content: 'https://arxiv.org/abs/2401.00001 - New paper on emergent behaviors in multi-agent systems',
-    targetEnclave: 'enclave-proof-theory',
-    status: 'delivered' as const,
-    createdAt: new Date(Date.now() - 7200000).toISOString(),
-    ipfsCid: 'bafkreiabcdefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku',
-  },
-  {
-    tipPda: 'tip-demo-003',
-    tipper: '5xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsW',
-    contentHash: 'c'.repeat(64),
-    amount: 15_000_000,
-    priority: 'low' as const,
-    sourceType: 'text' as const,
-    content: 'Interesting discussion on AI alignment happening in the governance enclave.',
-    targetEnclave: 'enclave-governance',
-    status: 'delivered' as const,
-    createdAt: new Date(Date.now() - 10800000).toISOString(),
-    ipfsCid: 'bafkreixyzdefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku',
-  },
-];
+import { PublicKey } from '@solana/web3.js';
+import { getAllTipsServer } from '@/lib/solana-server';
 
 /**
  * GET /api/tips
  *
- * Get recent tips with optional filtering.
+ * List on-chain tips (TipAnchor accounts).
  *
  * Query params:
  * - limit: number (default: 20, max: 100)
  * - offset: number (default: 0)
- * - enclave: string (filter by target enclave)
- * - priority: string (filter by priority)
- * - tipper: string (filter by tipper wallet)
+ * - enclave: string ('global' | enclave pubkey)
+ * - priority: 'low' | 'normal' | 'high' | 'breaking'
+ * - tipper: string (wallet pubkey)
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -64,22 +23,37 @@ export async function GET(request: NextRequest) {
   const priority = searchParams.get('priority');
   const tipper = searchParams.get('tipper');
 
-  // Filter tips
-  let filtered = [...demoTips];
+  // Validate and normalize filters
+  const tipperKey = tipper ? parsePubkeyOrNull(tipper) : null;
+  if (tipper && !tipperKey) {
+    return NextResponse.json({ error: 'Invalid tipper wallet address' }, { status: 400 });
+  }
 
+  let targetEnclave: string | null | undefined = undefined;
   if (enclave) {
-    filtered = filtered.filter(t => t.targetEnclave === enclave);
-  }
-  if (priority) {
-    filtered = filtered.filter(t => t.priority === priority);
-  }
-  if (tipper) {
-    filtered = filtered.filter(t => t.tipper === tipper);
+    if (enclave === 'global') {
+      targetEnclave = null;
+    } else {
+      const key = parsePubkeyOrNull(enclave);
+      if (!key) return NextResponse.json({ error: 'Invalid enclave address' }, { status: 400 });
+      targetEnclave = key.toBase58();
+    }
   }
 
-  // Paginate
-  const total = filtered.length;
-  const tips = filtered.slice(offset, offset + limit);
+  const allowedPriorities = ['low', 'normal', 'high', 'breaking'] as const;
+  type Priority = (typeof allowedPriorities)[number];
+  if (priority && !allowedPriorities.includes(priority as Priority)) {
+    return NextResponse.json({ error: 'Invalid priority filter' }, { status: 400 });
+  }
+  const priorityFilter = priority ? (priority as Priority) : undefined;
+
+  const { tips, total } = await getAllTipsServer({
+    limit,
+    offset: offset >= 0 ? offset : 0,
+    tipper: tipperKey?.toBase58(),
+    targetEnclave,
+    priority: priorityFilter,
+  });
 
   return NextResponse.json({
     tips,
@@ -90,4 +64,12 @@ export async function GET(request: NextRequest) {
       hasMore: offset + limit < total,
     },
   });
+}
+
+function parsePubkeyOrNull(value: string): PublicKey | null {
+  try {
+    return new PublicKey(value);
+  } catch {
+    return null;
+  }
 }

@@ -9,7 +9,7 @@ const TIP_TIERS = {
   low: 15_000_000, // 0.015 SOL
   normal: 25_000_000, // 0.025 SOL
   high: 35_000_000, // 0.035 SOL
-  breaking: 50_000_000, // 0.05 SOL
+  breaking: 45_000_000, // 0.045 SOL
 };
 
 /**

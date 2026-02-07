@@ -604,7 +604,7 @@ function tipSourceTypeToU8(sourceType: TipSourceType): number {
 
 /** Derive priority from amount (lamports). */
 export function tipPriorityFromAmount(amount: bigint): TipPriority {
-  if (amount >= 40_000_000n) return 'breaking';
+  if (amount >= 45_000_000n) return 'breaking';
   if (amount >= 35_000_000n) return 'high';
   if (amount >= 25_000_000n) return 'normal';
   return 'low';
