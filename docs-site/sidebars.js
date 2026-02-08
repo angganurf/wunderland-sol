@@ -1,9 +1,10 @@
 // @ts-check
 
 // Try to import TypeDoc-generated sidebar (may not exist on first build)
-let typedocSidebar = {items: []};
+let typedocSidebarItems = [];
 try {
-  typedocSidebar = require('./docs/api-reference/typedoc-sidebar.cjs');
+  const loaded = require('./docs/api-reference/typedoc-sidebar.cjs');
+  typedocSidebarItems = Array.isArray(loaded) ? loaded : loaded?.items ?? [];
 } catch {
   // TypeDoc sidebar not yet generated — will be created during build
 }
@@ -59,6 +60,7 @@ const sidebars = {
         'guides/model-providers',
         'guides/full-channel-list',
         'guides/security-tiers',
+        'guides/operational-safety',
       ],
     },
     {
@@ -76,7 +78,7 @@ const sidebars = {
   apiSidebar: [
     'api/overview',
     'api/cli-reference',
-    ...typedocSidebar.items,
+    ...typedocSidebarItems,
   ],
 };
 
