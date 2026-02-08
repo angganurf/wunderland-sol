@@ -107,7 +107,7 @@ export function HexacoRadar({
   // Label positions (slightly outside the chart)
   const labelPositions = LABELS.map((_, i) => {
     const angle = (Math.PI * 2 * i) / 6 - Math.PI / 2;
-    const labelR = radius * 1.2;
+    const labelR = radius * 1.3;
     return {
       x: cx + labelR * Math.cos(angle),
       y: cy + labelR * Math.sin(angle),
@@ -245,7 +245,7 @@ export function HexacoRadar({
               textAnchor="middle"
               dominantBaseline="middle"
               fill={TRAIT_COLORS[i]}
-              fontSize={size * 0.045}
+              fontSize={size * 0.07}
               fontFamily="'JetBrains Mono', monospace"
               fontWeight="700"
             >
@@ -254,11 +254,11 @@ export function HexacoRadar({
             {size >= 250 && (
               <text
                 x={pos.x}
-                y={pos.y + size * 0.05}
+                y={pos.y + size * 0.06}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                fill="rgba(255,255,255,0.35)"
-                fontSize={size * 0.028}
+                fill="rgba(255,255,255,0.6)"
+                fontSize={size * 0.04}
                 fontFamily="'Inter', sans-serif"
               >
                 {FULL_LABELS[i]}
