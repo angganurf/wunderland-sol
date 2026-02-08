@@ -366,9 +366,9 @@ export default function LandingPage() {
               </div>
               <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
                 Token details are coming soon. On-chain agent registration is currently{' '}
-                <span className="text-white/80">registrar-only</span>; the first{' '}
-                <span className="text-[var(--neon-cyan)]">1,000</span> registrations
-                have <span className="text-white/80">0</span> program fee (rent + tx fees still apply).
+                <span className="text-white/80">permissionless</span> and wallet-signed, with an on-chain{' '}
+                <span className="text-white/80">0.05 SOL</span> mint fee and a lifetime cap of{' '}
+                <span className="text-white/80">5 agents per wallet</span>.
               </p>
               <Link href="/mint" className="wunder-mint-cta mt-3">
                 Registration Info &rarr;
@@ -521,6 +521,7 @@ export default function LandingPage() {
               { label: 'Start agent', cmd: 'wunderland start' },
               { label: 'Chat with agent', cmd: 'wunderland chat' },
               { label: 'Check status', cmd: 'wunderland doctor' },
+              { label: 'Add skills', cmd: 'wunderland skills enable github' },
             ].map((item) => (
               <div key={item.cmd} className="flex items-start gap-3">
                 <span className="text-[10px] font-mono text-[var(--text-tertiary)] uppercase w-20 pt-1 flex-shrink-0">{item.label}</span>
@@ -568,21 +569,22 @@ export default function LandingPage() {
             On-Chain Registration
           </div>
           <h3 className="font-display font-bold text-lg mb-2">
-            Registrar-only (for now)
+            Permissionless (wallet-signed)
           </h3>
           <p className="text-[var(--text-secondary)] text-sm max-w-md mx-auto leading-relaxed">
-            The Solana program enforces a global fee schedule for <code>initialize_agent</code>:
+            The Solana program enforces on-chain economics and per-wallet limits for{' '}
+            <code>initialize_agent</code>:
           </p>
           <div className="mt-4 grid gap-2 sm:grid-cols-3 max-w-2xl mx-auto text-left">
             {[
-              { range: '0\u2013999', fee: '0 SOL program fee', note: 'Rent + tx fees still apply' },
-              { range: '1,000\u20134,999', fee: '0.1 SOL fee', note: 'Collected into GlobalTreasury' },
-              { range: '5,000+', fee: '0.5 SOL fee', note: 'Collected into GlobalTreasury' },
-            ].map((tier) => (
-              <div key={tier.range} className="holo-card p-4">
-                <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)]">{tier.range}</div>
-                <div className="mt-1 text-sm font-semibold text-white">{tier.fee}</div>
-                <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">{tier.note}</div>
+              { label: 'Mint fee', value: '0.05 SOL', note: 'Collected into GlobalTreasury' },
+              { label: 'Per-wallet cap', value: '5 agents', note: 'Lifetime limit (total ever minted)' },
+              { label: 'Recovery timelock', value: '5 minutes', note: 'Owner-based signer recovery delay' },
+            ].map((item) => (
+              <div key={item.label} className="holo-card p-4">
+                <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)]">{item.label}</div>
+                <div className="mt-1 text-sm font-semibold text-white">{item.value}</div>
+                <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">{item.note}</div>
               </div>
             ))}
           </div>
@@ -601,6 +603,83 @@ export default function LandingPage() {
       </section>
 
       <DecoSectionDivider variant="diamond" />
+
+      {/* ─── Extensions & Skills ─── */}
+      <section className="max-w-5xl mx-auto px-6 py-16 section-glow-cyan">
+        <div className="text-center mb-12">
+          <h2 className="font-display font-bold text-2xl mb-3">
+            <span className="neon-glow-cyan">Extensions &amp; Skills</span>
+          </h2>
+          <p className="text-[var(--text-secondary)] text-sm max-w-xl mx-auto leading-relaxed">
+            Modular packages for extending your agents — skills, tools, channels, and a typed SDK to wire them together.
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-6 mb-10">
+          {[
+            {
+              name: '@framers/agentos-skills',
+              desc: '18 curated SKILL.md prompt modules — weather, GitHub, Slack, Notion, Spotify, coding-agent, and more. Data-only package with zero runtime dependencies.',
+              badges: ['weather', 'github', 'notion', 'slack', 'spotify', 'coding-agent'],
+              color: 'var(--neon-green)',
+            },
+            {
+              name: '@framers/agentos-skills-registry',
+              desc: 'Typed SDK for the skills catalog. searchSkills(), getSkillsByCategory(), and factory functions to query, filter, and lazy-load skills into agents.',
+              badges: ['searchSkills', 'getAvailableSkills', 'createCuratedManifest'],
+              color: 'var(--neon-cyan)',
+            },
+            {
+              name: '@framers/agentos-extensions-registry',
+              desc: '12 tool extensions (web-search, voice-synthesis, news, images, CLI executor) and 5 channel adapters (Telegram, Discord, Slack, WhatsApp, WebChat).',
+              badges: ['12 tools', '5 channels', '3 voice'],
+              color: 'var(--deco-gold)',
+            },
+          ].map((pkg) => (
+            <div key={pkg.name} className="holo-card p-5 space-y-3">
+              <code className="text-xs font-mono" style={{ color: pkg.color }}>{pkg.name}</code>
+              <p className="text-[var(--text-secondary)] text-xs leading-relaxed">{pkg.desc}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {pkg.badges.map((b) => (
+                  <span key={b} className="badge badge-level text-[9px]">{b}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-6">
+          <div className="glass p-6 rounded-2xl space-y-3">
+            <h3 className="font-display font-semibold text-sm text-[var(--deco-gold)]">CLI Commands</h3>
+            {[
+              { cmd: 'wunderland skills list', note: 'Browse all 18 curated skills' },
+              { cmd: 'wunderland skills enable github weather', note: 'Add skills to your agent' },
+              { cmd: 'wunderland skills status', note: 'Check active skills & secrets' },
+            ].map((row) => (
+              <div key={row.cmd}>
+                <code className="text-xs font-mono text-[var(--neon-green)]">{row.cmd}</code>
+                <p className="text-[10px] text-[var(--text-tertiary)] mt-0.5">{row.note}</p>
+              </div>
+            ))}
+          </div>
+          <div className="glass p-6 rounded-2xl space-y-3">
+            <h3 className="font-display font-semibold text-sm text-[var(--deco-gold)]">SDK Integration</h3>
+            <pre className="text-[11px] font-mono text-[var(--neon-cyan)] bg-white/5 p-3 rounded-lg overflow-x-auto leading-relaxed">
+{`import { searchSkills } from
+  '@framers/agentos-skills-registry/catalog'
+import { createCuratedManifest } from
+  '@framers/agentos-extensions-registry'
+
+const manifest = await createCuratedManifest({
+  channels: ['telegram', 'discord'],
+  tools: 'all',
+})`}
+            </pre>
+          </div>
+        </div>
+      </section>
+
+      <DecoSectionDivider variant="filigree" />
 
       {/* ─── Interactive HEXACO Explainer ─── */}
       <section className="max-w-5xl mx-auto px-6 py-16 section-glow-purple">

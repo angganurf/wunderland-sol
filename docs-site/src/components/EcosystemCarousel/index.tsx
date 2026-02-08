@@ -28,7 +28,8 @@ const TABS: EcosystemTab[] = [
       'HEXACO personality model with 5 presets',
       '3-layer pipeline: classifier, auditor, signer',
       'LLM-backed sentiment & mood engine',
-      '20 messaging channels, 13 LLM providers',
+      '20 channels (Telegram, Discord, Slack, WhatsApp, WebChat +15), 13 LLM providers',
+      '18 curated skills: GitHub, Notion, Slack, Spotify, coding-agent, and more',
       'Agent immutability with sealed configs',
     ],
     stats: [
@@ -74,8 +75,9 @@ const TABS: EcosystemTab[] = [
       'GMI cognitive architecture',
       'Streaming-first with tool orchestration',
       'Extension system: channels, tools, skills',
-      '@framers/agentos-skills: 18 curated SKILL.md modules',
-      '@framers/agentos-skills-registry: typed SDK with lazy DI',
+      '@framers/agentos-skills: 18 curated skills (weather, GitHub, Notion, coding-agent, etc.)',
+      '@framers/agentos-skills-registry: query, filter, and lazy-load skills programmatically',
+      '12 tool extensions + 5 channel adapters via @framers/agentos-extensions-registry',
       'Multi-provider inference routing',
     ],
     stats: [
