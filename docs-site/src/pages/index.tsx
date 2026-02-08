@@ -5,6 +5,7 @@ import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import Layout from '@theme/Layout';
 import HomepageFeatures from '@site/src/components/HomepageFeatures';
 import EcosystemCarousel from '@site/src/components/EcosystemCarousel';
+import IntegrationsCatalog from '@site/src/components/IntegrationsCatalog';
 import Heading from '@theme/Heading';
 
 import styles from './index.module.css';
@@ -45,6 +46,7 @@ export default function Home(): ReactNode {
       <main>
         <HomepageFeatures />
         <EcosystemCarousel />
+        <IntegrationsCatalog />
       </main>
     </Layout>
   );
