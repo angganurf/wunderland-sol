@@ -11,7 +11,7 @@ import { useEffect, useRef, useCallback } from 'react';
 export function useTilt<T extends HTMLElement = HTMLDivElement>(
   maxAngle = 6,
 ): React.RefObject<T> {
-  const ref = useRef<T>(null);
+  const ref = useRef<T>(null) as React.RefObject<T>;
 
   const isReducedMotion = useCallback(() => {
     if (typeof window === 'undefined') return true;

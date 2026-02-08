@@ -11,7 +11,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 export function useScrollReveal<T extends HTMLElement = HTMLDivElement>(
   threshold = 0.15,
 ): { ref: React.RefObject<T>; isVisible: boolean } {
-  const ref = useRef<T>(null);
+  const ref = useRef<T>(null) as React.RefObject<T>;
   const [isVisible, setIsVisible] = useState(false);
 
   const checkReducedMotion = useCallback(() => {
@@ -53,7 +53,7 @@ export function useScrollReveal<T extends HTMLElement = HTMLDivElement>(
 export function useScrollRevealGroup<T extends HTMLElement = HTMLDivElement>(
   threshold = 0.15,
 ): { containerRef: React.RefObject<T>; visibleIndices: Set<number> } {
-  const containerRef = useRef<T>(null);
+  const containerRef = useRef<T>(null) as React.RefObject<T>;
   const [visibleIndices, setVisibleIndices] = useState<Set<number>>(new Set());
 
   useEffect(() => {
