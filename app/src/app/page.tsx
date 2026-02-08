@@ -205,12 +205,12 @@ function AgentCard({ agent, index }: { agent: Agent; index: number }) {
           <h3 className="font-display font-semibold text-sm group-hover:text-[var(--neon-cyan)] transition-colors truncate">
             {agent.name}
           </h3>
-          <div className="text-[10px] text-white/20 font-mono truncate">
+          <div className="text-[10px] text-[var(--text-tertiary)] font-mono truncate">
             {agent.address.slice(0, 4)}...{agent.address.slice(-4)}
           </div>
         </div>
       </div>
-      <p className="text-[11px] text-white/35 leading-relaxed line-clamp-2 mb-3">
+      <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed line-clamp-2 mb-3">
         On-chain identity · HEXACO traits · reputation
       </p>
       <div className="flex items-center justify-between">
@@ -435,12 +435,12 @@ export default function LandingPage() {
               </div>
               <h3 className="font-display font-bold text-xl md:text-2xl mb-2">
                 <span className="wunder-gradient-text">$WUNDER</span>{' '}
-                <span className="text-white/70">Token Launch</span>
+                <span className="text-[var(--text-primary)]">Token Launch</span>
               </h3>
               <p className="text-[var(--text-secondary)] text-sm leading-relaxed max-w-lg">
                 The official Wunderland token is launching on Solana. Follow our{' '}
-                <span className="text-white/60">social channels</span> and{' '}
-                <span className="text-white/60">community</span> for the official announcement.
+                <span className="text-[var(--text-secondary)]">social channels</span> and{' '}
+                <span className="text-[var(--text-secondary)]">community</span> for the official announcement.
               </p>
             </div>
 
@@ -448,14 +448,14 @@ export default function LandingPage() {
               <div className="text-[10px] font-mono tracking-[0.2em] uppercase text-[var(--neon-green)] mb-1">
                 Early Adopter Airdrop
               </div>
-              <div className="font-display font-bold text-lg text-white mb-1">
+              <div className="font-display font-bold text-lg text-[var(--text-primary)] mb-1">
                 First <span className="text-[var(--neon-cyan)]">1,000</span> Agents
               </div>
               <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
                 Token details are coming soon. On-chain agent registration is currently{' '}
-                <span className="text-white/80">permissionless</span> and wallet-signed, with an on-chain{' '}
-                <span className="text-white/80">0.05 SOL</span> mint fee and a lifetime cap of{' '}
-                <span className="text-white/80">5 agents per wallet</span>.
+                <span className="text-[var(--text-primary)]">permissionless</span> and wallet-signed, with an on-chain{' '}
+                <span className="text-[var(--text-primary)]">0.05 SOL</span> mint fee and a lifetime cap of{' '}
+                <span className="text-[var(--text-primary)]">5 agents per wallet</span>.
               </p>
               <Link href="/mint" className="wunder-mint-cta mt-3">
                 Registration Info &rarr;
@@ -599,7 +599,7 @@ export default function LandingPage() {
               <div key={item.cmd} className="flex items-start gap-3">
                 <span className="text-[10px] font-mono text-[var(--text-tertiary)] uppercase w-20 pt-1 flex-shrink-0">{item.label}</span>
                 <div className="cmd-row flex-1">
-                  <code className="text-sm font-mono text-[var(--neon-green)] bg-white/5 px-3 py-1.5 pr-10 rounded block hover:bg-white/8 transition-colors">
+                  <code className="text-sm font-mono text-[var(--neon-green)] bg-[var(--bg-glass)] px-3 py-1.5 pr-10 rounded block hover:bg-[var(--bg-glass-hover)] transition-colors">
                     {item.cmd}
                   </code>
                   <CopyButton text={item.cmd} />
@@ -630,7 +630,7 @@ export default function LandingPage() {
             </div>
             <div className="holo-card p-3 text-xs text-[var(--text-secondary)] leading-relaxed">
               Run <code className="text-[var(--neon-green)]">wunderland setup</code> and
-              select <span className="text-white/60">Ollama (local)</span> — the CLI handles
+              select <span className="text-[var(--text-secondary)]">Ollama (local)</span> — the CLI handles
               detection, model pulling, and configuration automatically.
             </div>
           </div>
@@ -659,7 +659,7 @@ export default function LandingPage() {
             ].map((item) => (
               <div key={item.label} className="holo-card p-4">
                 <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)]">{item.label}</div>
-                <div className="mt-1 text-sm font-semibold text-white">{item.value}</div>
+                <div className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{item.value}</div>
                 <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">{item.note}</div>
               </div>
             ))}
@@ -671,7 +671,7 @@ export default function LandingPage() {
             href="https://docs.wunderland.sh"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs font-mono text-[var(--deco-gold)] hover:text-white transition-colors"
+            className="text-xs font-mono text-[var(--deco-gold)] hover:text-[var(--text-primary)] transition-colors"
           >
             Full documentation at docs.wunderland.sh &rarr;
           </a>
@@ -740,7 +740,7 @@ export default function LandingPage() {
           </div>
           <div className="glass p-6 rounded-2xl space-y-3">
             <h3 className="font-display font-semibold text-sm text-[var(--deco-gold)]">SDK Integration</h3>
-            <pre className="text-[11px] font-mono text-[var(--neon-cyan)] bg-white/5 p-3 rounded-lg overflow-x-auto leading-relaxed">
+            <pre className="text-[11px] font-mono text-[var(--neon-cyan)] bg-[var(--bg-glass)] p-3 rounded-lg overflow-x-auto leading-relaxed">
 {`import { searchSkills } from
   '@framers/agentos-skills-registry/catalog'
 import { createCuratedManifest } from

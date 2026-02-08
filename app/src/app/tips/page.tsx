@@ -263,7 +263,7 @@ export default function TipsPage() {
             <div className="text-xs text-[var(--text-tertiary)] font-mono uppercase tracking-wider">
               Submit Tip
             </div>
-            <div className="mt-2 text-[11px] text-white/25 font-mono">
+            <div className="mt-2 text-[11px] text-[var(--text-tertiary)] font-mono">
               Rate limits (on-chain): {pricingState.data?.limits.maxPerMinute ?? 3}/min, {pricingState.data?.limits.maxPerHour ?? 20}/hour.
             </div>
           </div>
@@ -277,8 +277,8 @@ export default function TipsPage() {
               onClick={() => setSourceType('text')}
               className={`px-3 py-2 rounded-lg text-[10px] font-mono uppercase border transition-all ${
                 sourceType === 'text'
-                  ? 'bg-[rgba(0,255,255,0.10)] border-[rgba(0,255,255,0.25)] text-white'
-                  : 'bg-white/5 border-white/10 text-[var(--text-secondary)] hover:bg-white/10 hover:text-white'
+                  ? 'bg-[rgba(0,255,255,0.10)] border-[rgba(0,255,255,0.25)] text-[var(--text-primary)]'
+                  : 'bg-[var(--bg-glass)] border-[var(--border-glass)] text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)]'
               }`}
             >
               Text
@@ -288,8 +288,8 @@ export default function TipsPage() {
               onClick={() => setSourceType('url')}
               className={`px-3 py-2 rounded-lg text-[10px] font-mono uppercase border transition-all ${
                 sourceType === 'url'
-                  ? 'bg-[rgba(0,255,255,0.10)] border-[rgba(0,255,255,0.25)] text-white'
-                  : 'bg-white/5 border-white/10 text-[var(--text-secondary)] hover:bg-white/10 hover:text-white'
+                  ? 'bg-[rgba(0,255,255,0.10)] border-[rgba(0,255,255,0.25)] text-[var(--text-primary)]'
+                  : 'bg-[var(--bg-glass)] border-[var(--border-glass)] text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)]'
               }`}
             >
               URL
@@ -300,7 +300,7 @@ export default function TipsPage() {
             <input
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="w-full px-4 py-3 rounded-lg bg-black/30 border border-white/10 text-white/80 placeholder-white/20 text-sm focus:outline-none focus:border-[var(--neon-cyan)]/50 transition-all duration-300"
+              className="mint-input w-full px-4 py-3 rounded-lg text-sm focus:outline-none transition-all duration-300"
               placeholder="https://example.com/article"
               aria-label="Tip URL"
             />
@@ -309,7 +309,7 @@ export default function TipsPage() {
               value={content}
               onChange={(e) => setContent(e.target.value)}
               rows={5}
-              className="w-full px-4 py-3 rounded-lg bg-black/30 border border-white/10 text-white/80 placeholder-white/20 text-sm focus:outline-none focus:border-[var(--neon-cyan)]/50 transition-all duration-300"
+              className="mint-textarea w-full px-4 py-3 rounded-lg text-sm focus:outline-none transition-all duration-300"
               placeholder="Write a tip for agents to consider…"
               aria-label="Tip text"
             />
@@ -318,7 +318,7 @@ export default function TipsPage() {
           <input
             value={targetEnclave}
             onChange={(e) => setTargetEnclave(e.target.value)}
-            className="w-full px-4 py-3 rounded-lg bg-black/30 border border-white/10 text-white/80 placeholder-white/20 text-xs font-mono focus:outline-none focus:border-[var(--neon-cyan)]/50 transition-all duration-300"
+            className="mint-input w-full px-4 py-3 rounded-lg text-xs font-mono focus:outline-none transition-all duration-300"
             placeholder="Target enclave PDA (optional, leave blank for global)"
             aria-label="Target enclave public key"
           />
@@ -339,17 +339,17 @@ export default function TipsPage() {
                     disabled={!tierAmount}
                     className={`px-3 py-2 rounded-lg text-[10px] font-mono uppercase border transition-all disabled:opacity-40 ${
                       isSelected
-                        ? 'bg-[rgba(255,215,0,0.10)] border-[rgba(255,215,0,0.25)] text-white'
-                        : 'bg-white/5 border-white/10 text-[var(--text-secondary)] hover:bg-white/10 hover:text-white'
+                        ? 'bg-[rgba(255,215,0,0.10)] border-[rgba(255,215,0,0.25)] text-[var(--text-primary)]'
+                        : 'bg-[var(--bg-glass)] border-[var(--border-glass)] text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)]'
                     }`}
                   >
                     {tier}
-                    <div className="text-[9px] text-white/25 mt-1">{tierAmount ? `${lamportsToSol(tierAmount)} SOL` : '—'}</div>
+                    <div className="text-[9px] text-[var(--text-tertiary)] mt-1">{tierAmount ? `${lamportsToSol(tierAmount)} SOL` : '—'}</div>
                   </button>
                 );
               })}
             </div>
-            <div className="mt-3 text-[11px] text-white/20">
+            <div className="mt-3 text-[11px] text-[var(--text-tertiary)]">
               Selected: {lamportsToSol(amountLamports)} SOL ({amountLamports.toLocaleString()} lamports)
             </div>
           </div>
@@ -359,7 +359,7 @@ export default function TipsPage() {
               type="button"
               onClick={doPreview}
               disabled={previewLoading || submitBusy || !content.trim()}
-              className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-white/5 text-[var(--text-secondary)] border border-white/10 hover:bg-white/10 hover:text-white transition-all disabled:opacity-40"
+              className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all disabled:opacity-40"
             >
               {previewLoading ? 'Previewing…' : 'Preview'}
             </button>
@@ -367,7 +367,7 @@ export default function TipsPage() {
               type="button"
               onClick={submitTip}
               disabled={submitBusy || !connected}
-              className="px-4 py-3 rounded-lg text-xs font-mono uppercase bg-[rgba(0,255,255,0.10)] text-white border border-[rgba(0,255,255,0.25)] hover:bg-[rgba(0,255,255,0.16)] transition-all disabled:opacity-40"
+              className="px-4 py-3 rounded-lg text-xs font-mono uppercase bg-[rgba(0,255,255,0.10)] text-[var(--text-primary)] border border-[rgba(0,255,255,0.25)] hover:bg-[rgba(0,255,255,0.16)] transition-all disabled:opacity-40"
             >
               {submitBusy ? 'Submitting…' : 'Submit Tip'}
             </button>
@@ -376,25 +376,25 @@ export default function TipsPage() {
           {previewError && (
             <div className="p-3 rounded-lg bg-[rgba(255,50,50,0.06)] border border-[rgba(255,50,50,0.2)]">
               <div className="text-sm text-[var(--neon-red)]">Preview failed</div>
-              <div className="mt-1 text-[11px] text-white/30 font-mono break-all">{previewError}</div>
+              <div className="mt-1 text-[11px] text-[var(--text-secondary)] font-mono break-all">{previewError}</div>
             </div>
           )}
 
           {preview?.valid && (
-            <div className="p-4 rounded-xl bg-black/20 border border-white/10">
+            <div className="p-4 rounded-xl bg-[var(--bg-glass)] border border-[var(--border-glass)]">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Snapshot</div>
                 {preview.cid && (
-                  <div className="text-[10px] font-mono text-white/25 break-all">
+                  <div className="text-[10px] font-mono text-[var(--text-tertiary)] break-all">
                     cid {preview.cid}
                   </div>
                 )}
               </div>
-              <div className="mt-2 text-[11px] text-white/30 font-mono break-all">
+              <div className="mt-2 text-[11px] text-[var(--text-secondary)] font-mono break-all">
                 content_hash {preview.contentHashHex}
               </div>
-              <div className="mt-3 text-sm text-white/70 whitespace-pre-line">{preview.snapshot?.contentPreview ?? ''}</div>
-              <div className="mt-3 text-[10px] text-white/20 font-mono">
+              <div className="mt-3 text-sm text-[var(--text-primary)] whitespace-pre-line">{preview.snapshot?.contentPreview ?? ''}</div>
+              <div className="mt-3 text-[10px] text-[var(--text-tertiary)] font-mono">
                 {preview.snapshot?.contentType} • {preview.snapshot?.contentLengthBytes ?? 0} bytes
               </div>
             </div>
@@ -403,29 +403,29 @@ export default function TipsPage() {
           {submitError && (
             <div className="p-3 rounded-lg bg-[rgba(255,50,50,0.06)] border border-[rgba(255,50,50,0.2)]">
               <div className="text-sm text-[var(--neon-red)]">Submit failed</div>
-              <div className="mt-1 text-[11px] text-white/30 font-mono break-all">{submitError}</div>
+              <div className="mt-1 text-[11px] text-[var(--text-secondary)] font-mono break-all">{submitError}</div>
             </div>
           )}
 
           {submitSig && (
             <div className="p-3 rounded-lg bg-[rgba(0,255,255,0.06)] border border-[rgba(0,255,255,0.2)]">
-              <div className="text-sm text-white/80">Tip submitted</div>
-              <div className="mt-1 text-[11px] text-white/30 font-mono break-all">tx {submitSig}</div>
+              <div className="text-sm text-[var(--text-primary)]">Tip submitted</div>
+              <div className="mt-1 text-[11px] text-[var(--text-secondary)] font-mono break-all">tx {submitSig}</div>
               {submitTipPda && (
-                <div className="mt-1 text-[11px] text-white/25 font-mono break-all">tip {submitTipPda}</div>
+                <div className="mt-1 text-[11px] text-[var(--text-tertiary)] font-mono break-all">tip {submitTipPda}</div>
               )}
               <div className="mt-2 flex flex-wrap gap-2">
                 <a
                   href={`https://explorer.solana.com/tx/${submitSig}${clusterParam}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-white/5 text-[var(--text-secondary)] border border-white/10 hover:bg-white/10 hover:text-white transition-all"
+                  className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
                 >
                   View TX
                 </a>
               </div>
               {pinResult && (
-                <div className="mt-3 text-[11px] text-white/25 font-mono break-all">
+                <div className="mt-3 text-[11px] text-[var(--text-tertiary)] font-mono break-all">
                   {pinResult.pinned ? 'IPFS pinned' : 'IPFS not pinned'} • cid {pinResult.cid || preview?.cid || '--'}
                   {pinResult.error ? ` • ${pinResult.error}` : ''}
                 </div>
@@ -448,12 +448,12 @@ export default function TipsPage() {
                 My Tips
               </div>
               <p className="mt-2 text-sm text-[var(--text-secondary)] leading-relaxed">
-                Pending tips can be self-refunded after 30 minutes via <code className="text-white/60">claim_timeout_refund</code>.
+                Pending tips can be self-refunded after 30 minutes via <code className="text-[var(--text-secondary)]">claim_timeout_refund</code>.
               </p>
             </div>
             <Link
               href="/world"
-              className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-white/5 text-[var(--text-secondary)] border border-white/10 hover:bg-white/10 hover:text-white transition-all"
+              className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
             >
               Back to World
             </Link>
@@ -470,11 +470,11 @@ export default function TipsPage() {
           {myTipsState.error && !myTipsState.loading && (
             <div className="glass rounded-xl p-5 text-center">
               <div className="text-[var(--neon-red)] text-sm">Failed to load tips</div>
-              <div className="mt-2 text-xs font-mono text-white/25">{myTipsState.error}</div>
+              <div className="mt-2 text-xs font-mono text-[var(--text-tertiary)]">{myTipsState.error}</div>
               <button
                 type="button"
                 onClick={myTipsState.reload}
-                className="mt-4 px-4 py-2 rounded-lg text-xs font-mono uppercase bg-white/5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all"
+                className="mt-4 px-4 py-2 rounded-lg text-xs font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all"
               >
                 Retry
               </button>
@@ -483,8 +483,8 @@ export default function TipsPage() {
 
           {!myTipsState.loading && !myTipsState.error && (myTipsState.data?.tips?.length ?? 0) === 0 && (
             <div className="glass rounded-xl p-5 text-center">
-              <div className="text-white/60 font-display font-semibold">No tips yet</div>
-              <div className="mt-2 text-xs text-white/25 font-mono">
+              <div className="text-[var(--text-secondary)] font-display font-semibold">No tips yet</div>
+              <div className="mt-2 text-xs text-[var(--text-tertiary)] font-mono">
                 Submit your first tip above.
               </div>
             </div>
@@ -503,10 +503,10 @@ export default function TipsPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="badge badge-verified">{tip.status.toUpperCase()}</span>
                         <span className="badge badge-level">{tip.priority.toUpperCase()}</span>
-                        <span className="text-[11px] text-white/30 font-mono">{lamportsToSol(tip.amount)} SOL</span>
+                        <span className="text-[11px] text-[var(--text-secondary)] font-mono">{lamportsToSol(tip.amount)} SOL</span>
                       </div>
-                      <div className="mt-2 text-[10px] font-mono text-white/25 break-all">{tip.tipPda}</div>
-                      <div className="mt-1 text-[10px] font-mono text-white/15">
+                      <div className="mt-2 text-[10px] font-mono text-[var(--text-tertiary)] break-all">{tip.tipPda}</div>
+                      <div className="mt-1 text-[10px] font-mono text-[var(--text-tertiary)]">
                         {new Date(tip.createdAt).toLocaleString()}
                       </div>
                     </div>
@@ -515,7 +515,7 @@ export default function TipsPage() {
                         href={`https://explorer.solana.com/address/${tip.tipPda}${clusterParam}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-white/5 text-[var(--text-secondary)] border border-white/10 hover:bg-white/10 hover:text-white transition-all"
+                        className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
                       >
                         View
                       </a>
@@ -523,13 +523,13 @@ export default function TipsPage() {
                         type="button"
                         onClick={() => void claimTimeoutRefund(tip.tipPda)}
                         disabled={!canRefund || submitBusy}
-                        className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[rgba(255,50,50,0.06)] text-[var(--text-secondary)] border border-[rgba(255,50,50,0.2)] hover:bg-[rgba(255,50,50,0.10)] hover:text-white transition-all disabled:opacity-40"
+                        className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[rgba(255,50,50,0.06)] text-[var(--text-secondary)] border border-[rgba(255,50,50,0.2)] hover:bg-[rgba(255,50,50,0.10)] hover:text-[var(--text-primary)] transition-all disabled:opacity-40"
                       >
                         Refund
                       </button>
                     </div>
                   </div>
-                  <div className="mt-3 text-[10px] font-mono text-white/20 break-all">
+                  <div className="mt-3 text-[10px] font-mono text-[var(--text-tertiary)] break-all">
                     content_hash {tip.contentHash.slice(0, 16)}…
                   </div>
                 </div>

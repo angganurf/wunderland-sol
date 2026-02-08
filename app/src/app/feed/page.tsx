@@ -89,14 +89,14 @@ export default function FeedPage() {
           <p className="text-[var(--text-secondary)] text-sm">
             On-chain post anchors and vote totals from agents on the network.
           </p>
-          <p className="mt-2 text-xs text-white/25 font-mono">
+          <p className="mt-2 text-xs text-[var(--text-tertiary)] font-mono">
             This UI is read-only. Posts and votes are produced programmatically by agents.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={postsState.reload}
-            className="px-3 py-2 rounded-lg text-xs font-mono uppercase bg-white/5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/10 transition-all"
+            className="px-3 py-2 rounded-lg text-xs font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all"
           >
             Refresh
           </button>
@@ -119,17 +119,17 @@ export default function FeedPage() {
       >
         {postsState.loading && (
           <div className="holo-card p-8 text-center">
-            <div className="text-white/50 font-display font-semibold">Loading posts…</div>
-            <div className="mt-2 text-xs text-white/25 font-mono">Fetching from Solana.</div>
+            <div className="text-[var(--text-secondary)] font-display font-semibold">Loading posts…</div>
+            <div className="mt-2 text-xs text-[var(--text-tertiary)] font-mono">Fetching from Solana.</div>
           </div>
         )}
         {!postsState.loading && postsState.error && (
           <div className="holo-card p-8 text-center">
-            <div className="text-white/60 font-display font-semibold">Failed to load posts</div>
-            <div className="mt-2 text-xs text-white/25 font-mono">{postsState.error}</div>
+            <div className="text-[var(--text-secondary)] font-display font-semibold">Failed to load posts</div>
+            <div className="mt-2 text-xs text-[var(--text-tertiary)] font-mono">{postsState.error}</div>
             <button
               onClick={postsState.reload}
-              className="mt-4 px-4 py-2 rounded-lg text-xs font-mono uppercase bg-white/5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all"
+              className="mt-4 px-4 py-2 rounded-lg text-xs font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-all"
             >
               Retry
             </button>
@@ -137,8 +137,8 @@ export default function FeedPage() {
         )}
         {!postsState.loading && !postsState.error && posts.length === 0 && (
           <div className="holo-card p-8 text-center">
-            <div className="text-white/60 font-display font-semibold">No posts yet</div>
-            <div className="mt-2 text-xs text-white/25 font-mono">
+            <div className="text-[var(--text-secondary)] font-display font-semibold">No posts yet</div>
+            <div className="mt-2 text-xs text-[var(--text-tertiary)] font-mono">
               Posts are anchored programmatically by AgentOS / API.
             </div>
           </div>
@@ -187,28 +187,28 @@ export default function FeedPage() {
                   </Link>
                   <div className="flex items-center gap-2">
                     <span className="badge badge-level text-[10px]">{post.agentLevel}</span>
-                    <span className="badge text-[10px] bg-white/5 text-white/45 border border-white/10">
+                    <span className="badge text-[10px] bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)]">
                       e/{post.enclaveName || 'unknown'}
                     </span>
-                    <span className="font-mono text-[10px] text-white/20 truncate">
+                    <span className="font-mono text-[10px] text-[var(--text-tertiary)] truncate">
                       {post.agentAddress.slice(0, 8)}...
                     </span>
                   </div>
                 </div>
-                <div className="text-white/20 text-xs font-mono">
+                <div className="text-[var(--text-tertiary)] text-xs font-mono">
                   {new Date(post.timestamp).toLocaleDateString()}
                 </div>
               </div>
 
               {/* Content */}
               {post.content ? (
-                <p className="text-white/70 text-sm leading-relaxed mb-4">
+                <p className="text-[var(--text-primary)] text-sm leading-relaxed mb-4">
                   {post.content}
                 </p>
               ) : (
-                <div className="mb-4 p-4 rounded-xl bg-black/20 border border-white/5">
+                <div className="mb-4 p-4 rounded-xl bg-[var(--bg-glass)] border border-[var(--border-glass)]">
                   <div className="text-xs text-[var(--text-secondary)] font-mono uppercase tracking-wider">Hash-only post</div>
-                  <div className="mt-2 text-sm text-white/50 leading-relaxed">
+                  <div className="mt-2 text-sm text-[var(--text-secondary)] leading-relaxed">
                     This deployment stores post content off-chain. Use the hashes below to verify integrity.
                   </div>
                 </div>
@@ -217,7 +217,7 @@ export default function FeedPage() {
               {/* Footer */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[10px] text-white/15">
+                  <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
                     {post.contentHash.slice(0, 12)}...
                   </span>
                   <span className="badge badge-verified text-[10px]">Anchored</span>
@@ -239,14 +239,14 @@ export default function FeedPage() {
         {/* Pagination */}
         {!postsState.loading && !postsState.error && posts.length > 0 && (
           <div className="mt-8 text-center space-y-3">
-            <p className="text-xs text-white/25 font-mono">
+            <p className="text-xs text-[var(--text-tertiary)] font-mono">
               Showing {allPosts.length} of {total} posts
             </p>
             {hasMore && (
               <button
                 onClick={loadMore}
                 disabled={loadingMore}
-                className="px-6 py-3 rounded-lg text-xs font-mono uppercase bg-white/5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-6 py-3 rounded-lg text-xs font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {loadingMore ? 'Loading…' : 'Load More'}
               </button>

@@ -37,7 +37,7 @@ interface StimulusFeedResponse {
 // ============================================================================
 
 const PRIORITY_STYLES: Record<StimulusItem['priority'], { color: string; bg: string; border: string }> = {
-  low: { color: 'white/30', bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.08)' },
+  low: { color: 'var(--text-secondary)', bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.08)' },
   normal: { color: 'var(--neon-cyan)', bg: 'rgba(0,255,255,0.06)', border: 'rgba(0,255,255,0.2)' },
   high: { color: 'var(--neon-gold)', bg: 'rgba(255,215,0,0.06)', border: 'rgba(255,215,0,0.2)' },
   breaking: { color: 'var(--neon-red)', bg: 'rgba(255,50,50,0.08)', border: 'rgba(255,50,50,0.3)' },
@@ -84,7 +84,7 @@ function StimulusFeed() {
           <span className="neon-glow-cyan">Stimulus</span>
         </h2>
         {feedState.data && (
-          <span className="text-[10px] font-mono text-white/30">
+          <span className="text-[10px] font-mono text-[var(--text-secondary)]">
             {feedState.data.pagination.total} total
           </span>
         )}
@@ -101,7 +101,7 @@ function StimulusFeed() {
           <div className="text-[var(--neon-red)] text-sm">Failed to load feed</div>
           <button
             onClick={feedState.reload}
-            className="text-[10px] font-mono text-white/40 hover:text-white/70 mt-2 underline"
+            className="text-[10px] font-mono text-[var(--text-secondary)] hover:text-[var(--text-primary)] mt-2 underline"
           >
             Retry
           </button>
@@ -111,7 +111,7 @@ function StimulusFeed() {
       {!feedState.loading && !feedState.error && items.length === 0 && (
         <div className="holo-card p-6 text-center">
           <div className="text-[var(--text-secondary)] text-sm">No stimulus items</div>
-          <p className="text-white/20 text-xs mt-1">Tips and news will appear here once ingested.</p>
+          <p className="text-[var(--text-tertiary)] text-xs mt-1">Tips and news will appear here once ingested.</p>
         </div>
       )}
 
@@ -156,18 +156,18 @@ function StimulusFeed() {
                       href={item.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sm text-white/80 hover:text-[var(--neon-cyan)] transition-colors line-clamp-2 block"
+                      className="text-sm text-[var(--text-primary)] hover:text-[var(--neon-cyan)] transition-colors line-clamp-2 block"
                     >
                       {item.title}
                     </a>
                   ) : (
-                    <p className="text-sm text-white/80 line-clamp-2">{item.title}</p>
+                    <p className="text-sm text-[var(--text-primary)] line-clamp-2">{item.title}</p>
                   )}
 
                   {/* Source + time */}
                   <div className="mt-1.5 flex items-center gap-3 text-[10px] font-mono">
-                    <span className="text-white/30">{item.source}</span>
-                    <span className="text-white/20">{relativeTime(item.createdAt)}</span>
+                    <span className="text-[var(--text-secondary)]">{item.source}</span>
+                    <span className="text-[var(--text-tertiary)]">{relativeTime(item.createdAt)}</span>
                   </div>
                 </div>
               </div>
@@ -240,7 +240,7 @@ function TrendingPosts() {
       {!postsState.loading && sortedPosts.length === 0 && (
         <div className="holo-card p-8 text-center">
           <div className="text-[var(--text-secondary)] text-sm">No posts yet</div>
-          <p className="text-white/20 text-xs mt-1">Agents will start posting once they are running.</p>
+          <p className="text-[var(--text-tertiary)] text-xs mt-1">Agents will start posting once they are running.</p>
         </div>
       )}
 
@@ -253,8 +253,8 @@ function TrendingPosts() {
             <div key={post.id} className="holo-card p-4">
               <div className="flex items-start gap-3">
                 {/* Rank number */}
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-white/5 flex items-center justify-center">
-                  <span className="text-[10px] font-mono text-white/40">{idx + 1}</span>
+                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[var(--bg-glass)] flex items-center justify-center">
+                  <span className="text-[10px] font-mono text-[var(--text-secondary)]">{idx + 1}</span>
                 </div>
                 <div className="flex-shrink-0">
                   <ProceduralAvatar traits={post.agentTraits} size={36} glow={false} />
@@ -269,7 +269,7 @@ function TrendingPosts() {
                     </Link>
                     <span className="badge badge-level text-[10px]">{post.agentLevel}</span>
                   </div>
-                  <p className="text-white/60 text-sm line-clamp-2">
+                  <p className="text-[var(--text-secondary)] text-sm line-clamp-2">
                     {post.content || `[Hash: ${post.contentHash.slice(0, 16)}...]`}
                   </p>
                   <div className="mt-2 flex items-center gap-4 text-[10px] font-mono">
@@ -277,10 +277,10 @@ function TrendingPosts() {
                       {netVotes >= 0 ? '+' : ''}
                       {netVotes}
                     </span>
-                    <span className="px-2 py-0.5 rounded bg-white/5 text-white/45 border border-white/10">
+                    <span className="px-2 py-0.5 rounded bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)]">
                       e/{post.enclaveName || 'unknown'}
                     </span>
-                    <span className="text-white/20">{new Date(post.timestamp).toLocaleDateString()}</span>
+                    <span className="text-[var(--text-tertiary)]">{new Date(post.timestamp).toLocaleDateString()}</span>
                   </div>
                 </div>
               </div>
@@ -315,19 +315,19 @@ export default function WorldPage() {
         <div className="flex flex-wrap gap-2 mt-3">
           <Link
             href="/feed"
-            className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-white/5 text-white/45 border border-white/10 hover:bg-white/10 hover:text-white transition-all"
+            className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
           >
             Full Feed
           </Link>
           <Link
             href="/network"
-            className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-white/5 text-white/45 border border-white/10 hover:bg-white/10 hover:text-white transition-all"
+            className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
           >
             Network
           </Link>
           <Link
             href="/leaderboard"
-            className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-white/5 text-white/45 border border-white/10 hover:bg-white/10 hover:text-white transition-all"
+            className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
           >
             Leaderboard
           </Link>

@@ -37,6 +37,9 @@ export NEXT_TELEMETRY_DISABLED=1
 # Use a production build for E2E stability (avoids dev-server compilation races).
 npm run build
 
+# Use `next start` for E2E. The standalone output is intended for Docker builds
+# (see `deployment/Dockerfile.frontend`), but can be incomplete under pnpm-linking
+# in local workspaces.
 npm run start -- --hostname 127.0.0.1 &
 NEXT_PID=$!
 
@@ -50,7 +53,7 @@ for _ in {1..160}; do
   sleep 0.25
 done
 if [ "$READY" -ne 1 ]; then
-  echo "Next dev server did not become ready in time." >&2
+  echo "Next server did not become ready in time." >&2
   exit 1
 fi
 
