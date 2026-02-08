@@ -11,19 +11,15 @@ import { WalletButton } from './WalletButton';
 import { CLUSTER } from '@/lib/solana';
 
 // ---- Devnet top banner ----
-function DevnetBanner() {
-  const [dismissed, setDismissed] = useState(false);
+const BANNER_HEIGHT = 32; // px — matches py-1.5 + text-xs line height
 
-  useEffect(() => {
-    if (typeof window !== 'undefined' && localStorage.getItem('wunderland_devnet_banner_dismissed')) {
-      setDismissed(true);
-    }
-  }, []);
-
-  if (CLUSTER !== 'devnet' || dismissed) return null;
-
+function DevnetBanner({ onDismiss }: { onDismiss: () => void }) {
   return (
-    <div className="fixed top-0 left-0 right-0 z-[60] flex items-center justify-center gap-3 px-4 py-1.5 text-xs font-mono bg-gradient-to-r from-[var(--sol-purple)]/90 via-[var(--neon-cyan)]/20 to-[var(--sol-purple)]/90 backdrop-blur-md border-b border-[var(--neon-cyan)]/20 text-[var(--text-secondary)]">
+    <div
+      className="fixed top-0 left-0 right-0 z-[60] flex items-center justify-center gap-3 px-4 py-1.5 text-xs font-mono bg-gradient-to-r from-[var(--sol-purple)]/90 via-[var(--neon-cyan)]/20 to-[var(--sol-purple)]/90 backdrop-blur-md border-b border-[var(--neon-cyan)]/20 text-[var(--text-secondary)]"
+      style={{ height: BANNER_HEIGHT }}
+      role="status"
+    >
       <span className="inline-flex items-center gap-1.5">
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--neon-cyan)] animate-pulse" />
         <span className="text-[var(--neon-cyan)] font-bold tracking-wide">DEVNET ONLY</span>
@@ -34,7 +30,7 @@ function DevnetBanner() {
         type="button"
         onClick={() => {
           localStorage.setItem('wunderland_devnet_banner_dismissed', '1');
-          setDismissed(true);
+          onDismiss();
         }}
         className="ml-2 text-white/40 hover:text-white/80 transition-colors"
         aria-label="Dismiss devnet banner"
@@ -314,9 +310,9 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
             <span className="mobile-menu-link-icon">◎</span>
             World
           </Link>
-          <Link href="/feed" onClick={onClose} className="mobile-menu-link">
+          <Link href="/posts" onClick={onClose} className="mobile-menu-link">
             <span className="mobile-menu-link-icon">◈</span>
-            Feed
+            Posts
           </Link>
           <Link href="/mint" onClick={onClose} className="mobile-menu-link">
             <span className="mobile-menu-link-icon">⟠</span>
@@ -383,9 +379,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { theme } = useTheme();
   const pathname = usePathname();
   const logoVariant = theme === 'light' ? 'gold' : 'neon';
+  const postsActive = pathname === '/posts' || pathname.startsWith('/posts/') || pathname === '/feed';
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const hamburgerRef = useRef<HTMLButtonElement>(null);
+
+  // Devnet banner state — show banner only on devnet, allow dismissal
+  const [bannerVisible, setBannerVisible] = useState(false);
+  useEffect(() => {
+    if (CLUSTER === 'devnet' && !localStorage.getItem('wunderland_devnet_banner_dismissed')) {
+      setBannerVisible(true);
+    }
+  }, []);
+  const bannerOffset = bannerVisible ? BANNER_HEIGHT : 0;
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -396,7 +402,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <DevnetBanner />
+      {bannerVisible && <DevnetBanner onDismiss={() => setBannerVisible(false)} />}
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-[var(--bg-elevated)] focus:text-[var(--text-primary)] focus:border focus:border-[var(--border-glass)]"
@@ -405,7 +411,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </a>
 
       {/* Navigation */}
-      <nav className={`fixed top-0 left-0 right-0 z-50 nav-bar ${scrolled ? 'nav-bar--scrolled' : ''}`}>
+      <nav className={`fixed left-0 right-0 z-50 nav-bar ${scrolled ? 'nav-bar--scrolled' : ''}`} style={{ top: bannerOffset }}>
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <WunderlandLogo
             variant="compact"
@@ -417,8 +423,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           {/* Desktop nav */}
           <div className="hidden md:flex items-center gap-4 md:gap-6">
-            <Link href="/feed" className={`nav-link ${pathname === '/feed' ? 'nav-link--active' : ''}`}>
-              Feed
+            <Link href="/posts" className={`nav-link ${postsActive ? 'nav-link--active' : ''}`}>
+              Posts
             </Link>
             <Link href="/mint" className={`nav-link ${pathname === '/mint' ? 'nav-link--active' : ''}`}>
               Mint
@@ -470,7 +476,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Main content */}
-      <main id="main-content" tabIndex={-1} className="relative z-10 pt-16">{children}</main>
+      <main id="main-content" tabIndex={-1} className="relative z-10" style={{ paddingTop: 64 + bannerOffset }}>{children}</main>
 
       {/* Footer */}
       <footer className="relative z-10 border-t border-white/5 mt-20 py-12 px-6">

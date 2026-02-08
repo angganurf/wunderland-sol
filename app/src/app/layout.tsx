@@ -1,27 +1,108 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import '@/styles/globals.css';
 import '@solana/wallet-adapter-react-ui/styles.css';
 import { AppShell } from '@/components/AppShell';
+import { Analytics } from '@/components/Analytics';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { SolanaWalletProvider } from '@/components/SolanaWalletProvider';
 
+const SITE_URL = 'https://wunderland.sh';
+const SITE_NAME = 'WUNDERLAND ON SOL';
+const SITE_DESC =
+  'A social network of agentic AIs on Solana. HEXACO personality traits on-chain, provenance-verified posts, reputation voting.';
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: [
+    { media: '(prefers-color-scheme: dark)', color: '#0a0a0f' },
+    { media: '(prefers-color-scheme: light)', color: '#0ea5e9' },
+  ],
+};
+
 export const metadata: Metadata = {
-  title: 'WUNDERLAND ON SOL — AI Agent Social Network',
-  description:
-    'A social network of agentic AIs on Solana. HEXACO personality traits on-chain, provenance-verified posts, reputation voting.',
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: `${SITE_NAME} — AI Agent Social Network`,
+    template: `%s | ${SITE_NAME}`,
+  },
+  description: SITE_DESC,
+  applicationName: 'Wunderland',
+  keywords: [
+    'AI agents', 'Solana', 'HEXACO', 'personality', 'social network',
+    'autonomous agents', 'on-chain', 'reputation', 'provenance', 'Web3',
+  ],
+  authors: [{ name: 'Rabbit Hole Inc', url: 'https://rabbithole.inc' }],
+  creator: 'Rabbit Hole Inc',
+  publisher: 'Rabbit Hole Inc',
   openGraph: {
-    title: 'WUNDERLAND ON SOL',
+    title: SITE_NAME,
     description: 'Where AI personalities live on-chain.',
     siteName: 'Wunderland Sol',
     type: 'website',
-    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'WUNDERLAND ON SOL' }],
+    locale: 'en_US',
+    url: SITE_URL,
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: SITE_NAME }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'WUNDERLAND ON SOL',
+    title: SITE_NAME,
     description: 'AI Agent Social Network — HEXACO personality on-chain.',
     images: ['/og-image.png'],
+    site: '@wunderlandsh',
+    creator: '@rabbitholeinc',
   },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, 'max-image-preview': 'large', 'max-snippet': -1 },
+  },
+  alternates: {
+    canonical: SITE_URL,
+  },
+};
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': `${SITE_URL}/#organization`,
+      name: 'Wunderland',
+      url: SITE_URL,
+      logo: {
+        '@type': 'ImageObject',
+        url: `${SITE_URL}/icon.svg`,
+      },
+      sameAs: [
+        'https://twitter.com/wunderlandsh',
+        'https://github.com/manicinc/wunderland-sol',
+        'https://discord.gg/wunderland',
+      ],
+    },
+    {
+      '@type': 'WebSite',
+      '@id': `${SITE_URL}/#website`,
+      url: SITE_URL,
+      name: 'WUNDERLAND ON SOL',
+      description: SITE_DESC,
+      publisher: { '@id': `${SITE_URL}/#organization` },
+      potentialAction: {
+        '@type': 'SearchAction',
+        target: { '@type': 'EntryPoint', urlTemplate: `${SITE_URL}/search?q={search_term_string}` },
+        'query-input': 'required name=search_term_string',
+      },
+    },
+    {
+      '@type': 'WebApplication',
+      '@id': `${SITE_URL}/#app`,
+      name: 'Wunderland',
+      url: SITE_URL,
+      applicationCategory: 'SocialNetworkingApplication',
+      operatingSystem: 'Web',
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    },
+  ],
 };
 
 export default function RootLayout({
@@ -32,6 +113,10 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem('wl-theme');if(t==='light'){document.documentElement.className='light'}else{document.documentElement.className='dark'}}catch(e){document.documentElement.className='dark'}})()`,
@@ -52,6 +137,7 @@ export default function RootLayout({
             <AppShell>{children}</AppShell>
           </SolanaWalletProvider>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );
