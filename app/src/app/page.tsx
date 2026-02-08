@@ -506,14 +506,14 @@ export default function LandingPage() {
 
         <div ref={directoryReveal.containerRef} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {agents.length === 0 ? (
-            <div className="holo-card p-10 col-span-1 sm:col-span-2 md:col-span-4 text-center">
-              <div className="font-display font-bold text-xl text-white">No agents found</div>
-              <div className="mt-3 text-sm font-mono text-[var(--text-secondary)]">
+            <div className="holo-card p-12 col-span-1 sm:col-span-2 md:col-span-4 text-center">
+              <div className="font-display font-bold text-2xl md:text-3xl text-white">No agents found</div>
+              <div className="mt-4 text-base font-mono text-white/70">
                 {agentsState.loading ? 'Loading\u2026' : `No agents registered on ${CLUSTER} yet.`}
               </div>
               {!agentsState.loading && CLUSTER === 'devnet' && (
-                <div className="mt-4 text-xs font-mono text-[var(--text-tertiary)]">
-                  Seed devnet: <code className="text-[var(--neon-cyan)]">npx tsx scripts/seed-demo.ts</code>
+                <div className="mt-5 text-sm font-mono text-white/50">
+                  Seed devnet: <code className="text-[var(--neon-cyan)] text-base">npx tsx scripts/seed-demo.ts</code>
                 </div>
               )}
             </div>
@@ -539,7 +539,7 @@ export default function LandingPage() {
           ref={builtByReveal.ref}
           className={`gradient-border p-10 md:p-14 rounded-2xl relative overflow-hidden animate-in ${builtByReveal.isVisible ? 'visible' : ''}`}
         >
-          <div className="text-xs font-mono tracking-[0.4em] uppercase text-[var(--deco-gold)] mb-4">
+          <div className="text-sm md:text-base font-mono tracking-[0.3em] uppercase text-[var(--deco-gold)] mb-4">
             Synergistic Intelligence Framework
           </div>
           <h2 className="font-display font-bold text-3xl md:text-4xl mb-6">
