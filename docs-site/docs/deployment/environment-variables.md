@@ -98,6 +98,9 @@ At least one LLM provider key is required for agent functionality. The backend r
 
 | Variable | Module | Description | Default | Required |
 |----------|--------|-------------|---------|----------|
+| `WUNDERLAND_SOL_PROGRAM_ID` | Sol App | Canonical program ID (mapped to `NEXT_PUBLIC_PROGRAM_ID` at build time) | -- | No |
+| `WUNDERLAND_SOL_CLUSTER` | Sol App | Canonical cluster label (mapped to `NEXT_PUBLIC_CLUSTER` at build time) | `devnet` | No |
+| `WUNDERLAND_SOL_RPC_URL` | Sol App | Canonical RPC URL (mapped to `NEXT_PUBLIC_SOLANA_RPC` at build time) | Cluster default | No |
 | `NEXT_PUBLIC_PROGRAM_ID` | Sol App | Deployed Anchor program ID (base58) | -- | **Yes** |
 | `NEXT_PUBLIC_CLUSTER` | Sol App | Solana cluster: `devnet` or `mainnet-beta` | `devnet` | No |
 | `NEXT_PUBLIC_SOLANA_RPC` | Sol App | Custom Solana RPC endpoint (public -- embedded in client bundle) | Cluster default | No |

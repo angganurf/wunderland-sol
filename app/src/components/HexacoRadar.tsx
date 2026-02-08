@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 
 /**
  * HexacoRadar — Animated SVG radar chart for HEXACO personality traits.
@@ -114,8 +114,9 @@ export function HexacoRadar({
     };
   });
 
-  const gradientId = `hexaco-gradient-${Math.random().toString(36).slice(2, 8)}`;
-  const glowId = `hexaco-glow-${Math.random().toString(36).slice(2, 8)}`;
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const gradientId = `hexaco-gradient-${uid}`;
+  const glowId = `hexaco-glow-${uid}`;
 
   return (
     <svg

@@ -4,8 +4,9 @@
  *
  * Seeds:
  * - ProgramConfig (if missing; requires program upgrade authority)
+ * - EconomicsConfig (if missing; authority-only)
  * - A unique on-chain Enclave (e.g. "wunderland")
- * - Demo agents (registrar-gated, wallet-signed registration)
+ * - Demo agents (permissionless, wallet-signed registration; capped per wallet)
  * - Anchored posts + optional comments + optional cross-votes
  *
  * Usage:
@@ -14,11 +15,11 @@
  *   npx tsx scripts/seed-demo.ts
  *
  * Environment:
- * - SOLANA_RPC / SOLANA_RPC_URL: RPC endpoint (default devnet public RPC)
- * - PROGRAM_ID / NEXT_PUBLIC_PROGRAM_ID: Wunderland program id (default devnet id)
+ * - WUNDERLAND_SOL_RPC_URL or SOLANA_RPC / SOLANA_RPC_URL: RPC endpoint (default devnet public RPC)
+ * - WUNDERLAND_SOL_PROGRAM_ID or PROGRAM_ID / NEXT_PUBLIC_PROGRAM_ID: Wunderland program id (default devnet id)
  * - SEED_KEYPAIR_DIR: where to store generated keypairs (default apps/wunderland-sh/.internal/seed-keypairs)
  * - SEED_CONFIG_AUTHORITY_KEYPAIR: keypair used to initialize config (default ~/.config/solana/id.json)
- * - SEED_AIRDROP_SOL: target SOL for registrar wallet (default 0.05)
+ * - SEED_AIRDROP_SOL: target SOL for the config authority wallet (default 0.05)
  * - SEED_WITH_VOTES: true|false (default true)
  * - SEED_WITH_COMMENTS: true|false (default true)
  * - SEED_NO_AIRDROP: true|false (default false)
@@ -46,7 +47,6 @@ import {
   deriveEnclavePDA,
   derivePostPDA,
   hashSha256Utf8,
-  registrationFeeLamports,
 } from '../sdk/src/index.ts';
 
 // ============================================================
@@ -56,12 +56,14 @@ import {
 const PROJECT_DIR = resolve(join(import.meta.dirname, '..'));
 
 const RPC_URL =
+  process.env.WUNDERLAND_SOL_RPC_URL ||
   process.env.SOLANA_RPC ||
   process.env.SOLANA_RPC_URL ||
   'https://api.devnet.solana.com';
 
 const PROGRAM_ID = new PublicKey(
-  process.env.PROGRAM_ID ||
+  process.env.WUNDERLAND_SOL_PROGRAM_ID ||
+    process.env.PROGRAM_ID ||
     process.env.NEXT_PUBLIC_PROGRAM_ID ||
     'ExSiNgfPTSPew6kCqetyNcw8zWMo1hozULkZR1CSEq88',
 );
@@ -84,8 +86,10 @@ const ENCLAVE_NAME = process.env.SEED_ENCLAVE_NAME || 'wunderland';
 
 // Account sizes (must match on-chain `::LEN` constants)
 const SPACE_CONFIG = 49;
+const SPACE_ECONOMICS = 59;
 const SPACE_AGENT_IDENTITY = 219;
 const SPACE_VAULT = 41;
+const SPACE_OWNER_COUNTER = 43;
 const SPACE_ENCLAVE = 126;
 const SPACE_ENTRY = 202; // PostAnchor (post/comment)
 const SPACE_VOTE = 82;
@@ -318,7 +322,7 @@ async function main() {
   const configAuthority = loadKeypairFromPath(CONFIG_AUTHORITY_KEYPAIR_PATH);
 
   console.log(`  Keypairs: ${KEYPAIR_DIR}`);
-  console.log(`  Airdrop:  ${AIRDROP_SOL} SOL to registrar wallet (if needed)`);
+  console.log(`  Airdrop:  ${AIRDROP_SOL} SOL to config authority wallet (if needed)`);
   console.log(`  Comments: ${WITH_COMMENTS ? 'enabled' : 'disabled'}`);
   console.log(`  Votes:    ${WITH_VOTES ? 'enabled' : 'disabled'}`);
   console.log(`  Funding:  ${NO_AIRDROP ? 'funder-only' : 'airdrop'}${funder ? ' + fallback funder' : ''}`);
@@ -328,8 +332,10 @@ async function main() {
 
   // Rent estimates
   const rentConfig = await connection.getMinimumBalanceForRentExemption(SPACE_CONFIG);
+  const rentEconomics = await connection.getMinimumBalanceForRentExemption(SPACE_ECONOMICS);
   const rentAgent = await connection.getMinimumBalanceForRentExemption(SPACE_AGENT_IDENTITY);
   const rentVault = await connection.getMinimumBalanceForRentExemption(SPACE_VAULT);
+  const rentOwnerCounter = await connection.getMinimumBalanceForRentExemption(SPACE_OWNER_COUNTER);
   const rentEnclave = await connection.getMinimumBalanceForRentExemption(SPACE_ENCLAVE);
   const rentEntry = await connection.getMinimumBalanceForRentExemption(SPACE_ENTRY);
   const rentVote = await connection.getMinimumBalanceForRentExemption(SPACE_VOTE);
@@ -338,7 +344,7 @@ async function main() {
   const [configPda] = deriveConfigPDA(client.programId);
   const configInfo = await connection.getAccountInfo(configPda);
 
-  await ensureMinBalance(connection, configAuthority.publicKey, rentConfig + TX_FEE_BUFFER_LAMPORTS, {
+  await ensureMinBalance(connection, configAuthority.publicKey, rentConfig + rentEconomics + TX_FEE_BUFFER_LAMPORTS, {
     allowAirdrop: !NO_AIRDROP,
     funder,
   });
@@ -366,10 +372,36 @@ async function main() {
 
   const cfg = await client.getProgramConfig();
   if (cfg) {
-    const feeNow = registrationFeeLamports(cfg.account.agentCount);
     console.log(`  Agent count:   ${cfg.account.agentCount}`);
     console.log(`  Enclave count: ${cfg.account.enclaveCount}`);
-    console.log(`  Current registration fee: ${(Number(feeNow) / Number(LAMPORTS_PER_SOL)).toFixed(3)} SOL`);
+  }
+
+  // Ensure economics exists (required for agent registration).
+  const econInfo = await client.getEconomicsConfig();
+  if (!econInfo) {
+    console.log('  Initializing EconomicsConfig…');
+    try {
+      const sig = await client.initializeEconomics(configAuthority);
+      console.log(`    TX: ${sig}`);
+    } catch (e: unknown) {
+      throw new Error(
+        [
+          'Failed to initialize EconomicsConfig.',
+          'This instruction is restricted to ProgramConfig.authority.',
+          '',
+          `Config authority keypair: ${CONFIG_AUTHORITY_KEYPAIR_PATH}`,
+          `Error: ${e instanceof Error ? e.message : String(e)}`,
+        ].join('\n'),
+      );
+    }
+    console.log('');
+  }
+
+  const econ = await client.getEconomicsConfig();
+  if (econ) {
+    console.log(`  Agent mint fee: ${(Number(econ.account.agentMintFeeLamports) / Number(LAMPORTS_PER_SOL)).toFixed(3)} SOL`);
+    console.log(`  Max agents per wallet (lifetime): ${econ.account.maxAgentsPerWallet}`);
+    console.log(`  Recovery timelock: ${econ.account.recoveryTimelockSeconds.toString()}s`);
   }
   console.log('');
 
@@ -390,7 +422,7 @@ async function main() {
   for (const preset of AGENTS) {
     console.log(`  Agent: ${preset.name}`);
 
-    // Immutable-agent model: only the registrar (ProgramConfig.authority) can register agents.
+    // Demo: register all agents under the config-authority wallet (fits the 5-per-wallet cap).
     const owner = configAuthority;
     const agentSigner = loadOrCreateKeypair(`${preset.name}-agent-signer`);
     const agentId = deterministicAgentId(preset.name);
@@ -405,7 +437,7 @@ async function main() {
     };
 
     const [agentPda] = client.getAgentPDA(owner.publicKey, agentId);
-    console.log(`    Owner:      ${owner.publicKey.toBase58()} (registrar)`);
+    console.log(`    Owner:      ${owner.publicKey.toBase58()}`);
     console.log(`    Agent PDA:  ${agentPda.toBase58()}`);
     console.log(`    Signer:     ${agentSigner.publicKey.toBase58()}`);
 
@@ -419,10 +451,11 @@ async function main() {
     const commentsToCreate = WITH_COMMENTS ? 1 : 0;
     const votesToCreate = WITH_VOTES ? Math.max(0, AGENTS.length - 1) : 0;
 
-    const currentCfg = await client.getProgramConfig();
-    const feeLamports = currentCfg ? registrationFeeLamports(currentCfg.account.agentCount) : 0n;
+    const currentEcon = await client.getEconomicsConfig();
+    const feeLamports = currentEcon ? currentEcon.account.agentMintFeeLamports : 50_000_000n;
 
-    const minLamportsForRegistration = Number(feeLamports) + rentAgent + rentVault + TX_FEE_BUFFER_LAMPORTS;
+    const minLamportsForRegistration =
+      Number(feeLamports) + rentOwnerCounter + rentAgent + rentVault + TX_FEE_BUFFER_LAMPORTS;
     const minLamportsForActivity =
       postsToCreate * rentEntry + commentsToCreate * rentEntry + votesToCreate * rentVote + TX_FEE_BUFFER_LAMPORTS;
     const targetMinLamports = Math.max(Math.ceil(AIRDROP_SOL * LAMPORTS_PER_SOL), minLamportsForRegistration + minLamportsForActivity);

@@ -1,6 +1,84 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'crypto';
 
+// ── IPFS CID derivation (CIDv1/raw/sha2-256) ───────────────────────────────
+
+const RAW_CODEC = 0x55;
+const SHA256_CODEC = 0x12;
+const SHA256_LENGTH = 32;
+const BASE32_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
+
+function encodeBase32(bytes: Uint8Array): string {
+  let bits = 0;
+  let value = 0;
+  let out = '';
+
+  for (let i = 0; i < bytes.length; i += 1) {
+    value = (value << 8) | (bytes[i] ?? 0);
+    bits += 8;
+    while (bits >= 5) {
+      out += BASE32_ALPHABET[(value >>> (bits - 5)) & 31] ?? '';
+      bits -= 5;
+    }
+  }
+
+  if (bits > 0) {
+    out += BASE32_ALPHABET[(value << (5 - bits)) & 31] ?? '';
+  }
+
+  return out;
+}
+
+function cidFromSha256Hex(hashHex: string): string {
+  if (!/^[a-f0-9]{64}$/i.test(hashHex)) {
+    throw new Error('Invalid sha256 hex (expected 64 hex chars).');
+  }
+  const hashBytes = Buffer.from(hashHex, 'hex');
+  const multihash = Buffer.concat([Buffer.from([SHA256_CODEC, SHA256_LENGTH]), hashBytes]);
+  const cidBytes = Buffer.concat([Buffer.from([0x01, RAW_CODEC]), multihash]);
+  return `b${encodeBase32(cidBytes)}`;
+}
+
+function stableSortJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableSortJson);
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(record).sort()) {
+      out[key] = stableSortJson(record[key]);
+    }
+    return out;
+  }
+  if (typeof value === 'bigint') return value.toString();
+  return value;
+}
+
+function canonicalizeJson(value: unknown): string {
+  try {
+    return JSON.stringify(stableSortJson(value));
+  } catch {
+    return JSON.stringify(value);
+  }
+}
+
+function sanitizeText(text: string, maxBytes: number): string {
+  return text
+    .trim()
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .slice(0, maxBytes);
+}
+
+const MAX_SNAPSHOT_BYTES = Math.min(
+  2_000_000,
+  Math.max(10_000, Number(process.env.WUNDERLAND_TIP_SNAPSHOT_MAX_BYTES ?? 1_048_576)),
+);
+
+const MAX_PREVIEW_CHARS = Math.min(
+  20_000,
+  Math.max(500, Number(process.env.WUNDERLAND_TIP_SNAPSHOT_PREVIEW_CHARS ?? 4_000)),
+);
+
 /**
  * POST /api/tips/preview
  *
@@ -38,8 +116,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let sanitizedContent: string;
     let contentType = 'text/plain';
+    let snapshot:
+      | { v: 1; sourceType: 'text'; contentType: string; content: string }
+      | { v: 1; sourceType: 'url'; url: string; contentType: string; content: string };
 
     if (sourceType === 'url') {
       // Validate URL
@@ -94,8 +174,17 @@ export async function POST(request: NextRequest) {
 
         // Check content type
         contentType = response.headers.get('content-type')?.split(';')[0].trim() ?? 'text/plain';
-        const allowedTypes = ['text/html', 'text/plain', 'application/json', 'application/xml'];
-        if (!allowedTypes.some(t => contentType.includes(t))) {
+        const allowedTypes = [
+          'text/html',
+          'text/plain',
+          'application/json',
+          'application/xml',
+          'text/xml',
+          'text/markdown',
+          'application/rss+xml',
+          'application/atom+xml',
+        ];
+        if (!allowedTypes.some((t) => contentType.includes(t))) {
           return NextResponse.json(
             { valid: false, error: `Blocked content-type: ${contentType}` },
             { status: 400 }
@@ -104,15 +193,22 @@ export async function POST(request: NextRequest) {
 
         // Read with size limit (1MB)
         const text = await response.text();
-        if (text.length > 1_000_000) {
+        if (text.length > MAX_SNAPSHOT_BYTES) {
           return NextResponse.json(
-            { valid: false, error: 'Content too large (max 1MB)' },
+            { valid: false, error: `Content too large (max ${MAX_SNAPSHOT_BYTES} chars)` },
             { status: 400 }
           );
         }
 
         // Sanitize HTML
-        sanitizedContent = contentType.includes('html') ? sanitizeHtml(text) : text;
+        const sanitizedContent = contentType.includes('html') ? sanitizeHtml(text) : text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        snapshot = {
+          v: 1,
+          sourceType: 'url',
+          url: url.toString(),
+          contentType,
+          content: sanitizedContent,
+        };
       } catch (err) {
         clearTimeout(timeoutId);
         if (err instanceof Error && err.name === 'AbortError') {
@@ -127,22 +223,41 @@ export async function POST(request: NextRequest) {
         );
       }
     } else {
-      // Text tip
-      sanitizedContent = content.trim().slice(0, 10000);
+      const sanitizedContent = sanitizeText(content, MAX_SNAPSHOT_BYTES);
+      snapshot = {
+        v: 1,
+        sourceType: 'text',
+        contentType: 'text/plain',
+        content: sanitizedContent,
+      };
     }
 
-    // Normalize line endings
-    sanitizedContent = sanitizedContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const snapshotJson = canonicalizeJson(snapshot);
+    const snapshotBytes = Buffer.from(snapshotJson, 'utf8');
+    if (snapshotBytes.length > MAX_SNAPSHOT_BYTES) {
+      return NextResponse.json(
+        { valid: false, error: `Snapshot too large (${snapshotBytes.length} bytes)` },
+        { status: 400 },
+      );
+    }
 
     // Compute hash
-    const contentHash = createHash('sha256').update(sanitizedContent, 'utf-8').digest('hex');
+    const contentHashHex = createHash('sha256').update(snapshotBytes).digest('hex');
+    const cid = cidFromSha256Hex(contentHashHex);
 
     return NextResponse.json({
       valid: true,
-      contentHash,
-      contentLength: sanitizedContent.length,
-      contentType,
-      preview: sanitizedContent.slice(0, 500),
+      contentHashHex,
+      cid,
+      snapshotJson,
+      snapshot: {
+        v: 1,
+        sourceType: snapshot.sourceType,
+        url: snapshot.sourceType === 'url' ? snapshot.url : null,
+        contentType: snapshot.contentType,
+        contentPreview: snapshot.content.slice(0, MAX_PREVIEW_CHARS),
+        contentLengthBytes: snapshotBytes.length,
+      },
     });
   } catch (err) {
     console.error('[/api/tips/preview] Error:', err);

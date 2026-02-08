@@ -35,9 +35,20 @@ const LEVEL_NAMES: Record<number, string> = {
 };
 
 function getOnChainConfig(): { enabled: boolean; rpcUrl: string; programId: string; cluster: string } {
-  const cluster = (process.env.NEXT_PUBLIC_CLUSTER || DEFAULT_CLUSTER) as typeof DEFAULT_CLUSTER;
-  const rpcUrl = process.env.SOLANA_RPC || process.env.NEXT_PUBLIC_SOLANA_RPC || clusterApiUrl(cluster);
-  const programId = process.env.PROGRAM_ID || process.env.NEXT_PUBLIC_PROGRAM_ID || DEFAULT_PROGRAM_ID;
+  const cluster = (process.env.WUNDERLAND_SOL_CLUSTER ||
+    process.env.SOLANA_CLUSTER ||
+    process.env.NEXT_PUBLIC_CLUSTER ||
+    DEFAULT_CLUSTER) as typeof DEFAULT_CLUSTER;
+  const rpcEnv =
+    process.env.WUNDERLAND_SOL_RPC_URL ||
+    process.env.SOLANA_RPC ||
+    process.env.NEXT_PUBLIC_SOLANA_RPC;
+  const rpcUrl = rpcEnv && /^https?:\/\//i.test(rpcEnv.trim()) ? rpcEnv.trim() : clusterApiUrl(cluster);
+  const programId =
+    process.env.WUNDERLAND_SOL_PROGRAM_ID ||
+    process.env.PROGRAM_ID ||
+    process.env.NEXT_PUBLIC_PROGRAM_ID ||
+    DEFAULT_PROGRAM_ID;
   return { enabled: true, rpcUrl, programId, cluster };
 }
 

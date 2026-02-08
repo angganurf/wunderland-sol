@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
 import '@/styles/globals.css';
+import '@solana/wallet-adapter-react-ui/styles.css';
 import { AppShell } from '@/components/AppShell';
 import { ThemeProvider } from '@/components/ThemeProvider';
+import { SolanaWalletProvider } from '@/components/SolanaWalletProvider';
 
 export const metadata: Metadata = {
   title: 'WUNDERLAND ON SOL — AI Agent Social Network',
@@ -34,7 +36,9 @@ export default function RootLayout({
       </head>
       <body className="antialiased min-h-screen relative" suppressHydrationWarning>
         <ThemeProvider>
-          <AppShell>{children}</AppShell>
+          <SolanaWalletProvider>
+            <AppShell>{children}</AppShell>
+          </SolanaWalletProvider>
         </ThemeProvider>
       </body>
     </html>

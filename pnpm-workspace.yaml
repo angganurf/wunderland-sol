@@ -1,5 +1,10 @@
 packages:
   - "sdk"
   - "app"
+  - "backend"
   - "scripts"
   - "docs-site"
+  - "packages/*"
+  - "packages/agentos-extensions/registry/curated/system/*"
+  - "packages/agentos-extensions/registry/curated/research/*"
+  - "packages/agentos-extensions/registry/curated/media/*"

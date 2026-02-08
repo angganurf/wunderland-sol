@@ -129,10 +129,48 @@ export interface AgentVaultAccount {
 export interface EnclaveAccount {
   nameHash: Uint8Array; // 32 bytes (sha256(lowercase(trim(name))))
   creatorAgent: PublicKey; // AgentIdentity PDA
-  creatorOwner: PublicKey; // Wallet pubkey (receives enclave tip share)
+  creatorOwner: PublicKey; // Wallet pubkey (controls rewards publishing)
   metadataHash: Uint8Array; // 32 bytes
   createdAt: bigint;
   isActive: boolean;
+  bump: number;
+}
+
+/**
+ * On-chain EnclaveTreasury account data.
+ * Seeds: ["enclave_treasury", enclave_pda]
+ */
+export interface EnclaveTreasuryAccount {
+  enclave: PublicKey;
+  bump: number;
+}
+
+/**
+ * On-chain RewardsEpoch account data (Merkle-claim).
+ * Seeds: ["rewards_epoch", enclave_pda, epoch_u64_le]
+ */
+export interface RewardsEpochAccount {
+  enclave: PublicKey;
+  epoch: bigint;
+  merkleRoot: Uint8Array; // 32 bytes
+  totalAmount: bigint;
+  claimedAmount: bigint;
+  publishedAt: bigint;
+  claimDeadline: bigint; // 0 = no deadline
+  sweptAt: bigint; // 0 = not swept
+  bump: number;
+}
+
+/**
+ * On-chain RewardsClaimReceipt account data.
+ * Seeds: ["rewards_claim", rewards_epoch_pda, index_u32_le]
+ */
+export interface RewardsClaimReceiptAccount {
+  rewardsEpoch: PublicKey;
+  index: number;
+  agent: PublicKey;
+  amount: bigint;
+  claimedAt: bigint;
   bump: number;
 }
 

@@ -2,10 +2,14 @@ use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 
 use crate::errors::WunderlandError;
-use crate::state::{Enclave, GlobalTreasury, ProgramConfig, TipAnchor, TipEscrow, TipStatus};
+use crate::state::{
+    Enclave, EnclaveTreasury, GlobalTreasury, ProgramConfig, TipAnchor, TipEscrow, TipStatus,
+};
 
 /// Settle a tip after successful processing.
-/// Splits escrow: 70% to treasury, 30% to enclave creator (if targeted).
+/// Splits escrow:
+/// - Global tips: 100% to GlobalTreasury
+/// - Enclave-targeted tips: 70% GlobalTreasury, 30% EnclaveTreasury
 /// Authority-only operation.
 #[derive(Accounts)]
 pub struct SettleTip<'info> {
@@ -51,10 +55,10 @@ pub struct SettleTip<'info> {
     /// CHECK: May be SystemProgram for global tips
     pub target_enclave: UncheckedAccount<'info>,
 
-    /// Enclave creator's wallet to receive 30% (if enclave-targeted).
-    /// CHECK: Validated against enclave.creator_owner in handler
+    /// Enclave treasury PDA to receive 30% (if enclave-targeted).
+    /// CHECK: Validated as PDA + discriminator in handler. Unused for global tips.
     #[account(mut)]
-    pub enclave_creator: UncheckedAccount<'info>,
+    pub enclave_treasury: UncheckedAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }
@@ -98,31 +102,55 @@ pub fn handler(ctx: Context<SettleTip>) -> Result<()> {
 
         msg!("Global tip settled: {} lamports to treasury", treasury_share);
     } else {
-        // Enclave-targeted tip: 70% treasury, 30% creator
+        // Enclave-targeted tip: 70% treasury, 30% enclave treasury
         let treasury_share = amount
             .checked_mul(70)
             .ok_or(WunderlandError::ArithmeticOverflow)?
             .checked_div(100)
             .ok_or(WunderlandError::ArithmeticOverflow)?;
-        let creator_share = amount
+        let enclave_share = amount
             .checked_sub(treasury_share)
             .ok_or(WunderlandError::ArithmeticOverflow)?;
 
-        // Verify enclave creator owner matches
-        // Deserialize enclave to check creator_owner (stored at the same offset as v1 creator_authority).
+        // Verify enclave creator owner matches the on-chain Enclave account.
+        require!(
+            ctx.accounts.target_enclave.owner == ctx.program_id,
+            WunderlandError::InvalidTargetEnclave
+        );
+
         let enclave_data = ctx.accounts.target_enclave.try_borrow_data()?;
-        // Skip 8-byte discriminator, then 32-byte name_hash, then 32-byte creator_agent
-        // creator_owner starts at offset 8 + 32 + 32 = 72
-        if enclave_data.len() >= 104 {
-            let creator_owner = Pubkey::try_from(&enclave_data[72..104])
-                .map_err(|_| WunderlandError::InvalidTargetEnclave)?;
-            require!(
-                ctx.accounts.enclave_creator.key() == creator_owner,
-                WunderlandError::InvalidTargetEnclave
-            );
-        } else {
-            return Err(WunderlandError::InvalidTargetEnclave.into());
-        }
+        let mut enclave_bytes: &[u8] = &enclave_data;
+        let enclave = Enclave::try_deserialize(&mut enclave_bytes)
+            .map_err(|_| error!(WunderlandError::InvalidTargetEnclave))?;
+
+        require!(
+            enclave.is_active,
+            WunderlandError::EnclaveInactive
+        );
+
+        // Validate enclave treasury PDA + account type.
+        let (expected_treasury, _bump) = Pubkey::find_program_address(
+            &[b"enclave_treasury", ctx.accounts.target_enclave.key().as_ref()],
+            ctx.program_id,
+        );
+        require_keys_eq!(
+            ctx.accounts.enclave_treasury.key(),
+            expected_treasury,
+            WunderlandError::InvalidEnclaveTreasury
+        );
+        require!(
+            ctx.accounts.enclave_treasury.owner == ctx.program_id,
+            WunderlandError::InvalidEnclaveTreasury
+        );
+
+        let treasury_data = ctx.accounts.enclave_treasury.try_borrow_data()?;
+        let mut treasury_bytes: &[u8] = &treasury_data;
+        let enclave_treasury = EnclaveTreasury::try_deserialize(&mut treasury_bytes)
+            .map_err(|_| error!(WunderlandError::InvalidEnclaveTreasury))?;
+        require!(
+            enclave_treasury.enclave == ctx.accounts.target_enclave.key(),
+            WunderlandError::InvalidEnclaveTreasury
+        );
 
         // Transfer treasury share
         **escrow.to_account_info().try_borrow_mut_lamports()? = escrow
@@ -142,29 +170,29 @@ pub fn handler(ctx: Context<SettleTip>) -> Result<()> {
             .checked_add(treasury_share)
             .ok_or(WunderlandError::ArithmeticOverflow)?;
 
-        // Transfer creator share
+        // Transfer enclave share
         **escrow.to_account_info().try_borrow_mut_lamports()? = escrow
             .to_account_info()
             .lamports()
-            .checked_sub(creator_share)
+            .checked_sub(enclave_share)
             .ok_or(WunderlandError::ArithmeticOverflow)?;
 
         **ctx
             .accounts
-            .enclave_creator
+            .enclave_treasury
             .to_account_info()
             .try_borrow_mut_lamports()? = ctx
             .accounts
-            .enclave_creator
+            .enclave_treasury
             .to_account_info()
             .lamports()
-            .checked_add(creator_share)
+            .checked_add(enclave_share)
             .ok_or(WunderlandError::ArithmeticOverflow)?;
 
         msg!(
-            "Enclave tip settled: {} to treasury, {} to creator",
+            "Enclave tip settled: {} to treasury, {} to enclave treasury",
             treasury_share,
-            creator_share
+            enclave_share
         );
     }
 

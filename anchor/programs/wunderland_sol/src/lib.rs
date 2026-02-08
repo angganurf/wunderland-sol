@@ -13,9 +13,32 @@ declare_id!("ExSiNgfPTSPew6kCqetyNcw8zWMo1hozULkZR1CSEq88");
 pub mod wunderland_sol {
     use super::*;
 
-    /// Initialize program configuration (sets registrar authority).
-    pub fn initialize_config(ctx: Context<InitializeConfig>) -> Result<()> {
-        instructions::initialize_config::handler(ctx)
+    /// Initialize program configuration (sets admin authority).
+    ///
+    /// Only the program upgrade authority can initialize config, but the stored admin
+    /// authority can be a separate key (e.g. a multisig).
+    pub fn initialize_config(ctx: Context<InitializeConfig>, admin_authority: Pubkey) -> Result<()> {
+        instructions::initialize_config::handler(ctx, admin_authority)
+    }
+
+    /// Initialize economics + limits (authority-only).
+    pub fn initialize_economics(ctx: Context<InitializeEconomics>) -> Result<()> {
+        instructions::initialize_economics::handler(ctx)
+    }
+
+    /// Update economics + limits (authority-only).
+    pub fn update_economics(
+        ctx: Context<UpdateEconomics>,
+        agent_mint_fee_lamports: u64,
+        max_agents_per_wallet: u16,
+        recovery_timelock_seconds: i64,
+    ) -> Result<()> {
+        instructions::update_economics::handler(
+            ctx,
+            agent_mint_fee_lamports,
+            max_agents_per_wallet,
+            recovery_timelock_seconds,
+        )
     }
 
     /// Register a new agent identity (permissionless, wallet-signed).
@@ -35,6 +58,29 @@ pub mod wunderland_sol {
             metadata_hash,
             agent_signer,
         )
+    }
+
+    /// Deactivate an agent (owner-only safety valve).
+    pub fn deactivate_agent(ctx: Context<DeactivateAgent>) -> Result<()> {
+        instructions::deactivate_agent::handler(ctx)
+    }
+
+    /// Request an owner-based agent signer recovery (timelocked).
+    pub fn request_recover_agent_signer(
+        ctx: Context<RequestRecoverAgentSigner>,
+        new_agent_signer: Pubkey,
+    ) -> Result<()> {
+        instructions::request_recover_agent_signer::handler(ctx, new_agent_signer)
+    }
+
+    /// Execute an owner-based agent signer recovery after timelock.
+    pub fn execute_recover_agent_signer(ctx: Context<ExecuteRecoverAgentSigner>) -> Result<()> {
+        instructions::execute_recover_agent_signer::handler(ctx)
+    }
+
+    /// Cancel a pending recovery request (owner-only).
+    pub fn cancel_recover_agent_signer(ctx: Context<CancelRecoverAgentSigner>) -> Result<()> {
+        instructions::cancel_recover_agent_signer::handler(ctx)
     }
 
     /// Anchor a post on-chain with content hash and manifest hash.
@@ -88,6 +134,43 @@ pub mod wunderland_sol {
         instructions::create_enclave::handler(ctx, name_hash, metadata_hash)
     }
 
+    /// Initialize an EnclaveTreasury PDA for an existing enclave (permissionless migration helper).
+    pub fn initialize_enclave_treasury(ctx: Context<InitializeEnclaveTreasury>) -> Result<()> {
+        instructions::initialize_enclave_treasury::handler(ctx)
+    }
+
+    /// Publish a rewards epoch (Merkle root) and escrow lamports from the enclave treasury.
+    pub fn publish_rewards_epoch(
+        ctx: Context<PublishRewardsEpoch>,
+        epoch: u64,
+        merkle_root: [u8; 32],
+        amount: u64,
+        claim_window_seconds: i64,
+    ) -> Result<()> {
+        instructions::publish_rewards_epoch::handler(
+            ctx,
+            epoch,
+            merkle_root,
+            amount,
+            claim_window_seconds,
+        )
+    }
+
+    /// Claim rewards into an AgentVault via Merkle proof (permissionless).
+    pub fn claim_rewards(
+        ctx: Context<ClaimRewards>,
+        index: u32,
+        amount: u64,
+        proof: Vec<[u8; 32]>,
+    ) -> Result<()> {
+        instructions::claim_rewards::handler(ctx, index, amount, proof)
+    }
+
+    /// Sweep unclaimed rewards back to the enclave treasury after the claim window closes.
+    pub fn sweep_unclaimed_rewards(ctx: Context<SweepUnclaimedRewards>, epoch: u64) -> Result<()> {
+        instructions::sweep_unclaimed_rewards::handler(ctx, epoch)
+    }
+
     // ========================================================================
     // Tip Instructions
     // ========================================================================
@@ -103,12 +186,12 @@ pub mod wunderland_sol {
         instructions::submit_tip::handler(ctx, content_hash, amount, source_type, tip_nonce)
     }
 
-    /// Settle a tip after successful processing (registrar-only).
+    /// Settle a tip after successful processing (authority-only).
     pub fn settle_tip(ctx: Context<SettleTip>) -> Result<()> {
         instructions::settle_tip::handler(ctx)
     }
 
-    /// Refund a tip after failed processing (registrar-only).
+    /// Refund a tip after failed processing (authority-only).
     pub fn refund_tip(ctx: Context<RefundTip>) -> Result<()> {
         instructions::refund_tip::handler(ctx)
     }
@@ -116,5 +199,10 @@ pub mod wunderland_sol {
     /// Claim a refund for a timed-out tip (30+ minutes pending).
     pub fn claim_timeout_refund(ctx: Context<ClaimTimeoutRefund>) -> Result<()> {
         instructions::claim_timeout_refund::handler(ctx)
+    }
+
+    /// Withdraw SOL from the program treasury (authority-only).
+    pub fn withdraw_treasury(ctx: Context<WithdrawTreasury>, lamports: u64) -> Result<()> {
+        instructions::withdraw_treasury::handler(ctx, lamports)
     }
 }

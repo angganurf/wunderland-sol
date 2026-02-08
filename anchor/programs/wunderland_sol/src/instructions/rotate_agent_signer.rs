@@ -13,7 +13,8 @@ use crate::state::AgentIdentity;
 ///
 /// Security note:
 /// - Rotation is agent-authorized (not owner-authorized) to prevent owner-wallet hijacking.
-/// - If the agent signer key is lost, the owner should deactivate and re-register a new agent.
+/// - If the agent signer key is lost, the owner can use the timelocked owner-recovery flow
+///   (`request_recover_agent_signer` → `execute_recover_agent_signer`) or deactivate the agent.
 #[derive(Accounts)]
 pub struct RotateAgentSigner<'info> {
     #[account(mut)]

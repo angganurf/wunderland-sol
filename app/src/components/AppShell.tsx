@@ -7,6 +7,7 @@ import { WunderlandLogo } from './brand';
 import { LanternToggle } from './LanternToggle';
 import { SocialIcons } from './SocialIcons';
 import { useTheme } from './ThemeProvider';
+import { WalletButton } from './WalletButton';
 
 // ---- Network dropdown items ----
 const NETWORK_ITEMS = [
@@ -277,6 +278,14 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
             <span className="mobile-menu-link-icon">◈</span>
             Feed
           </Link>
+          <Link href="/mint" onClick={onClose} className="mobile-menu-link">
+            <span className="mobile-menu-link-icon">⟠</span>
+            Mint
+          </Link>
+          <Link href="/tips" onClick={onClose} className="mobile-menu-link">
+            <span className="mobile-menu-link-icon">✦</span>
+            Tips
+          </Link>
 
           {/* Network section */}
           <button
@@ -321,6 +330,9 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
 
         {/* Bottom actions */}
         <div className="px-6 py-4 border-t border-white/5 space-y-3">
+          <div className="flex items-center justify-center">
+            <WalletButton />
+          </div>
           <div className="flex items-center justify-end">
             <LanternToggle />
           </div>
@@ -370,6 +382,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               Feed
             </Link>
+            <Link
+              href="/mint"
+              className="nav-link font-semibold text-[var(--text-primary)] hover:text-[var(--neon-cyan)] transition-colors"
+            >
+              Mint
+            </Link>
+            <Link
+              href="/tips"
+              className="nav-link font-semibold text-[var(--text-primary)] hover:text-[var(--neon-cyan)] transition-colors"
+            >
+              Tips
+            </Link>
             <NetworkDropdown />
             <Link
               href="/about"
@@ -378,6 +402,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               About
             </Link>
             <NavSearch />
+            <WalletButton />
             <LanternToggle />
           </div>
 

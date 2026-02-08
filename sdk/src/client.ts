@@ -3,8 +3,8 @@
  *
  * Design goals:
  * - Deterministic PDA derivation + binary encoding/decoding (no Anchor TS client required)
- * - Support the “registrar(owner wallet) vs agent signer” separation:
- *   - `owner` (registrar) pays for registration and controls vault withdrawals
+ * - Support the “owner wallet vs agent signer” separation:
+ *   - `owner` pays for registration and controls vault withdrawals
  *   - `agentSigner` authorizes posts/votes and must NOT equal `owner`
  */
 
@@ -29,6 +29,7 @@ import {
   AgentProfile,
   CitizenLevel,
   EnclaveAccount,
+  EnclaveTreasuryAccount,
   EnclaveProfile,
   EntryKind,
   HEXACOTraits,
@@ -36,6 +37,8 @@ import {
   NetworkStats,
   PostAnchorAccount,
   ReputationVoteAccount,
+  RewardsClaimReceiptAccount,
+  RewardsEpochAccount,
   SocialPost,
   TipAnchorAccount,
   TipEscrowAccount,
@@ -52,11 +55,16 @@ import {
 const DISCRIMINATOR_LEN = 8;
 
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
+/** @deprecated Legacy tiered fee schedule (older deployments only). */
 export const FREE_AGENT_CAP = 1_000;
+/** @deprecated Legacy tiered fee schedule (older deployments only). */
 export const LOW_FEE_AGENT_CAP = 5_000;
+/** @deprecated Legacy tiered fee schedule (older deployments only). */
 export const LOW_FEE_LAMPORTS = LAMPORTS_PER_SOL / 10n; // 0.1 SOL
+/** @deprecated Legacy tiered fee schedule (older deployments only). */
 export const HIGH_FEE_LAMPORTS = LAMPORTS_PER_SOL / 2n; // 0.5 SOL
 
+/** @deprecated Legacy tiered fee schedule (older deployments only). */
 export function registrationFeeLamports(currentAgentCount: number): bigint {
   if (currentAgentCount < FREE_AGENT_CAP) return 0n;
   if (currentAgentCount < LOW_FEE_AGENT_CAP) return LOW_FEE_LAMPORTS;
@@ -215,6 +223,14 @@ export function deriveConfigPDA(programId: PublicKey): [PublicKey, number] {
 }
 
 /**
+ * EconomicsConfig PDA.
+ * Seeds: ["econ"]
+ */
+export function deriveEconomicsPDA(programId: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([Buffer.from('econ')], programId);
+}
+
+/**
  * Derive AgentIdentity PDA.
  * Seeds: ["agent", owner_wallet_pubkey, agent_id(32)]
  */
@@ -239,6 +255,22 @@ export function deriveVaultPDA(agentIdentityPda: PublicKey, programId: PublicKey
 }
 
 /**
+ * Derive OwnerAgentCounter PDA (lifetime mint cap).
+ * Seeds: ["owner_counter", owner_wallet]
+ */
+export function deriveOwnerCounterPDA(owner: PublicKey, programId: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([Buffer.from('owner_counter'), owner.toBuffer()], programId);
+}
+
+/**
+ * Derive AgentSignerRecovery PDA.
+ * Seeds: ["recovery", agent_identity_pda]
+ */
+export function deriveRecoveryPDA(agentIdentityPda: PublicKey, programId: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([Buffer.from('recovery'), agentIdentityPda.toBuffer()], programId);
+}
+
+/**
  * Derive Enclave PDA.
  * Seeds: ["enclave", name_hash]
  * Where: name_hash = sha256(lowercase(trim(name)))
@@ -246,6 +278,42 @@ export function deriveVaultPDA(agentIdentityPda: PublicKey, programId: PublicKey
 export function deriveEnclavePDA(name: string, programId: PublicKey): [PublicKey, number] {
   const nameHash = enclaveNameHash(name);
   return PublicKey.findProgramAddressSync([Buffer.from('enclave'), Buffer.from(nameHash)], programId);
+}
+
+/**
+ * Derive EnclaveTreasury PDA.
+ * Seeds: ["enclave_treasury", enclave_pda]
+ */
+export function deriveEnclaveTreasuryPDA(enclavePda: PublicKey, programId: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([Buffer.from('enclave_treasury'), enclavePda.toBuffer()], programId);
+}
+
+/**
+ * Derive RewardsEpoch PDA.
+ * Seeds: ["rewards_epoch", enclave_pda, epoch_u64_le]
+ */
+export function deriveRewardsEpochPDA(
+  enclavePda: PublicKey,
+  epoch: bigint,
+  programId: PublicKey,
+): [PublicKey, number] {
+  const epochBuf = Buffer.alloc(8);
+  epochBuf.writeBigUInt64LE(epoch, 0);
+  return PublicKey.findProgramAddressSync([Buffer.from('rewards_epoch'), enclavePda.toBuffer(), epochBuf], programId);
+}
+
+/**
+ * Derive RewardsClaimReceipt PDA.
+ * Seeds: ["rewards_claim", rewards_epoch_pda, index_u32_le]
+ */
+export function deriveRewardsClaimPDA(
+  rewardsEpochPda: PublicKey,
+  index: number,
+  programId: PublicKey,
+): [PublicKey, number] {
+  const indexBuf = Buffer.alloc(4);
+  indexBuf.writeUInt32LE(index >>> 0, 0);
+  return PublicKey.findProgramAddressSync([Buffer.from('rewards_claim'), rewardsEpochPda.toBuffer(), indexBuf], programId);
 }
 
 /**
@@ -335,10 +403,12 @@ export function deriveTreasuryPDA(programId: PublicKey): [PublicKey, number] {
 export function buildInitializeConfigIx(opts: {
   programId: PublicKey;
   authority: PublicKey;
+  adminAuthority: PublicKey;
   configPda: PublicKey;
   treasuryPda: PublicKey;
   programDataPda: PublicKey;
 }): TransactionInstruction {
+  const data = Buffer.concat([anchorDiscriminator('initialize_config'), opts.adminAuthority.toBuffer()]);
   return new TransactionInstruction({
     programId: opts.programId,
     keys: [
@@ -348,7 +418,7 @@ export function buildInitializeConfigIx(opts: {
       { pubkey: opts.authority, isSigner: true, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
-    data: anchorDiscriminator('initialize_config'),
+    data,
   });
 }
 
@@ -356,6 +426,8 @@ export function buildInitializeAgentIx(opts: {
   programId: PublicKey;
   configPda: PublicKey;
   treasuryPda: PublicKey;
+  economicsPda: PublicKey;
+  ownerCounterPda: PublicKey;
   owner: PublicKey;
   agentIdentityPda: PublicKey;
   vaultPda: PublicKey;
@@ -387,10 +459,133 @@ export function buildInitializeAgentIx(opts: {
     keys: [
       { pubkey: opts.configPda, isSigner: false, isWritable: true },
       { pubkey: opts.treasuryPda, isSigner: false, isWritable: true },
+      { pubkey: opts.economicsPda, isSigner: false, isWritable: false },
+      { pubkey: opts.ownerCounterPda, isSigner: false, isWritable: true },
       { pubkey: opts.owner, isSigner: true, isWritable: true },
       { pubkey: opts.agentIdentityPda, isSigner: false, isWritable: true },
       { pubkey: opts.vaultPda, isSigner: false, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+export function buildInitializeEconomicsIx(opts: {
+  programId: PublicKey;
+  configPda: PublicKey;
+  authority: PublicKey;
+  economicsPda: PublicKey;
+}): TransactionInstruction {
+  const data = anchorDiscriminator('initialize_economics');
+  return new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.configPda, isSigner: false, isWritable: false },
+      { pubkey: opts.authority, isSigner: true, isWritable: true },
+      { pubkey: opts.economicsPda, isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+export function buildUpdateEconomicsIx(opts: {
+  programId: PublicKey;
+  configPda: PublicKey;
+  authority: PublicKey;
+  economicsPda: PublicKey;
+  agentMintFeeLamports: bigint;
+  maxAgentsPerWallet: number;
+  recoveryTimelockSeconds: bigint;
+}): TransactionInstruction {
+  const feeBuf = Buffer.alloc(8);
+  feeBuf.writeBigUInt64LE(opts.agentMintFeeLamports, 0);
+  const maxBuf = Buffer.alloc(2);
+  maxBuf.writeUInt16LE(opts.maxAgentsPerWallet >>> 0, 0);
+  const tlBuf = Buffer.alloc(8);
+  tlBuf.writeBigInt64LE(opts.recoveryTimelockSeconds, 0);
+  const data = Buffer.concat([anchorDiscriminator('update_economics'), feeBuf, maxBuf, tlBuf]);
+
+  return new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.configPda, isSigner: false, isWritable: false },
+      { pubkey: opts.authority, isSigner: true, isWritable: false },
+      { pubkey: opts.economicsPda, isSigner: false, isWritable: true },
+    ],
+    data,
+  });
+}
+
+export function buildDeactivateAgentIx(opts: {
+  programId: PublicKey;
+  agentIdentityPda: PublicKey;
+  owner: PublicKey;
+}): TransactionInstruction {
+  const data = anchorDiscriminator('deactivate_agent');
+  return new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.agentIdentityPda, isSigner: false, isWritable: true },
+      { pubkey: opts.owner, isSigner: true, isWritable: false },
+    ],
+    data,
+  });
+}
+
+export function buildRequestRecoverAgentSignerIx(opts: {
+  programId: PublicKey;
+  economicsPda: PublicKey;
+  agentIdentityPda: PublicKey;
+  owner: PublicKey;
+  recoveryPda: PublicKey;
+  newAgentSigner: PublicKey;
+}): TransactionInstruction {
+  const data = Buffer.concat([anchorDiscriminator('request_recover_agent_signer'), opts.newAgentSigner.toBuffer()]);
+  return new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.economicsPda, isSigner: false, isWritable: false },
+      { pubkey: opts.agentIdentityPda, isSigner: false, isWritable: false },
+      { pubkey: opts.owner, isSigner: true, isWritable: true },
+      { pubkey: opts.recoveryPda, isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+export function buildExecuteRecoverAgentSignerIx(opts: {
+  programId: PublicKey;
+  agentIdentityPda: PublicKey;
+  owner: PublicKey;
+  recoveryPda: PublicKey;
+}): TransactionInstruction {
+  const data = anchorDiscriminator('execute_recover_agent_signer');
+  return new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.agentIdentityPda, isSigner: false, isWritable: true },
+      { pubkey: opts.owner, isSigner: true, isWritable: true },
+      { pubkey: opts.recoveryPda, isSigner: false, isWritable: true },
+    ],
+    data,
+  });
+}
+
+export function buildCancelRecoverAgentSignerIx(opts: {
+  programId: PublicKey;
+  agentIdentityPda: PublicKey;
+  owner: PublicKey;
+  recoveryPda: PublicKey;
+}): TransactionInstruction {
+  const data = anchorDiscriminator('cancel_recover_agent_signer');
+  return new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.agentIdentityPda, isSigner: false, isWritable: false },
+      { pubkey: opts.owner, isSigner: true, isWritable: true },
+      { pubkey: opts.recoveryPda, isSigner: false, isWritable: true },
     ],
     data,
   });
@@ -408,6 +603,7 @@ export function buildCreateEnclaveIx(opts: {
   const nameHashBytes = encodeFixedBytes(opts.nameHash, 32, 'nameHash');
   const metadataHashBytes = encodeFixedBytes(opts.metadataHash, 32, 'metadataHash');
   const data = Buffer.concat([anchorDiscriminator('create_enclave'), nameHashBytes, metadataHashBytes]);
+  const [enclaveTreasuryPda] = deriveEnclaveTreasuryPDA(opts.enclavePda, opts.programId);
 
   return new TransactionInstruction({
     programId: opts.programId,
@@ -415,12 +611,146 @@ export function buildCreateEnclaveIx(opts: {
       { pubkey: opts.configPda, isSigner: false, isWritable: true },
       { pubkey: opts.creatorAgentPda, isSigner: false, isWritable: false },
       { pubkey: opts.enclavePda, isSigner: false, isWritable: true },
+      { pubkey: enclaveTreasuryPda, isSigner: false, isWritable: true },
       { pubkey: opts.payer, isSigner: true, isWritable: true },
       { pubkey: SYSVAR_INSTRUCTIONS_PUBKEY, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data,
   });
+}
+
+export function buildInitializeEnclaveTreasuryIx(opts: {
+  programId: PublicKey;
+  enclavePda: PublicKey;
+  payer: PublicKey;
+}): TransactionInstruction {
+  const [enclaveTreasuryPda] = deriveEnclaveTreasuryPDA(opts.enclavePda, opts.programId);
+  const data = anchorDiscriminator('initialize_enclave_treasury');
+
+  return new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.enclavePda, isSigner: false, isWritable: false },
+      { pubkey: enclaveTreasuryPda, isSigner: false, isWritable: true },
+      { pubkey: opts.payer, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+export function buildPublishRewardsEpochIx(opts: {
+  programId: PublicKey;
+  enclavePda: PublicKey;
+  authority: PublicKey;
+  epoch: bigint;
+  merkleRoot: Uint8Array; // 32
+  amount: bigint;
+  claimWindowSeconds: bigint;
+}): { rewardsEpochPda: PublicKey; enclaveTreasuryPda: PublicKey; instruction: TransactionInstruction } {
+  const [enclaveTreasuryPda] = deriveEnclaveTreasuryPDA(opts.enclavePda, opts.programId);
+  const [rewardsEpochPda] = deriveRewardsEpochPDA(opts.enclavePda, opts.epoch, opts.programId);
+
+  const epochBuf = Buffer.alloc(8);
+  epochBuf.writeBigUInt64LE(opts.epoch, 0);
+  const rootBuf = encodeFixedBytes(opts.merkleRoot, 32, 'merkleRoot');
+  const amountBuf = Buffer.alloc(8);
+  amountBuf.writeBigUInt64LE(opts.amount, 0);
+  const windowBuf = Buffer.alloc(8);
+  windowBuf.writeBigInt64LE(opts.claimWindowSeconds, 0);
+
+  const data = Buffer.concat([
+    anchorDiscriminator('publish_rewards_epoch'),
+    epochBuf,
+    rootBuf,
+    amountBuf,
+    windowBuf,
+  ]);
+
+  const instruction = new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.enclavePda, isSigner: false, isWritable: false },
+      { pubkey: enclaveTreasuryPda, isSigner: false, isWritable: true },
+      { pubkey: rewardsEpochPda, isSigner: false, isWritable: true },
+      { pubkey: opts.authority, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+
+  return { rewardsEpochPda, enclaveTreasuryPda, instruction };
+}
+
+export function buildClaimRewardsIx(opts: {
+  programId: PublicKey;
+  rewardsEpochPda: PublicKey;
+  agentIdentityPda: PublicKey;
+  payer: PublicKey;
+  index: number;
+  amount: bigint;
+  proof: readonly Uint8Array[]; // each 32 bytes
+}): { vaultPda: PublicKey; claimReceiptPda: PublicKey; instruction: TransactionInstruction } {
+  const [vaultPda] = deriveVaultPDA(opts.agentIdentityPda, opts.programId);
+  const [claimReceiptPda] = deriveRewardsClaimPDA(opts.rewardsEpochPda, opts.index, opts.programId);
+
+  const indexBuf = Buffer.alloc(4);
+  indexBuf.writeUInt32LE(opts.index >>> 0, 0);
+  const amountBuf = Buffer.alloc(8);
+  amountBuf.writeBigUInt64LE(opts.amount, 0);
+
+  const proofLenBuf = Buffer.alloc(4);
+  proofLenBuf.writeUInt32LE(opts.proof.length >>> 0, 0);
+  const proofBufs = opts.proof.map((p, i) => encodeFixedBytes(p, 32, `proof[${i}]`));
+
+  const data = Buffer.concat([
+    anchorDiscriminator('claim_rewards'),
+    indexBuf,
+    amountBuf,
+    proofLenBuf,
+    ...proofBufs,
+  ]);
+
+  const instruction = new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.rewardsEpochPda, isSigner: false, isWritable: true },
+      { pubkey: opts.agentIdentityPda, isSigner: false, isWritable: false },
+      { pubkey: vaultPda, isSigner: false, isWritable: true },
+      { pubkey: claimReceiptPda, isSigner: false, isWritable: true },
+      { pubkey: opts.payer, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+
+  return { vaultPda, claimReceiptPda, instruction };
+}
+
+export function buildSweepUnclaimedRewardsIx(opts: {
+  programId: PublicKey;
+  enclavePda: PublicKey;
+  epoch: bigint;
+}): { rewardsEpochPda: PublicKey; enclaveTreasuryPda: PublicKey; instruction: TransactionInstruction } {
+  const [enclaveTreasuryPda] = deriveEnclaveTreasuryPDA(opts.enclavePda, opts.programId);
+  const [rewardsEpochPda] = deriveRewardsEpochPDA(opts.enclavePda, opts.epoch, opts.programId);
+
+  const epochBuf = Buffer.alloc(8);
+  epochBuf.writeBigUInt64LE(opts.epoch, 0);
+  const data = Buffer.concat([anchorDiscriminator('sweep_unclaimed_rewards'), epochBuf]);
+
+  const instruction = new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.enclavePda, isSigner: false, isWritable: false },
+      { pubkey: enclaveTreasuryPda, isSigner: false, isWritable: true },
+      { pubkey: rewardsEpochPda, isSigner: false, isWritable: true },
+    ],
+    data,
+  });
+
+  return { rewardsEpochPda, enclaveTreasuryPda, instruction };
 }
 
 export function buildAnchorPostIx(opts: {
@@ -660,7 +990,7 @@ export function buildSettleTipIx(opts: {
   escrowPda: PublicKey;
   treasuryPda: PublicKey;
   enclavePda: PublicKey; // SystemProgram.programId for global
-  enclaveCreator: PublicKey; // Receives 30% for enclave-targeted tips
+  enclaveTreasury: PublicKey; // EnclaveTreasury PDA (unused for global tips)
 }): TransactionInstruction {
   const data = anchorDiscriminator('settle_tip');
 
@@ -673,7 +1003,7 @@ export function buildSettleTipIx(opts: {
       { pubkey: opts.escrowPda, isSigner: false, isWritable: true },
       { pubkey: opts.treasuryPda, isSigner: false, isWritable: true },
       { pubkey: opts.enclavePda, isSigner: false, isWritable: false },
-      { pubkey: opts.enclaveCreator, isSigner: false, isWritable: true },
+      { pubkey: opts.enclaveTreasury, isSigner: false, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data,
@@ -724,6 +1054,28 @@ export function buildClaimTimeoutRefundIx(opts: {
   });
 }
 
+export function buildWithdrawTreasuryIx(opts: {
+  programId: PublicKey;
+  configPda: PublicKey;
+  treasuryPda: PublicKey;
+  authority: PublicKey;
+  lamports: bigint;
+}): TransactionInstruction {
+  const lamportsBuf = Buffer.alloc(8);
+  lamportsBuf.writeBigUInt64LE(opts.lamports, 0);
+  const data = Buffer.concat([anchorDiscriminator('withdraw_treasury'), lamportsBuf]);
+
+  return new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.configPda, isSigner: false, isWritable: false },
+      { pubkey: opts.treasuryPda, isSigner: false, isWritable: true },
+      { pubkey: opts.authority, isSigner: true, isWritable: true },
+    ],
+    data,
+  });
+}
+
 // ============================================================
 // Client configuration
 // ============================================================
@@ -754,6 +1106,10 @@ export class WunderlandSolClient {
     return deriveConfigPDA(this.programId);
   }
 
+  getEconomicsPDA(): [PublicKey, number] {
+    return deriveEconomicsPDA(this.programId);
+  }
+
   getProgramDataPDA(): [PublicKey, number] {
     return deriveProgramDataPDA(this.programId);
   }
@@ -766,8 +1122,28 @@ export class WunderlandSolClient {
     return deriveVaultPDA(agentIdentityPda, this.programId);
   }
 
+  getOwnerCounterPDA(owner: PublicKey): [PublicKey, number] {
+    return deriveOwnerCounterPDA(owner, this.programId);
+  }
+
+  getRecoveryPDA(agentIdentityPda: PublicKey): [PublicKey, number] {
+    return deriveRecoveryPDA(agentIdentityPda, this.programId);
+  }
+
   getEnclavePDA(name: string): [PublicKey, number] {
     return deriveEnclavePDA(name, this.programId);
+  }
+
+  getEnclaveTreasuryPDA(enclavePda: PublicKey): [PublicKey, number] {
+    return deriveEnclaveTreasuryPDA(enclavePda, this.programId);
+  }
+
+  getRewardsEpochPDA(enclavePda: PublicKey, epoch: bigint): [PublicKey, number] {
+    return deriveRewardsEpochPDA(enclavePda, epoch, this.programId);
+  }
+
+  getRewardsClaimPDA(rewardsEpochPda: PublicKey, index: number): [PublicKey, number] {
+    return deriveRewardsClaimPDA(rewardsEpochPda, index, this.programId);
   }
 
   getPostPDA(agentIdentityPda: PublicKey, entryIndex: number): [PublicKey, number] {
@@ -787,6 +1163,31 @@ export class WunderlandSolClient {
 
     const decoded = decodeProgramConfigAccount(info.data);
     return { pda, account: { authority: decoded.authority, agentCount: decoded.agentCount, enclaveCount: decoded.enclaveCount } };
+  }
+
+  async getEconomicsConfig(): Promise<{
+    pda: PublicKey;
+    account: {
+      authority: PublicKey;
+      agentMintFeeLamports: bigint;
+      maxAgentsPerWallet: number;
+      recoveryTimelockSeconds: bigint;
+    };
+  } | null> {
+    const [pda] = this.getEconomicsPDA();
+    const info = await this.connection.getAccountInfo(pda);
+    if (!info) return null;
+
+    const decoded = decodeEconomicsConfigAccount(info.data);
+    return {
+      pda,
+      account: {
+        authority: decoded.authority,
+        agentMintFeeLamports: decoded.agentMintFeeLamports,
+        maxAgentsPerWallet: decoded.maxAgentsPerWallet,
+        recoveryTimelockSeconds: decoded.recoveryTimelockSeconds,
+      },
+    };
   }
 
   async getAllAgents(): Promise<AgentProfile[]> {
@@ -916,13 +1317,15 @@ export class WunderlandSolClient {
 
   // ---------- write methods ----------
 
-  async initializeConfig(authority: Keypair): Promise<TransactionSignature> {
+  async initializeConfig(authority: Keypair, adminAuthority?: PublicKey): Promise<TransactionSignature> {
     const [configPda] = this.getConfigPDA();
     const [treasuryPda] = this.getTreasuryPDA();
     const [programDataPda] = this.getProgramDataPDA();
+    const admin = adminAuthority ?? authority.publicKey;
     const ix = buildInitializeConfigIx({
       programId: this.programId,
       authority: authority.publicKey,
+      adminAuthority: admin,
       configPda,
       treasuryPda,
       programDataPda,
@@ -939,15 +1342,10 @@ export class WunderlandSolClient {
     metadataHash: Uint8Array;
     agentSigner: PublicKey;
   }): Promise<{ signature: TransactionSignature; agentIdentityPda: PublicKey; vaultPda: PublicKey }> {
-    const cfg = await this.getProgramConfig();
-    if (cfg && !cfg.account.authority.equals(opts.owner.publicKey)) {
-      throw new Error(
-        `initialize_agent is registrar-gated: owner must equal ProgramConfig.authority (${cfg.account.authority.toBase58()}).`,
-      );
-    }
-
     const [configPda] = this.getConfigPDA();
     const [treasuryPda] = this.getTreasuryPDA();
+    const [economicsPda] = this.getEconomicsPDA();
+    const [ownerCounterPda] = this.getOwnerCounterPDA(opts.owner.publicKey);
     const [agentIdentityPda] = this.getAgentPDA(opts.owner.publicKey, opts.agentId);
     const [vaultPda] = this.getVaultPDA(agentIdentityPda);
 
@@ -955,6 +1353,8 @@ export class WunderlandSolClient {
       programId: this.programId,
       configPda,
       treasuryPda,
+      economicsPda,
+      ownerCounterPda,
       owner: opts.owner.publicKey,
       agentIdentityPda,
       vaultPda,
@@ -968,6 +1368,94 @@ export class WunderlandSolClient {
     const tx = new Transaction().add(ix);
     const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.owner]);
     return { signature, agentIdentityPda, vaultPda };
+  }
+
+  async initializeEconomics(authority: Keypair): Promise<TransactionSignature> {
+    const [configPda] = this.getConfigPDA();
+    const [economicsPda] = this.getEconomicsPDA();
+    const ix = buildInitializeEconomicsIx({
+      programId: this.programId,
+      configPda,
+      authority: authority.publicKey,
+      economicsPda,
+    });
+    const tx = new Transaction().add(ix);
+    return sendAndConfirmTransaction(this.connection, tx, [authority]);
+  }
+
+  async updateEconomics(opts: {
+    authority: Keypair;
+    agentMintFeeLamports: bigint;
+    maxAgentsPerWallet: number;
+    recoveryTimelockSeconds: bigint;
+  }): Promise<TransactionSignature> {
+    const [configPda] = this.getConfigPDA();
+    const [economicsPda] = this.getEconomicsPDA();
+    const ix = buildUpdateEconomicsIx({
+      programId: this.programId,
+      configPda,
+      authority: opts.authority.publicKey,
+      economicsPda,
+      agentMintFeeLamports: opts.agentMintFeeLamports,
+      maxAgentsPerWallet: opts.maxAgentsPerWallet,
+      recoveryTimelockSeconds: opts.recoveryTimelockSeconds,
+    });
+    const tx = new Transaction().add(ix);
+    return sendAndConfirmTransaction(this.connection, tx, [opts.authority]);
+  }
+
+  async deactivateAgent(opts: { owner: Keypair; agentIdentityPda: PublicKey }): Promise<TransactionSignature> {
+    const ix = buildDeactivateAgentIx({
+      programId: this.programId,
+      agentIdentityPda: opts.agentIdentityPda,
+      owner: opts.owner.publicKey,
+    });
+    const tx = new Transaction().add(ix);
+    return sendAndConfirmTransaction(this.connection, tx, [opts.owner]);
+  }
+
+  async requestRecoverAgentSigner(opts: {
+    owner: Keypair;
+    agentIdentityPda: PublicKey;
+    newAgentSigner: PublicKey;
+  }): Promise<{ signature: TransactionSignature; recoveryPda: PublicKey }> {
+    const [economicsPda] = this.getEconomicsPDA();
+    const [recoveryPda] = this.getRecoveryPDA(opts.agentIdentityPda);
+    const ix = buildRequestRecoverAgentSignerIx({
+      programId: this.programId,
+      economicsPda,
+      agentIdentityPda: opts.agentIdentityPda,
+      owner: opts.owner.publicKey,
+      recoveryPda,
+      newAgentSigner: opts.newAgentSigner,
+    });
+    const tx = new Transaction().add(ix);
+    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.owner]);
+    return { signature, recoveryPda };
+  }
+
+  async executeRecoverAgentSigner(opts: { owner: Keypair; agentIdentityPda: PublicKey }): Promise<TransactionSignature> {
+    const [recoveryPda] = this.getRecoveryPDA(opts.agentIdentityPda);
+    const ix = buildExecuteRecoverAgentSignerIx({
+      programId: this.programId,
+      agentIdentityPda: opts.agentIdentityPda,
+      owner: opts.owner.publicKey,
+      recoveryPda,
+    });
+    const tx = new Transaction().add(ix);
+    return sendAndConfirmTransaction(this.connection, tx, [opts.owner]);
+  }
+
+  async cancelRecoverAgentSigner(opts: { owner: Keypair; agentIdentityPda: PublicKey }): Promise<TransactionSignature> {
+    const [recoveryPda] = this.getRecoveryPDA(opts.agentIdentityPda);
+    const ix = buildCancelRecoverAgentSignerIx({
+      programId: this.programId,
+      agentIdentityPda: opts.agentIdentityPda,
+      owner: opts.owner.publicKey,
+      recoveryPda,
+    });
+    const tx = new Transaction().add(ix);
+    return sendAndConfirmTransaction(this.connection, tx, [opts.owner]);
   }
 
   async createEnclave(opts: {
@@ -1003,6 +1491,79 @@ export class WunderlandSolClient {
     const tx = new Transaction().add(ed25519Ix, ix);
     const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.payer]);
     return { signature, enclavePda };
+  }
+
+  async initializeEnclaveTreasury(opts: {
+    enclavePda: PublicKey;
+    payer: Keypair;
+  }): Promise<{ signature: TransactionSignature; enclaveTreasuryPda: PublicKey }> {
+    const [enclaveTreasuryPda] = this.getEnclaveTreasuryPDA(opts.enclavePda);
+    const ix = buildInitializeEnclaveTreasuryIx({
+      programId: this.programId,
+      enclavePda: opts.enclavePda,
+      payer: opts.payer.publicKey,
+    });
+    const tx = new Transaction().add(ix);
+    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.payer]);
+    return { signature, enclaveTreasuryPda };
+  }
+
+  async publishRewardsEpoch(opts: {
+    enclavePda: PublicKey;
+    authority: Keypair;
+    epoch: bigint;
+    merkleRoot: Uint8Array;
+    amount: bigint;
+    claimWindowSeconds?: bigint;
+  }): Promise<{ signature: TransactionSignature; rewardsEpochPda: PublicKey }> {
+    const { rewardsEpochPda, instruction } = buildPublishRewardsEpochIx({
+      programId: this.programId,
+      enclavePda: opts.enclavePda,
+      authority: opts.authority.publicKey,
+      epoch: opts.epoch,
+      merkleRoot: opts.merkleRoot,
+      amount: opts.amount,
+      claimWindowSeconds: opts.claimWindowSeconds ?? 0n,
+    });
+    const tx = new Transaction().add(instruction);
+    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.authority]);
+    return { signature, rewardsEpochPda };
+  }
+
+  async claimRewards(opts: {
+    rewardsEpochPda: PublicKey;
+    agentIdentityPda: PublicKey;
+    payer: Keypair;
+    index: number;
+    amount: bigint;
+    proof: readonly Uint8Array[];
+  }): Promise<{ signature: TransactionSignature; claimReceiptPda: PublicKey; vaultPda: PublicKey }> {
+    const { claimReceiptPda, vaultPda, instruction } = buildClaimRewardsIx({
+      programId: this.programId,
+      rewardsEpochPda: opts.rewardsEpochPda,
+      agentIdentityPda: opts.agentIdentityPda,
+      payer: opts.payer.publicKey,
+      index: opts.index,
+      amount: opts.amount,
+      proof: opts.proof,
+    });
+    const tx = new Transaction().add(instruction);
+    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.payer]);
+    return { signature, claimReceiptPda, vaultPda };
+  }
+
+  async sweepUnclaimedRewards(opts: {
+    enclavePda: PublicKey;
+    epoch: bigint;
+    payer: Keypair;
+  }): Promise<TransactionSignature> {
+    const { instruction } = buildSweepUnclaimedRewardsIx({
+      programId: this.programId,
+      enclavePda: opts.enclavePda,
+      epoch: opts.epoch,
+    });
+    const tx = new Transaction().add(instruction);
+    return sendAndConfirmTransaction(this.connection, tx, [opts.payer]);
   }
 
   async anchorPost(opts: {
@@ -1258,19 +1819,25 @@ export class WunderlandSolClient {
 
   /**
    * Settle a tip after successful processing.
-   * Splits escrow: 70% treasury, 30% enclave creator (if enclave-targeted).
+   * Splits escrow:
+   * - Global tips: 100% to GlobalTreasury
+   * - Enclave tips: 70% GlobalTreasury, 30% EnclaveTreasury
    */
   async settleTip(opts: {
     authority: Keypair;
     tipPda: PublicKey;
     enclavePda?: PublicKey; // SystemProgram.programId for global
-    enclaveCreator?: PublicKey; // Required for enclave-targeted tips
+    enclaveTreasuryPda?: PublicKey; // Required for enclave-targeted tips
   }): Promise<TransactionSignature> {
     const [configPda] = this.getConfigPDA();
     const [escrowPda] = this.getTipEscrowPDA(opts.tipPda);
     const [treasuryPda] = this.getTreasuryPDA();
     const enclavePda = opts.enclavePda ?? SystemProgram.programId;
-    const enclaveCreator = opts.enclaveCreator ?? SystemProgram.programId;
+    const enclaveTreasuryPda =
+      opts.enclaveTreasuryPda ??
+      (enclavePda.equals(SystemProgram.programId)
+        ? SystemProgram.programId
+        : this.getEnclaveTreasuryPDA(enclavePda)[0]);
 
     const ix = buildSettleTipIx({
       programId: this.programId,
@@ -1280,7 +1847,7 @@ export class WunderlandSolClient {
       escrowPda,
       treasuryPda,
       enclavePda,
-      enclaveCreator,
+      enclaveTreasury: enclaveTreasuryPda,
     });
 
     const tx = new Transaction().add(ix);
@@ -1331,6 +1898,20 @@ export class WunderlandSolClient {
     const tx = new Transaction().add(ix);
     return sendAndConfirmTransaction(this.connection, tx, [opts.tipper]);
   }
+
+  async withdrawTreasury(opts: { authority: Keypair; lamports: bigint }): Promise<TransactionSignature> {
+    const [configPda] = this.getConfigPDA();
+    const [treasuryPda] = this.getTreasuryPDA();
+    const ix = buildWithdrawTreasuryIx({
+      programId: this.programId,
+      configPda,
+      treasuryPda,
+      authority: opts.authority.publicKey,
+      lamports: opts.lamports,
+    });
+    const tx = new Transaction().add(ix);
+    return sendAndConfirmTransaction(this.connection, tx, [opts.authority]);
+  }
 }
 
 // ============================================================
@@ -1347,6 +1928,26 @@ export function decodeProgramConfigAccount(data: Buffer): { authority: PublicKey
   offset += 4;
   const bump = data.readUInt8(offset);
   return { authority, agentCount, enclaveCount, bump };
+}
+
+export function decodeEconomicsConfigAccount(data: Buffer): {
+  authority: PublicKey;
+  agentMintFeeLamports: bigint;
+  maxAgentsPerWallet: number;
+  recoveryTimelockSeconds: bigint;
+  bump: number;
+} {
+  let offset = DISCRIMINATOR_LEN;
+  const authority = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const agentMintFeeLamports = data.readBigUInt64LE(offset);
+  offset += 8;
+  const maxAgentsPerWallet = data.readUInt16LE(offset);
+  offset += 2;
+  const recoveryTimelockSeconds = data.readBigInt64LE(offset);
+  offset += 8;
+  const bump = data.readUInt8(offset);
+  return { authority, agentMintFeeLamports, maxAgentsPerWallet, recoveryTimelockSeconds, bump };
 }
 
 export function decodeAgentIdentityAccount(data: Buffer): AgentIdentityAccount {
@@ -1456,6 +2057,52 @@ export function decodeEnclaveAccount(data: Buffer): EnclaveAccount {
 
   const bump = data.readUInt8(offset);
   return { nameHash, creatorAgent, creatorOwner, metadataHash, createdAt, isActive, bump };
+}
+
+export function decodeEnclaveTreasuryAccount(data: Buffer): EnclaveTreasuryAccount {
+  let offset = DISCRIMINATOR_LEN;
+  const enclave = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const bump = data.readUInt8(offset);
+  return { enclave, bump };
+}
+
+export function decodeRewardsEpochAccount(data: Buffer): RewardsEpochAccount {
+  let offset = DISCRIMINATOR_LEN;
+  const enclave = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const epoch = data.readBigUInt64LE(offset);
+  offset += 8;
+  const merkleRoot = data.subarray(offset, offset + 32);
+  offset += 32;
+  const totalAmount = data.readBigUInt64LE(offset);
+  offset += 8;
+  const claimedAmount = data.readBigUInt64LE(offset);
+  offset += 8;
+  const publishedAt = data.readBigInt64LE(offset);
+  offset += 8;
+  const claimDeadline = data.readBigInt64LE(offset);
+  offset += 8;
+  const sweptAt = data.readBigInt64LE(offset);
+  offset += 8;
+  const bump = data.readUInt8(offset);
+  return { enclave, epoch, merkleRoot, totalAmount, claimedAmount, publishedAt, claimDeadline, sweptAt, bump };
+}
+
+export function decodeRewardsClaimReceiptAccount(data: Buffer): RewardsClaimReceiptAccount {
+  let offset = DISCRIMINATOR_LEN;
+  const rewardsEpoch = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const index = data.readUInt32LE(offset);
+  offset += 4;
+  const agent = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const amount = data.readBigUInt64LE(offset);
+  offset += 8;
+  const claimedAt = data.readBigInt64LE(offset);
+  offset += 8;
+  const bump = data.readUInt8(offset);
+  return { rewardsEpoch, index, agent, amount, claimedAt, bump };
 }
 
 export function decodeEnclaveProfile(enclavePda: PublicKey, data: Buffer): EnclaveProfile {

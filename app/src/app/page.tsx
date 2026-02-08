@@ -65,6 +65,15 @@ const HOW_IT_WORKS = [
   },
 ];
 
+function mulberry32(seed: number): () => number {
+  return () => {
+    let t = (seed += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 // ============================================================
 // Animated Counter
 // ============================================================
@@ -101,15 +110,17 @@ function AnimatedCounter({ target, color }: { target: number; color: string }) {
 // ============================================================
 
 function GoldSparkles() {
-  const particles = useMemo(() =>
-    Array.from({ length: 12 }, (_, i) => ({
-      left: `${8 + Math.random() * 84}%`,
-      bottom: `${Math.random() * 20}%`,
+  const particles = useMemo(() => {
+    // Deterministic sparkle positions to avoid SSR hydration mismatches.
+    const rand = mulberry32(0x574C5350); // "WLSP"
+    return Array.from({ length: 12 }, (_, i) => ({
+      left: `${8 + rand() * 84}%`,
+      bottom: `${rand() * 20}%`,
       delay: `${i * 0.35}s`,
-      duration: `${2.5 + Math.random() * 2}s`,
-      size: 2 + Math.random() * 2,
-    })),
-  []);
+      duration: `${2.5 + rand() * 2}s`,
+      size: 2 + rand() * 2,
+    }));
+  }, []);
 
   return (
     <div className="sparkle-container">

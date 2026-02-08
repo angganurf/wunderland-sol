@@ -19,11 +19,12 @@ const TIP_TIERS = {
  * The client will use these to build and sign the transaction.
  *
  * Request body:
- * - contentHash: string (hex, 64 chars)
+ * - contentHashHex: string (hex, 64 chars)
  * - amount: number (lamports)
  * - sourceType: 'text' | 'url'
  * - targetEnclave?: string (enclave PDA, or omit for global)
  * - tipper: string (wallet pubkey)
+ * - tipNonce?: string (u64, base-10) (optional; defaults to Date.now())
  *
  * Response:
  * - valid: boolean
@@ -31,7 +32,7 @@ const TIP_TIERS = {
  *     contentHash: number[] (32 bytes)
  *     amount: number
  *     sourceType: number (0=text, 1=url)
- *     tipNonce: number
+ *     tipNonce: string
  *     targetEnclave: string (pubkey)
  *   }
  * - error?: string
@@ -39,10 +40,12 @@ const TIP_TIERS = {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { contentHash, amount, sourceType, targetEnclave, tipper } = body;
+    const { amount, sourceType, targetEnclave, tipper } = body;
+    const contentHashHex = (body?.contentHashHex || body?.contentHash || '').toString();
+    const tipNonceRaw = body?.tipNonce?.toString?.() ?? '';
 
     // Validate content hash
-    if (!contentHash || !/^[a-f0-9]{64}$/i.test(contentHash)) {
+    if (!contentHashHex || !/^[a-f0-9]{64}$/i.test(contentHashHex)) {
       return NextResponse.json(
         { valid: false, error: 'Invalid content hash (must be 64 hex chars)' },
         { status: 400 }
@@ -89,11 +92,25 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate tip nonce (per-wallet incrementing)
-    // In production, this would query on-chain or use a database
-    const tipNonce = Date.now();
+    // Must be unique per tipper; u64 LE bytes are used in PDA seeds.
+    let tipNonce: bigint;
+    try {
+      tipNonce = tipNonceRaw ? BigInt(tipNonceRaw) : BigInt(Date.now());
+    } catch {
+      return NextResponse.json(
+        { valid: false, error: 'Invalid tipNonce (expected base-10 u64 string)' },
+        { status: 400 }
+      );
+    }
+    if (tipNonce < 0n || tipNonce > (1n << 64n) - 1n) {
+      return NextResponse.json(
+        { valid: false, error: 'tipNonce out of range (must fit in u64)' },
+        { status: 400 }
+      );
+    }
 
     // Convert content hash to bytes array
-    const contentHashBytes = Array.from(Buffer.from(contentHash, 'hex'));
+    const contentHashBytes = Array.from(Buffer.from(contentHashHex, 'hex'));
 
     // Derive priority from amount
     let priority: 'low' | 'normal' | 'high' | 'breaking' = 'low';
@@ -111,7 +128,7 @@ export async function POST(request: NextRequest) {
         contentHash: contentHashBytes,
         amount,
         sourceType: sourceType === 'url' ? 1 : 0,
-        tipNonce,
+        tipNonce: tipNonce.toString(),
         targetEnclave: targetEnclavePubkey.toBase58(),
         priority,
       },

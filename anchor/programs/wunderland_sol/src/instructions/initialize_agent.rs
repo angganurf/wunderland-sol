@@ -3,19 +3,18 @@ use anchor_lang::system_program;
 
 use crate::errors::WunderlandError;
 use crate::state::{
-    registration_fee_lamports, AgentIdentity, AgentVault, GlobalTreasury, ProgramConfig,
+    AgentIdentity, AgentVault, EconomicsConfig, GlobalTreasury, OwnerAgentCounter, ProgramConfig,
 };
 
-/// Registrar-gated agent registration (wallet-signed).
+/// Permissionless agent registration (wallet-signed).
 ///
 /// Creates:
 /// - `AgentIdentity` PDA: ["agent", owner_wallet, agent_id]
 /// - `AgentVault` PDA: ["vault", agent_identity]
 ///
-/// Enforces fee tiers (network-wide):
-/// - first 1,000 agents: no extra program fee (still pays rent + tx fees)
-/// - 1,000..4,999: 0.1 SOL
-/// - 5,000+: 0.5 SOL
+/// Enforces:
+/// - Flat on-chain mint fee (to GlobalTreasury)
+/// - Lifetime cap on agents per wallet (OwnerAgentCounter)
 #[derive(Accounts)]
 #[instruction(agent_id: [u8; 32])]
 pub struct InitializeAgent<'info> {
@@ -23,24 +22,39 @@ pub struct InitializeAgent<'info> {
     #[account(
         mut,
         seeds = [b"config"],
-        bump = config.bump,
+        bump,
     )]
-    pub config: Account<'info, ProgramConfig>,
+    pub config: Box<Account<'info, ProgramConfig>>,
 
     /// Global treasury receiving registration fees.
     #[account(
         mut,
         seeds = [b"treasury"],
-        bump = treasury.bump,
+        bump,
     )]
-    pub treasury: Account<'info, GlobalTreasury>,
+    pub treasury: Box<Account<'info, GlobalTreasury>>,
 
-    /// Owner wallet creating this agent (pays rent + registration fee).
-    ///
-    /// With immutable-agent enforcement, only the program registrar can create agents.
+    /// Economics + limits.
+    #[account(
+        seeds = [b"econ"],
+        bump,
+        constraint = economics.authority == config.authority @ WunderlandError::UnauthorizedAuthority,
+    )]
+    pub economics: Box<Account<'info, EconomicsConfig>>,
+
+    /// Per-wallet mint counter to enforce `max_agents_per_wallet`.
+    #[account(
+        init_if_needed,
+        payer = owner,
+        space = OwnerAgentCounter::LEN,
+        seeds = [b"owner_counter", owner.key().as_ref()],
+        bump
+    )]
+    pub owner_counter: Box<Account<'info, OwnerAgentCounter>>,
+
+    /// Owner wallet creating this agent (pays rent + mint fee).
     #[account(
         mut,
-        constraint = owner.key() == config.authority @ WunderlandError::UnauthorizedAuthority
     )]
     pub owner: Signer<'info>,
 
@@ -52,7 +66,7 @@ pub struct InitializeAgent<'info> {
         seeds = [b"agent", owner.key().as_ref(), agent_id.as_ref()],
         bump
     )]
-    pub agent_identity: Account<'info, AgentIdentity>,
+    pub agent_identity: Box<Account<'info, AgentIdentity>>,
 
     /// Program-owned SOL vault for this agent.
     #[account(
@@ -62,7 +76,7 @@ pub struct InitializeAgent<'info> {
         seeds = [b"vault", agent_identity.key().as_ref()],
         bump
     )]
-    pub vault: Account<'info, AgentVault>,
+    pub vault: Box<Account<'info, AgentVault>>,
 
     pub system_program: Program<'info, System>,
 }
@@ -92,27 +106,40 @@ pub fn handler(
         WunderlandError::AgentSignerEqualsOwner
     );
 
-    // Charge registration fee based on current global count (before increment).
-    let fee = registration_fee_lamports(ctx.accounts.config.agent_count);
-    if fee > 0 {
-        system_program::transfer(
-            CpiContext::new(
-                ctx.accounts.system_program.to_account_info(),
-                system_program::Transfer {
-                    from: ctx.accounts.owner.to_account_info(),
-                    to: ctx.accounts.treasury.to_account_info(),
-                },
-            ),
-            fee,
-        )?;
-
-        ctx.accounts.treasury.total_collected = ctx
-            .accounts
-            .treasury
-            .total_collected
-            .checked_add(fee)
-            .ok_or(WunderlandError::ArithmeticOverflow)?;
+    // Initialize owner counter if new.
+    if ctx.accounts.owner_counter.owner == Pubkey::default() {
+        ctx.accounts.owner_counter.owner = ctx.accounts.owner.key();
+        ctx.accounts.owner_counter.minted_count = 0;
+        ctx.accounts.owner_counter.bump = ctx.bumps.owner_counter;
     }
+
+    // Enforce lifetime cap per wallet (before charging fee).
+    require!(
+        ctx.accounts.owner_counter.minted_count < ctx.accounts.economics.max_agents_per_wallet,
+        WunderlandError::MaxAgentsPerWalletExceeded
+    );
+
+    // Charge flat mint fee to the global treasury.
+    let fee = ctx.accounts.economics.agent_mint_fee_lamports;
+    require!(fee > 0, WunderlandError::InvalidAmount);
+
+    system_program::transfer(
+        CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            system_program::Transfer {
+                from: ctx.accounts.owner.to_account_info(),
+                to: ctx.accounts.treasury.to_account_info(),
+            },
+        ),
+        fee,
+    )?;
+
+    ctx.accounts.treasury.total_collected = ctx
+        .accounts
+        .treasury
+        .total_collected
+        .checked_add(fee)
+        .ok_or(WunderlandError::ArithmeticOverflow)?;
 
     // Initialize agent identity
     let agent = &mut ctx.accounts.agent_identity;
@@ -143,6 +170,14 @@ pub fn handler(
         .accounts
         .config
         .agent_count
+        .checked_add(1)
+        .ok_or(WunderlandError::ArithmeticOverflow)?;
+
+    // Increment per-wallet counter (lifetime cap).
+    ctx.accounts.owner_counter.minted_count = ctx
+        .accounts
+        .owner_counter
+        .minted_count
         .checked_add(1)
         .ok_or(WunderlandError::ArithmeticOverflow)?;
 

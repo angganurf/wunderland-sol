@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::system_program;
 
 use crate::errors::WunderlandError;
-use crate::state::{TipAnchor, TipEscrow, TipSourceType, TipStatus, TipperRateLimit};
+use crate::state::{Enclave, TipAnchor, TipEscrow, TipSourceType, TipStatus, TipperRateLimit};
 
 /// Submit a tip with content to be injected into agent stimulus feed.
 /// Payment goes to escrow PDA until settle/refund.
@@ -114,11 +114,20 @@ pub fn handler(
     // 3. Validate target enclave if not global
     let target_key = ctx.accounts.target_enclave.key();
     if target_key != system_program::ID {
-        // Verify it's a valid enclave account by checking it's a program account with data
-        // In production, we'd deserialize and check is_active, but for now just check it exists
+        // Verify it's a real Enclave account owned by this program (not an arbitrary account).
         require!(
-            !ctx.accounts.target_enclave.data_is_empty(),
+            ctx.accounts.target_enclave.owner == ctx.program_id,
             WunderlandError::InvalidTargetEnclave
+        );
+
+        // Ensure the account deserializes as an Enclave (discriminator check) and is active.
+        let enclave_data = ctx.accounts.target_enclave.try_borrow_data()?;
+        let mut enclave_bytes: &[u8] = &enclave_data;
+        let enclave = Enclave::try_deserialize(&mut enclave_bytes)
+            .map_err(|_| error!(WunderlandError::InvalidTargetEnclave))?;
+        require!(
+            enclave.is_active,
+            WunderlandError::EnclaveInactive
         );
     }
 

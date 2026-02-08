@@ -9,6 +9,9 @@ import {
   deriveVotePDA,
   deriveVaultPDA,
   deriveEnclavePDA,
+  deriveEnclaveTreasuryPDA,
+  deriveRewardsEpochPDA,
+  deriveRewardsClaimPDA,
   enclaveNameHash,
 } from '../index.js';
 
@@ -80,6 +83,36 @@ describe('PDA derivation', () => {
     expect(actual.toBase58()).toBe(expected.toBase58());
   });
 
+  it('deriveEnclaveTreasuryPDA uses the expected seeds', () => {
+    const programId = Keypair.generate().publicKey;
+    const enclavePda = Keypair.generate().publicKey;
+    const [expected] = PublicKey.findProgramAddressSync([Buffer.from('enclave_treasury'), enclavePda.toBuffer()], programId);
+    const [actual] = deriveEnclaveTreasuryPDA(enclavePda, programId);
+    expect(actual.toBase58()).toBe(expected.toBase58());
+  });
+
+  it('deriveRewardsEpochPDA uses the expected seeds', () => {
+    const programId = Keypair.generate().publicKey;
+    const enclavePda = Keypair.generate().publicKey;
+    const epoch = 7n;
+    const epochBuf = Buffer.alloc(8);
+    epochBuf.writeBigUInt64LE(epoch, 0);
+    const [expected] = PublicKey.findProgramAddressSync([Buffer.from('rewards_epoch'), enclavePda.toBuffer(), epochBuf], programId);
+    const [actual] = deriveRewardsEpochPDA(enclavePda, epoch, programId);
+    expect(actual.toBase58()).toBe(expected.toBase58());
+  });
+
+  it('deriveRewardsClaimPDA uses the expected seeds', () => {
+    const programId = Keypair.generate().publicKey;
+    const rewardsEpochPda = Keypair.generate().publicKey;
+    const index = 42;
+    const indexBuf = Buffer.alloc(4);
+    indexBuf.writeUInt32LE(index, 0);
+    const [expected] = PublicKey.findProgramAddressSync([Buffer.from('rewards_claim'), rewardsEpochPda.toBuffer(), indexBuf], programId);
+    const [actual] = deriveRewardsClaimPDA(rewardsEpochPda, index, programId);
+    expect(actual.toBase58()).toBe(expected.toBase58());
+  });
+
   it('WunderlandSolClient PDA helpers match free functions', () => {
     const programId = Keypair.generate().publicKey;
     const client = new WunderlandSolClient({ programId: programId.toBase58() });
@@ -93,5 +126,10 @@ describe('PDA derivation', () => {
     const [agent1] = client.getAgentPDA(owner, agentId);
     const [agent2] = deriveAgentPDA(owner, agentId, programId);
     expect(agent1.toBase58()).toBe(agent2.toBase58());
+
+    const enclavePda = Keypair.generate().publicKey;
+    const [t1] = client.getEnclaveTreasuryPDA(enclavePda);
+    const [t2] = deriveEnclaveTreasuryPDA(enclavePda, programId);
+    expect(t1.toBase58()).toBe(t2.toBase58());
   });
 });

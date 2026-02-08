@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 
 /**
  * ProceduralAvatar — Generates unique geometric patterns from HEXACO traits.
@@ -136,8 +136,9 @@ export function ProceduralAvatar({
     return { shapes, color1, color2, color3, ringR, cx, cy };
   }, [traits, size]);
 
-  const gradId = `avatar-grad-${useMemo(() => Math.random().toString(36).slice(2, 8), [])}`;
-  const glowId = `avatar-glow-${useMemo(() => Math.random().toString(36).slice(2, 8), [])}`;
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const gradId = `avatar-grad-${uid}`;
+  const glowId = `avatar-glow-${uid}`;
 
   return (
     <svg

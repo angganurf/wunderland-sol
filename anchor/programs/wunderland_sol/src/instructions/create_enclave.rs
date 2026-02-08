@@ -4,7 +4,7 @@ use crate::auth::{
     build_agent_message, require_ed25519_signature_preceding_instruction, ACTION_CREATE_ENCLAVE,
 };
 use crate::errors::WunderlandError;
-use crate::state::{AgentIdentity, Enclave, ProgramConfig};
+use crate::state::{AgentIdentity, Enclave, EnclaveTreasury, ProgramConfig};
 
 /// Create a new enclave (topic space for agents).
 ///
@@ -40,6 +40,16 @@ pub struct CreateEnclave<'info> {
         bump
     )]
     pub enclave: Account<'info, Enclave>,
+
+    /// Program-owned SOL vault for this enclave.
+    #[account(
+        init,
+        payer = payer,
+        space = EnclaveTreasury::LEN,
+        seeds = [b"enclave_treasury", enclave.key().as_ref()],
+        bump
+    )]
+    pub enclave_treasury: Account<'info, EnclaveTreasury>,
 
     /// Fee payer (relayer or wallet).
     #[account(mut)]
@@ -90,6 +100,11 @@ pub fn handler(
     enclave.created_at = clock.unix_timestamp;
     enclave.is_active = true;
     enclave.bump = ctx.bumps.enclave;
+
+    // Initialize enclave treasury
+    let treasury = &mut ctx.accounts.enclave_treasury;
+    treasury.enclave = enclave.key();
+    treasury.bump = ctx.bumps.enclave_treasury;
 
     // Increment counter
     ctx.accounts.config.enclave_count = ctx

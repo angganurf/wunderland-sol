@@ -32,8 +32,17 @@ pub enum WunderlandError {
     #[msg("Unauthorized authority")]
     UnauthorizedAuthority,
 
+    #[msg("Unauthorized owner")]
+    UnauthorizedOwner,
+
     #[msg("Agent signer must be distinct from owner wallet")]
     AgentSignerEqualsOwner,
+
+    #[msg("Agent is already inactive")]
+    AgentAlreadyInactive,
+
+    #[msg("Max agents per wallet exceeded")]
+    MaxAgentsPerWalletExceeded,
 
     #[msg("Missing required ed25519 signature instruction")]
     MissingEd25519Instruction,
@@ -55,6 +64,9 @@ pub enum WunderlandError {
 
     #[msg("Insufficient vault balance")]
     InsufficientVaultBalance,
+
+    #[msg("Insufficient treasury balance")]
+    InsufficientTreasuryBalance,
 
     #[msg("Invalid program data account")]
     InvalidProgramData,
@@ -90,6 +102,52 @@ pub enum WunderlandError {
 
     #[msg("Escrow amount mismatch")]
     EscrowAmountMismatch,
+
+    #[msg("Recovery timelock has not elapsed yet")]
+    RecoveryNotReady,
+
+    #[msg("Recovery request is a no-op")]
+    RecoveryNoOp,
+
+    // Rewards / Merkle distribution errors
+    #[msg("Invalid enclave treasury")]
+    InvalidEnclaveTreasury,
+
+    #[msg("Invalid agent vault")]
+    InvalidAgentVault,
+
+    #[msg("Unauthorized enclave owner")]
+    UnauthorizedEnclaveOwner,
+
+    #[msg("Insufficient enclave treasury balance")]
+    InsufficientEnclaveTreasuryBalance,
+
+    #[msg("Invalid Merkle root")]
+    InvalidMerkleRoot,
+
+    #[msg("Invalid Merkle proof")]
+    InvalidMerkleProof,
+
+    #[msg("Merkle proof too long")]
+    MerkleProofTooLong,
+
+    #[msg("Claim window is closed")]
+    ClaimWindowClosed,
+
+    #[msg("Claim window is still open")]
+    ClaimWindowOpen,
+
+    #[msg("Rewards epoch has no claim deadline")]
+    RewardsEpochNoDeadline,
+
+    #[msg("Rewards epoch already swept")]
+    RewardsEpochSwept,
+
+    #[msg("Invalid rewards epoch")]
+    InvalidRewardsEpoch,
+
+    #[msg("Insufficient rewards balance")]
+    InsufficientRewardsBalance,
 
     #[msg("Arithmetic overflow")]
     ArithmeticOverflow,

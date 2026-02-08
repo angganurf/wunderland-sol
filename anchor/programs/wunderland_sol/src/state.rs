@@ -1,30 +1,7 @@
 use anchor_lang::prelude::*;
 
-// ============================================================================
-// Program-level constants
-// ============================================================================
-
-/// 1 SOL in lamports.
-pub const LAMPORTS_PER_SOL: u64 = 1_000_000_000;
-
-/// Registration fee schedule caps (network-wide agent count).
-pub const FREE_AGENT_CAP: u32 = 1_000;
-pub const LOW_FEE_AGENT_CAP: u32 = 5_000;
-
-/// Fee amounts (lamports).
-pub const LOW_FEE_LAMPORTS: u64 = LAMPORTS_PER_SOL / 10; // 0.1 SOL
-pub const HIGH_FEE_LAMPORTS: u64 = LAMPORTS_PER_SOL / 2; // 0.5 SOL
-
-/// Compute registration fee given the current network-wide `agent_count`.
-pub fn registration_fee_lamports(agent_count: u32) -> u64 {
-    if agent_count < FREE_AGENT_CAP {
-        0
-    } else if agent_count < LOW_FEE_AGENT_CAP {
-        LOW_FEE_LAMPORTS
-    } else {
-        HIGH_FEE_LAMPORTS
-    }
-}
+// NOTE: Agent registration economics live in `EconomicsConfig` (see bottom of file).
+// This keeps minting permissionless while still enforcing an on-chain fee + per-wallet cap.
 
 /// Program-level configuration.
 /// Seeds: ["config"]
@@ -226,7 +203,7 @@ pub struct Enclave {
     /// Agent PDA that created this enclave.
     pub creator_agent: Pubkey,
 
-    /// Owner wallet that receives 30% of enclave-targeted tips (enforced from agent identity).
+    /// Owner wallet that controls this enclave (can publish rewards epochs).
     pub creator_owner: Pubkey,
 
     /// SHA-256 hash of off-chain metadata CID (description, rules, etc).
@@ -245,6 +222,100 @@ pub struct Enclave {
 impl Enclave {
     /// 8 + 32 + 32 + 32 + 32 + 8 + 1 + 1 = 146
     pub const LEN: usize = 8 + 32 + 32 + 32 + 32 + 8 + 1 + 1;
+}
+
+/// Program-owned SOL vault for an enclave.
+///
+/// Receives the enclave share of enclave-targeted tips (currently 30%).
+/// Funds can be escrowed into `RewardsEpoch` PDAs for Merkle-claim distribution to agent vaults.
+///
+/// Seeds: ["enclave_treasury", enclave_pda]
+#[account]
+#[derive(Default)]
+pub struct EnclaveTreasury {
+    /// Enclave this treasury belongs to (Enclave PDA).
+    pub enclave: Pubkey,
+
+    /// PDA bump seed.
+    pub bump: u8,
+}
+
+impl EnclaveTreasury {
+    /// 8 + 32 + 1 = 41
+    pub const LEN: usize = 8 + 32 + 1;
+}
+
+/// Rewards epoch for an enclave (Merkle-claim).
+///
+/// The enclave owner publishes a Merkle root representing a distribution of `total_amount`
+/// lamports (escrowed in this account). Anyone can claim an allocation to an agent vault by
+/// providing a valid Merkle proof.
+///
+/// Seeds: ["rewards_epoch", enclave_pda, epoch_u64_le]
+#[account]
+#[derive(Default)]
+pub struct RewardsEpoch {
+    /// Enclave this epoch belongs to.
+    pub enclave: Pubkey,
+
+    /// Epoch number (chosen by enclave owner; can be sequential).
+    pub epoch: u64,
+
+    /// Merkle root for allocations (SHA-256).
+    pub merkle_root: [u8; 32],
+
+    /// Total lamports escrowed for this epoch.
+    pub total_amount: u64,
+
+    /// Total lamports claimed so far.
+    pub claimed_amount: u64,
+
+    /// Unix timestamp when published.
+    pub published_at: i64,
+
+    /// Unix timestamp after which sweep is allowed (0 = no deadline).
+    pub claim_deadline: i64,
+
+    /// Unix timestamp when swept (0 = not swept).
+    pub swept_at: i64,
+
+    /// PDA bump seed.
+    pub bump: u8,
+}
+
+impl RewardsEpoch {
+    /// 8 + 32 + 8 + 32 + 8 + 8 + 8 + 8 + 8 + 1 = 121
+    pub const LEN: usize = 8 + 32 + 8 + 32 + 8 + 8 + 8 + 8 + 8 + 1;
+}
+
+/// Claim receipt to prevent double-claims for a rewards epoch leaf.
+///
+/// Seeds: ["rewards_claim", rewards_epoch_pda, leaf_index_u32_le]
+#[account]
+#[derive(Default)]
+pub struct RewardsClaimReceipt {
+    /// Rewards epoch this claim belongs to.
+    pub rewards_epoch: Pubkey,
+
+    /// Leaf index in the epoch Merkle tree.
+    pub index: u32,
+
+    /// AgentIdentity PDA receiving rewards (paid into its AgentVault PDA).
+    pub agent: Pubkey,
+
+    /// Amount claimed (lamports).
+    pub amount: u64,
+
+    /// Unix timestamp when claimed.
+    pub claimed_at: i64,
+
+    /// PDA bump seed.
+    pub bump: u8,
+}
+
+impl RewardsClaimReceipt {
+    /// 8 + 32 + 4 + 32 + 8 + 8 + 1 = 93
+    pub const LEN: usize = 8 + 32 + 4 + 32 + 8 + 8 + 1;
 }
 
 // ============================================================================
@@ -409,4 +480,86 @@ pub struct GlobalTreasury {
 impl GlobalTreasury {
     /// 8 + 32 + 8 + 1 = 49
     pub const LEN: usize = 8 + 32 + 8 + 1;
+}
+
+// ============================================================================
+// Economics + Limits
+// ============================================================================
+
+/// Program-wide economics + safety limits.
+///
+/// Seeds: ["econ"]
+#[account]
+#[derive(Default)]
+pub struct EconomicsConfig {
+    /// Authority allowed to update policy values.
+    pub authority: Pubkey,
+
+    /// Flat fee charged on agent registration (lamports).
+    pub agent_mint_fee_lamports: u64,
+
+    /// Maximum number of agents a single owner wallet can ever register.
+    pub max_agents_per_wallet: u16,
+
+    /// Timelock for owner-based signer recovery (seconds).
+    pub recovery_timelock_seconds: i64,
+
+    /// PDA bump seed.
+    pub bump: u8,
+}
+
+impl EconomicsConfig {
+    /// 8 + 32 + 8 + 2 + 8 + 1 = 59
+    pub const LEN: usize = 8 + 32 + 8 + 2 + 8 + 1;
+}
+
+/// Per-wallet agent counter to enforce a lifetime cap.
+///
+/// Seeds: ["owner_counter", owner_wallet]
+#[account]
+#[derive(Default)]
+pub struct OwnerAgentCounter {
+    /// Owner wallet this counter belongs to.
+    pub owner: Pubkey,
+
+    /// Total number of agents ever registered by this wallet.
+    pub minted_count: u16,
+
+    /// PDA bump seed.
+    pub bump: u8,
+}
+
+impl OwnerAgentCounter {
+    /// 8 + 32 + 2 + 1 = 43
+    pub const LEN: usize = 8 + 32 + 2 + 1;
+}
+
+/// Owner-based signer recovery request (timelocked).
+///
+/// Seeds: ["recovery", agent_identity_pda]
+#[account]
+#[derive(Default)]
+pub struct AgentSignerRecovery {
+    /// Agent being recovered.
+    pub agent: Pubkey,
+
+    /// Owner wallet that can execute recovery.
+    pub owner: Pubkey,
+
+    /// Proposed new agent signer pubkey.
+    pub new_agent_signer: Pubkey,
+
+    /// Unix timestamp when the request was created.
+    pub requested_at: i64,
+
+    /// Unix timestamp when recovery becomes executable.
+    pub ready_at: i64,
+
+    /// PDA bump seed.
+    pub bump: u8,
+}
+
+impl AgentSignerRecovery {
+    /// 8 + 32 + 32 + 32 + 8 + 8 + 1 = 121
+    pub const LEN: usize = 8 + 32 + 32 + 32 + 8 + 8 + 1;
 }

@@ -6,6 +6,7 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './e2e',
+  timeout: 90_000,
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
@@ -45,7 +46,8 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'npm run dev -- --hostname 127.0.0.1',
+    // Run a local Solana validator + dev server for deterministic E2E (no devnet rate limits).
+    command: 'bash scripts/start-e2e-webserver.sh',
     url: 'http://127.0.0.1:3011',
     reuseExistingServer: !process.env.CI,
   },

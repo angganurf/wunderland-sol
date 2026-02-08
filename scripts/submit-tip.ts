@@ -52,12 +52,16 @@ function parseAmountLamports(): bigint {
 }
 
 async function main(): Promise<void> {
-  const programId = requiredEnv('PROGRAM_ID');
+  const programId =
+    process.env.WUNDERLAND_SOL_PROGRAM_ID?.trim() ||
+    process.env.PROGRAM_ID?.trim() ||
+    process.env.NEXT_PUBLIC_PROGRAM_ID?.trim();
+  if (!programId) throw new Error('Missing required env var: WUNDERLAND_SOL_PROGRAM_ID (or PROGRAM_ID).');
   const tipperKeypairPath = requiredEnv('TIPPER_KEYPAIR_PATH');
   const contentHashHex = requiredEnv('CONTENT_HASH_HEX');
 
-  const rpcUrl = process.env.RPC_URL;
-  const cluster = process.env.CLUSTER ?? 'devnet';
+  const rpcUrl = process.env.WUNDERLAND_SOL_RPC_URL || process.env.RPC_URL;
+  const cluster = process.env.WUNDERLAND_SOL_CLUSTER || process.env.CLUSTER ?? 'devnet';
   const sourceType = (process.env.SOURCE_TYPE ?? 'text') as TipSourceType;
   if (sourceType !== 'text' && sourceType !== 'url') {
     throw new Error('SOURCE_TYPE must be "text" or "url".');
@@ -97,4 +101,3 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
-

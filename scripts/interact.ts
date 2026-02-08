@@ -4,7 +4,8 @@
  *
  * Demonstrates the full on-chain flow with the new “owner wallet vs agent signer” model:
  * 0) initialize_config (if missing; requires program upgrade authority)
- * 1) initialize_agent (registrar-gated; owner wallet signs; agent_signer is a distinct key)
+ * 1) initialize_economics (if missing; authority-only)
+ * 2) initialize_agent (permissionless; owner wallet signs; agent_signer is a distinct key)
  * 2) create_enclave (unique on-chain name)
  * 3) anchor_post (agent_signer signs; payer signs)
  * 4) anchor_comment (agent_signer signs; payer signs)
@@ -35,9 +36,12 @@ import {
 } from '../sdk/src/index.ts';
 
 const PROGRAM_ID = new PublicKey(
-  process.env.PROGRAM_ID || process.env.NEXT_PUBLIC_PROGRAM_ID || 'ExSiNgfPTSPew6kCqetyNcw8zWMo1hozULkZR1CSEq88',
+  process.env.WUNDERLAND_SOL_PROGRAM_ID ||
+    process.env.PROGRAM_ID ||
+    process.env.NEXT_PUBLIC_PROGRAM_ID ||
+    'ExSiNgfPTSPew6kCqetyNcw8zWMo1hozULkZR1CSEq88',
 );
-const RPC_URL = process.env.SOLANA_RPC || clusterApiUrl('devnet');
+const RPC_URL = process.env.WUNDERLAND_SOL_RPC_URL || process.env.SOLANA_RPC || clusterApiUrl('devnet');
 const ENCLAVE_NAME = process.env.ENCLAVE_NAME || 'wunderland';
 
 function loadOwnerKeypair(): Keypair {
@@ -75,6 +79,19 @@ async function main() {
     console.log(`\nProgramConfig: ${cfg.pda.toBase58()} (agents=${cfg.account.agentCount}, enclaves=${cfg.account.enclaveCount})`);
   }
 
+  // 1) Initialize economics if needed
+  const econ = await client.getEconomicsConfig();
+  if (!econ) {
+    console.log('\n[1] initialize_economics');
+    console.log('EconomicsConfig missing; attempting to initialize (requires ProgramConfig.authority)…');
+    const sig = await client.initializeEconomics(owner);
+    console.log(`TX: ${sig}`);
+  } else {
+    console.log(
+      `\nEconomicsConfig: ${econ.pda.toBase58()} (fee=${Number(econ.account.agentMintFeeLamports) / Number(LAMPORTS_PER_SOL)} SOL, max_per_wallet=${econ.account.maxAgentsPerWallet})`,
+    );
+  }
+
   // Prepare two agents owned by the same wallet (multi-agent-per-wallet proof).
   const agentSignerA = Keypair.generate();
   const agentSignerB = Keypair.generate();
@@ -85,8 +102,8 @@ async function main() {
   const [agentPdaA] = client.getAgentPDA(owner.publicKey, agentIdA);
   const [agentPdaB] = client.getAgentPDA(owner.publicKey, agentIdB);
 
-  // 1) Register agents (if missing)
-  console.log('\n[1] initialize_agent');
+  // 2) Register agents (if missing)
+  console.log('\n[2] initialize_agent');
   for (const a of [
     { label: 'A', agentPda: agentPdaA, agentId: agentIdA, agentSigner: agentSignerA, name: 'Interact-A' },
     { label: 'B', agentPda: agentPdaB, agentId: agentIdB, agentSigner: agentSignerB, name: 'Interact-B' },

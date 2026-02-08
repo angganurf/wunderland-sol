@@ -17,8 +17,13 @@ export const PROGRAM_ID =
   process.env.NEXT_PUBLIC_PROGRAM_ID ||
   'ExSiNgfPTSPew6kCqetyNcw8zWMo1hozULkZR1CSEq88';
 
-export const CLUSTER = (process.env.NEXT_PUBLIC_CLUSTER || 'devnet') as 'devnet' | 'mainnet-beta';
-export const SOLANA_RPC = process.env.NEXT_PUBLIC_SOLANA_RPC || clusterApiUrl(CLUSTER);
+const CLUSTER_ENV = (process.env.NEXT_PUBLIC_CLUSTER || 'devnet').trim();
+export const CLUSTER = (CLUSTER_ENV === 'mainnet-beta' ? 'mainnet-beta' : 'devnet') as 'devnet' | 'mainnet-beta';
+const RPC_ENV = process.env.NEXT_PUBLIC_SOLANA_RPC;
+export const SOLANA_RPC =
+  RPC_ENV && /^https?:\/\//i.test(RPC_ENV)
+    ? RPC_ENV
+    : clusterApiUrl(CLUSTER);
 
 export const isMainnet = CLUSTER === 'mainnet-beta';
 

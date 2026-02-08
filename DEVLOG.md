@@ -889,3 +889,82 @@ All 8 tool tests passed with live API keys:
 - Finalize token economics before official announcement
 
 ---
+
+## Entry 15 — Full Visual Enhancement Pass: Art Deco Aesthetics + Animations
+**Date**: 2026-02-07
+**Agent**: Claude Opus 4.6 (`claude-opus-4-6`)
+**Commits**: `feat: visual enhancement — Art Deco aesthetics, scroll reveals, 3D tilt, animations across all pages`
+
+### Overview
+Comprehensive visual overhaul of every page in the wunderland-sh app. Added retro-ornate Art Deco design elements, scroll-reveal entrance animations, 3D perspective tilt on cards, trait-colored accents, priority styling, vote color coding, animated confetti/podium effects, and accessibility-first motion handling. 15 files changed, +1931/-844 lines.
+
+### Design System Foundation (`globals.css`)
+
+**New animation utilities**:
+- `.animate-in` / `.animate-in.visible` — IntersectionObserver-triggered entrance (opacity 0→1, translateY 24→0px with cubic-bezier easing)
+- `.stagger-1` through `.stagger-12` — transition-delay increments (0.05s per step) for cascading grid reveals
+- `section-glow-purple`, `section-glow-cyan`, `section-glow-gold`, `section-glow-green` — radial gradient background overlays per section theme
+- `search-input-glow` — animated cyan border + box-shadow expansion on focus
+- `vote-positive` (neon-green), `vote-negative` (neon-red), `vote-neutral` (white/40) — vote count color coding
+- `priority-breaking` (red tint), `priority-high` (gold tint), `priority-normal` (cyan tint), `priority-low` (neutral) — stimulus feed priority backgrounds
+- Podium system: `podium-enter`, `podium-rank-1/2/3`, `rank-glow-gold/purple/cyan` — animated entrance + glow rings for leaderboard
+- `confetti-container` / `confetti-piece` — CSS-only confetti cascade for #1 rank
+- `trait-bar-animated` — width transition from 0% to value with per-bar stagger delay
+- All animations wrapped in `@media (prefers-reduced-motion: reduce)` — animations disabled, elements visible immediately
+
+**New hooks**:
+- `useScrollReveal()` — IntersectionObserver hook (threshold 0.15, one-shot, respects prefers-reduced-motion). Returns `{ ref, isVisible }`.
+- `useScrollRevealGroup()` — Same but for grids. Returns `{ containerRef, isVisible }` and children use `data-reveal-index` for stagger.
+- `useTilt()` — Mouse-tracking 3D perspective tilt. Sets `--tilt-x`/`--tilt-y` CSS vars on mousemove, resets on leave. No-op with reduced motion.
+
+**New component**:
+- `DecoSectionDivider` — Inline SVG Art Deco section divider with 3 variants: `diamond` (central lozenge + radiating lines), `filigree` (ornamental loops + scrollwork), `keyhole` (central keyhole motif). Gold fill with shimmer animation, full light-mode support.
+
+### Per-Page Enhancements
+
+**About page** — Extracted to `AboutPageContent.tsx` client wrapper (server page exports metadata). 9 scroll reveals, `useTilt` on step/feature cards, deco dividers between sections, alternating section glows.
+
+**Agents directory** — Trait-colored left border per card (dominant HEXACO trait → color), 3D tilt hover via `useTilt`, staggered grid entrance via `useScrollRevealGroup`, improved sort/filter active states with glow shadows.
+
+**Agent profile** — Animated trait progress bars (width 0→value% on reveal, staggered 0.1s per bar), dominant-trait glow behind ProceduralAvatar (blur-3xl, opacity-15), vote color coding on post cards, section-glow-purple on HEXACO section.
+
+**Leaderboard** — Podium entrance animation (scale-up + fade with stagger), animated glow rings behind podium avatars (`rank-glow-gold/purple/cyan`), CSS confetti on #1 when revealed, rank-colored left borders on mobile cards and desktop table rows, responsive mobile card layout + desktop table.
+
+**Feed** — Trait-colored left border accent per post (derived from agent's dominant HEXACO trait), vote color coding (positive=green, negative=red), scroll reveals on header and feed sections.
+
+**World** — Priority CSS classes on stimulus feed items (breaking=red tint, high=gold, normal=cyan, low=neutral), rank number badges on trending posts, vote color coding, scroll reveals on all sections.
+
+**Search** — Animated search input glow (`search-input-glow` class), Art Deco ornament dividers in empty states, scroll reveals on header and results, improved card hover transitions.
+
+**Mint** — DecoSectionDividers between all sections (diamond, filigree, keyhole), section glows (cyan on stats, purple on model, gold on economics, green on workflow), 6 scroll reveals, hover transitions on all info cards.
+
+### Technical Challenges
+
+1. **React 19 ref typing** — `useRef<T | null>(null)` returns `RefObject<T | null>` but JSX `ref` prop expects `RefObject<T>`. Fixed by using `useRef<T>(null)` (without `| null`) which matches React 19's overload: `useRef<T>(initialValue: T | null): RefObject<T>`.
+
+2. **Server component with animations** — About page exports `metadata` (making it a server component) but needed client-side hooks. Solved with `AboutPageContent.tsx` client wrapper — server page just renders `<AboutPageContent />`.
+
+3. **Unused import auto-detection** — Next.js build caught an unused `Link` import in the new AboutPageContent. Clean build discipline.
+
+### Self-Reflection
+
+**What went well**: The scroll-reveal + stagger pattern is extremely reusable — it took ~2 lines per section to add entrance animations across all 8 pages. The Art Deco dividers add visual rhythm without being heavy. The trait-colored accent system (mapping HEXACO dimensions to CSS var colors) creates a consistent visual language tying personality to aesthetics.
+
+**What I'd do differently**: The `useScrollRevealGroup` approach with `data-reveal-index` attributes is slightly awkward — a more React-idiomatic approach might use React.Children.map to inject delays. But the data-attribute approach avoids wrapper components and works with any grid layout.
+
+**Design tension**: Balancing "maximum visual impact" with "not overwhelming the content." The section glows, deco dividers, and animations add depth without competing with the data. The priority styling on the stimulus feed (breaking=red, high=gold) draws the eye to important items without making normal items feel neglected.
+
+**Accessibility**: Every animation respects `prefers-reduced-motion`. The scroll reveal hooks check for the media query and immediately set `isVisible: true` when reduced motion is preferred. All contrast ratios maintained or improved (bumped secondary text opacity where needed).
+
+### Build Status
+- `pnpm build`: ✓ (24 routes, 0 errors)
+- @next/swc version mismatch warning (15.5.7 vs 15.5.11) — non-fatal, known issue
+- All pages render correctly with animations
+
+### Next Steps
+- Mobile responsiveness pass (Phase 5 of plan)
+- AnimatedStepConnector between "How It Works" cards on landing page
+- Production deployment with new visual system
+- End-to-end minting test on devnet
+
+---
