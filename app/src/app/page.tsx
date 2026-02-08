@@ -205,16 +205,16 @@ function AgentCard({ agent, index }: { agent: Agent; index: number }) {
           <h3 className="font-display font-semibold text-sm group-hover:text-[var(--neon-cyan)] transition-colors truncate">
             {agent.name}
           </h3>
-          <div className="text-[10px] text-[var(--text-tertiary)] font-mono truncate">
+          <div className="text-xs text-[var(--text-tertiary)] font-mono truncate">
             {agent.address.slice(0, 4)}...{agent.address.slice(-4)}
           </div>
         </div>
       </div>
-      <p className="text-[11px] text-[var(--text-tertiary)] leading-relaxed line-clamp-2 mb-3">
+      <p className="text-xs text-[var(--text-tertiary)] leading-relaxed line-clamp-2 mb-3">
         On-chain identity · HEXACO traits · reputation
       </p>
       <div className="flex items-center justify-between">
-        <span className="badge badge-level text-[10px]">{agent.level}</span>
+        <span className="badge badge-level text-xs">{agent.level}</span>
         <span className="text-[var(--neon-green)] text-xs font-mono font-semibold">{agent.reputation} rep</span>
       </div>
     </Link>
@@ -288,10 +288,10 @@ function HexacoExplainer() {
           <h2 className="font-display font-bold text-3xl md:text-4xl mb-5">
             Personality as a <span className="sol-gradient-text">Primitive</span>
           </h2>
-          <p className="text-[var(--text-secondary)] text-base md:text-lg leading-relaxed mb-6">
+          <p className="text-white/80 text-base md:text-lg leading-relaxed mb-6">
             HEXACO is a six-factor model of personality validated by decades of
             cross-cultural research. We encode these traits on-chain as{' '}
-            <code className="text-[var(--neon-cyan)] text-sm">[u16; 6]</code>{' '}
+            <code className="text-[var(--neon-cyan)] text-sm font-bold">[u16; 6]</code>{' '}
             (0-1000) in each agent&apos;s Solana PDA. Hover a trait to see how
             it shapes the radar.
           </p>
@@ -319,8 +319,8 @@ function HexacoExplainer() {
                   {t.key}
                 </span>
                 <div>
-                  <div className="text-sm font-semibold text-[var(--text-primary)]">{t.full}</div>
-                  <div className="text-sm text-[var(--text-secondary)] leading-relaxed">{t.desc}</div>
+                  <div className="text-sm font-bold text-white">{t.full}</div>
+                  <div className="text-sm text-white/75 leading-relaxed">{t.desc}</div>
                 </div>
               </div>
             ))}
@@ -424,8 +424,8 @@ export default function LandingPage() {
             </div>
 
             <div className="flex-1 text-center md:text-left">
-              <div className="flex items-center justify-center md:justify-start gap-2 mb-2">
-                <span className="text-[10px] font-mono font-bold tracking-[0.3em] uppercase text-[var(--neon-gold)]">
+              <div className="flex items-center justify-center md:justify-start gap-2 mb-3">
+                <span className="text-xs font-mono font-bold tracking-[0.3em] uppercase text-[var(--neon-gold)]">
                   Coming Soon
                 </span>
                 <span className="wunder-badge-live">
@@ -433,31 +433,31 @@ export default function LandingPage() {
                   Solana
                 </span>
               </div>
-              <h3 className="font-display font-bold text-xl md:text-2xl mb-2">
+              <h3 className="font-display font-bold text-2xl md:text-3xl mb-3">
                 <span className="wunder-gradient-text">$WUNDER</span>{' '}
                 <span className="text-[var(--text-primary)]">Token Launch</span>
               </h3>
-              <p className="text-[var(--text-secondary)] text-sm leading-relaxed max-w-lg">
+              <p className="text-[var(--text-secondary)] text-base leading-relaxed max-w-lg">
                 The official Wunderland token is launching on Solana. Follow our{' '}
-                <span className="text-[var(--text-secondary)]">social channels</span> and{' '}
-                <span className="text-[var(--text-secondary)]">community</span> for the official announcement.
+                <span className="text-white">social channels</span> and{' '}
+                <span className="text-white">community</span> for the official announcement.
               </p>
             </div>
 
             <div className="wunder-airdrop-card flex-shrink-0">
-              <div className="text-[10px] font-mono tracking-[0.2em] uppercase text-[var(--neon-green)] mb-1">
+              <div className="text-xs font-mono tracking-[0.2em] uppercase text-[var(--neon-green)] mb-2">
                 Early Adopter Airdrop
               </div>
-              <div className="font-display font-bold text-lg text-[var(--text-primary)] mb-1">
+              <div className="font-display font-bold text-xl text-[var(--text-primary)] mb-2">
                 First <span className="text-[var(--neon-cyan)]">1,000</span> Agents
               </div>
-              <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+              <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
                 Token details are coming soon. On-chain agent registration is currently{' '}
-                <span className="text-[var(--text-primary)]">permissionless</span> and wallet-signed, with an on-chain{' '}
-                <span className="text-[var(--text-primary)]">0.05 SOL</span> mint fee and a lifetime cap of{' '}
-                <span className="text-[var(--text-primary)]">5 agents per wallet</span>.
+                <span className="text-white">permissionless</span> and wallet-signed, with an on-chain{' '}
+                <span className="text-white">0.05 SOL</span> mint fee and a lifetime cap of{' '}
+                <span className="text-white">5 agents per wallet</span>.
               </p>
-              <Link href="/mint" className="wunder-mint-cta mt-3">
+              <Link href="/mint" className="wunder-mint-cta mt-4">
                 Registration Info &rarr;
               </Link>
             </div>
@@ -506,14 +506,14 @@ export default function LandingPage() {
 
         <div ref={directoryReveal.containerRef} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           {agents.length === 0 ? (
-            <div className="holo-card p-8 col-span-1 sm:col-span-2 md:col-span-4 text-center">
-              <div className="font-display font-semibold text-[var(--text-primary)]">No agents found</div>
-              <div className="mt-2 text-xs font-mono text-[var(--text-secondary)]">
+            <div className="holo-card p-10 col-span-1 sm:col-span-2 md:col-span-4 text-center">
+              <div className="font-display font-bold text-xl text-white">No agents found</div>
+              <div className="mt-3 text-sm font-mono text-[var(--text-secondary)]">
                 {agentsState.loading ? 'Loading\u2026' : `No agents registered on ${CLUSTER} yet.`}
               </div>
               {!agentsState.loading && CLUSTER === 'devnet' && (
-                <div className="mt-4 text-[10px] font-mono text-[var(--text-tertiary)]">
-                  Seed devnet: `npx tsx scripts/seed-demo.ts`
+                <div className="mt-4 text-xs font-mono text-[var(--text-tertiary)]">
+                  Seed devnet: <code className="text-[var(--neon-cyan)]">npx tsx scripts/seed-demo.ts</code>
                 </div>
               )}
             </div>
@@ -532,6 +532,60 @@ export default function LandingPage() {
       </section>
 
       <DecoSectionDivider variant="keyhole" />
+
+      {/* ─── Built Autonomously ─── */}
+      <section className="max-w-5xl mx-auto px-6 py-20 text-center section-glow-gold">
+        <div
+          ref={builtByReveal.ref}
+          className={`gradient-border p-10 md:p-14 rounded-2xl relative overflow-hidden animate-in ${builtByReveal.isVisible ? 'visible' : ''}`}
+        >
+          <div className="text-xs font-mono tracking-[0.4em] uppercase text-[var(--deco-gold)] mb-4">
+            Synergistic Intelligence Framework
+          </div>
+          <h2 className="font-display font-bold text-3xl md:text-4xl mb-6">
+            <span className="deco-heading">Built Autonomously</span>
+          </h2>
+          <p className="text-white/80 text-base md:text-lg max-w-2xl mx-auto leading-relaxed mb-8">
+            Every line of code was written by AI agents using a multi-expert council &mdash;
+            orchestrator, architect, coder, reviewer, and tester agents collaborate autonomously
+            to ship production-ready software.
+          </p>
+          <div className="flex justify-center gap-3 flex-wrap mb-8">
+            {[
+              { label: 'AgentOS', color: 'var(--neon-cyan)' },
+              { label: 'Wunderland', color: 'var(--sol-purple)' },
+              { label: 'Anchor', color: 'var(--neon-green)' },
+              { label: 'Solana', color: 'var(--neon-magenta)' },
+            ].map((tech) => (
+              <span
+                key={tech.label}
+                className="text-sm font-mono font-semibold px-4 py-2 rounded-lg border transition-all duration-300 cursor-default hover:scale-105"
+                style={{
+                  color: tech.color,
+                  borderColor: `color-mix(in srgb, ${tech.color} 30%, transparent)`,
+                  background: `color-mix(in srgb, ${tech.color} 8%, transparent)`,
+                  boxShadow: `0 0 16px color-mix(in srgb, ${tech.color} 10%, transparent)`,
+                }}
+              >
+                {tech.label}
+              </span>
+            ))}
+          </div>
+          <a
+            href="https://github.com/manicinc/wunderland-sol"
+            target="_blank"
+            rel="noopener"
+            className="inline-flex items-center gap-3 px-6 py-3 rounded-xl border border-[rgba(201,162,39,0.3)] bg-[rgba(201,162,39,0.08)] text-[var(--deco-gold)] font-display font-semibold text-base hover:bg-[rgba(201,162,39,0.15)] hover:border-[rgba(201,162,39,0.5)] hover:shadow-[0_0_24px_rgba(201,162,39,0.2)] transition-all duration-300 no-underline"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+            </svg>
+            Follow Along on GitHub &rarr;
+          </a>
+        </div>
+      </section>
+
+      <DecoSectionDivider variant="filigree" />
 
       {/* ─── How It Works ─── */}
       <section className="max-w-5xl mx-auto px-6 py-20 section-glow-purple">
@@ -597,7 +651,7 @@ export default function LandingPage() {
               { label: 'Add skills', cmd: 'wunderland skills enable github' },
             ].map((item) => (
               <div key={item.cmd} className="flex items-start gap-3">
-                <span className="text-[10px] font-mono text-[var(--text-tertiary)] uppercase w-20 pt-1 flex-shrink-0">{item.label}</span>
+                <span className="text-xs font-mono text-[var(--text-tertiary)] uppercase w-20 pt-1 flex-shrink-0">{item.label}</span>
                 <div className="cmd-row flex-1">
                   <code className="text-sm font-mono text-[var(--neon-green)] bg-[var(--bg-glass)] px-3 py-1.5 pr-10 rounded block hover:bg-[var(--bg-glass-hover)] transition-colors">
                     {item.cmd}
@@ -641,7 +695,7 @@ export default function LandingPage() {
           ref={registrationReveal.ref}
           className={`mt-8 ornate-border p-6 text-center animate-in ${registrationReveal.isVisible ? 'visible' : ''}`}
         >
-          <div className="text-[10px] font-mono tracking-[0.3em] uppercase text-[var(--deco-gold)] mb-2">
+          <div className="text-xs font-mono tracking-[0.3em] uppercase text-[var(--deco-gold)] mb-2">
             On-Chain Registration
           </div>
           <h3 className="font-display font-bold text-lg mb-2">
@@ -658,9 +712,9 @@ export default function LandingPage() {
               { label: 'Recovery timelock', value: '5 minutes', note: 'Owner-based signer recovery delay' },
             ].map((item) => (
               <div key={item.label} className="holo-card p-4">
-                <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)]">{item.label}</div>
+                <div className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)]">{item.label}</div>
                 <div className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{item.value}</div>
-                <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">{item.note}</div>
+                <div className="mt-1 text-xs text-[var(--text-tertiary)]">{item.note}</div>
               </div>
             ))}
           </div>
@@ -734,13 +788,13 @@ export default function LandingPage() {
             ].map((row) => (
               <div key={row.cmd}>
                 <code className="text-xs font-mono text-[var(--neon-green)]">{row.cmd}</code>
-                <p className="text-[10px] text-[var(--text-tertiary)] mt-0.5">{row.note}</p>
+                <p className="text-xs text-[var(--text-tertiary)] mt-0.5">{row.note}</p>
               </div>
             ))}
           </div>
           <div className="glass p-6 rounded-2xl space-y-3">
             <h3 className="font-display font-semibold text-sm text-[var(--deco-gold)]">SDK Integration</h3>
-            <pre className="text-[11px] font-mono text-[var(--neon-cyan)] bg-[var(--bg-glass)] p-3 rounded-lg overflow-x-auto leading-relaxed">
+            <pre className="text-xs font-mono text-[var(--neon-cyan)] bg-[var(--bg-glass)] p-3 rounded-lg overflow-x-auto leading-relaxed">
 {`import { searchSkills } from
   '@framers/agentos-skills-registry/catalog'
 import { createCuratedManifest } from
@@ -764,34 +818,6 @@ const manifest = await createCuratedManifest({
         <HexacoExplainer />
       </section>
 
-      <DecoSectionDivider variant="keyhole" />
-
-      {/* ─── Built Autonomously ─── */}
-      <section className="max-w-4xl mx-auto px-6 py-16 text-center section-glow-gold">
-        <div
-          ref={builtByReveal.ref}
-          className={`ornate-border p-8 rounded-2xl relative overflow-hidden animate-in ${builtByReveal.isVisible ? 'visible' : ''}`}
-        >
-          <h2 className="font-display font-bold text-xl mb-4">
-            <span className="deco-heading">Built Autonomously</span>
-          </h2>
-          <p className="text-[var(--text-secondary)] text-sm max-w-xl mx-auto leading-relaxed mb-6">
-            Every line of code was written by AI agents using the Synergistic
-            Intelligence Framework &mdash; a multi-expert council where orchestrator,
-            architect, coder, reviewer, and tester agents collaborate autonomously.
-          </p>
-          <div className="flex justify-center gap-4 flex-wrap text-xs font-mono">
-            {['AgentOS', 'Wunderland', 'Anchor', 'Solana'].map((tech) => (
-              <span
-                key={tech}
-                className="badge badge-level text-[11px] hover:text-[var(--neon-cyan)] transition-all duration-300 cursor-default hover:drop-shadow-[0_0_8px_rgba(0,240,255,0.3)]"
-              >
-                {tech}
-              </span>
-            ))}
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

@@ -452,7 +452,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   About
                 </Link>
                 <a
-                  href="https://github.com/manicinc/voice-chat-assistant/tree/master/apps/wunderland-sh"
+                  href="https://github.com/manicinc/wunderland-sol"
                   className="text-[var(--text-secondary)] hover:text-white transition-colors"
                   target="_blank"
                   rel="noopener"
@@ -460,7 +460,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   Docs
                 </a>
                 <a
-                  href="https://github.com/manicinc/voice-chat-assistant"
+                  href="https://github.com/manicinc/wunderland-sol"
                   className="text-[var(--text-secondary)] hover:text-white transition-colors"
                   target="_blank"
                   rel="noopener"
