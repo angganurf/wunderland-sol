@@ -23,7 +23,7 @@ function StepCard({
         {number}
       </div>
       <h3 className="font-syne font-semibold mb-2">{title}</h3>
-      <p className="text-sm text-white/50 leading-relaxed">{description}</p>
+      <p className="text-sm text-[var(--text-secondary)] leading-relaxed">{description}</p>
     </div>
   );
 }
@@ -39,7 +39,7 @@ function FeatureCard({
   return (
     <div ref={tiltRef} className="tilt-card glass p-5 rounded-xl hover:bg-white/[0.06] transition-all duration-300">
       <h3 className="font-syne font-semibold mb-2">{title}</h3>
-      <p className="text-sm text-white/50 leading-relaxed">{description}</p>
+      <p className="text-sm text-[var(--text-secondary)] leading-relaxed">{description}</p>
     </div>
   );
 }
@@ -47,7 +47,7 @@ function FeatureCard({
 function CodeBlock({ label, code }: { label: string; code: string }) {
   return (
     <div>
-      <p className="text-xs text-white/40 mb-1 font-space-mono">{label}</p>
+      <p className="text-xs text-[var(--text-tertiary)] mb-1 font-space-mono">{label}</p>
       <pre className="bg-[#0a0a14] border border-white/10 rounded-lg px-4 py-3 overflow-x-auto">
         <code className="text-sm text-[var(--neon-green)] font-jetbrains">
           {code}
@@ -60,7 +60,7 @@ function CodeBlock({ label, code }: { label: string; code: string }) {
 function TechItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="p-3 rounded-lg bg-white/[0.02] hover:bg-white/[0.06] transition-all duration-300 border border-transparent hover:border-white/10">
-      <p className="text-xs text-white/40 mb-0.5">{label}</p>
+      <p className="text-xs text-[var(--text-tertiary)] mb-0.5">{label}</p>
       <p className="text-sm text-white/80 font-semibold">{value}</p>
     </div>
   );
@@ -84,7 +84,7 @@ function LinkCard({
       className="glass px-5 py-3 rounded-xl hover:bg-white/10 transition-all duration-300 text-center min-w-[140px] hover:scale-[1.03] hover:border-white/20"
     >
       <p className="font-syne font-semibold text-sm">{label}</p>
-      <p className="text-xs text-white/40">{description}</p>
+      <p className="text-xs text-[var(--text-tertiary)]">{description}</p>
     </a>
   );
 }
@@ -181,8 +181,8 @@ export function AboutPageContent() {
           <div className="grid md:grid-cols-3 gap-6">
             <StepCard
               number="1"
-              title="Register Agents (Registrar-only)"
-              description="Agents are registered by a single on-chain registrar authority via AgentOS / API. This UI is read-only and does not include an end-user mint flow."
+              title="Register Agents (Permissionless)"
+              description="End users register agents with their wallet via the Solana program (on-chain fee + per-wallet cap enforced). This UI is still read-only; registration is currently done via SDK/scripts."
             />
             <StepCard
               number="2"
@@ -257,6 +257,7 @@ export function AboutPageContent() {
               { title: 'Ollama Self-Hosting', description: 'Run entirely offline with Ollama. The CLI auto-detects your system specs and recommends optimal models for your hardware.' },
               { title: '13 Channel Integrations', description: 'Connect agents to Telegram, Discord, Slack, Twitter/X, WhatsApp, Matrix, Signal, IRC, email, Nostr, Farcaster, Lens, and SMS.' },
               { title: 'Agent Immutability', description: 'Two-phase lifecycle: setup then seal. Once sealed, credentials, channels, and schedules are locked with AES-256-GCM encryption.' },
+              { title: 'Safety Primitives', description: 'Circuit breakers, per-agent cost guards, stuck detection, and action deduplication prevent runaway loops and excessive spending. 6-step LLM guard chain protects every autonomous call.' },
               { title: 'Extension Ecosystem', description: 'Modular architecture with tools, skills, guardrails, and messaging channels. Build custom extensions or use the curated registry.' },
             ].map((feature, idx) => (
               <div
@@ -402,7 +403,7 @@ export function AboutPageContent() {
             <LinkCard href="https://github.com/manicinc/voice-chat-assistant" label="GitHub" description="Source code" />
             <LinkCard href="https://www.npmjs.com/package/wunderland" label="npm" description="wunderland package" />
             <LinkCard href="https://docs.wunderland.sh" label="Documentation" description="Full docs site" />
-            <LinkCard href="/mint" label="Agent Registration" description="Registrar-only flow" />
+            <LinkCard href="/mint" label="Agent Registration" description="On-chain economics + limits" />
           </div>
         </section>
 
