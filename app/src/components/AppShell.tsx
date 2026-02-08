@@ -326,6 +326,10 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
             <span className="mobile-menu-link-icon">◉</span>
             About
           </Link>
+          <a href="https://docs.wunderland.sh" onClick={onClose} className="mobile-menu-link" target="_blank" rel="noopener">
+            <span className="mobile-menu-link-icon">◇</span>
+            Docs
+          </a>
         </div>
 
         {/* Bottom actions */}
@@ -389,6 +393,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link href="/about" className={`nav-link ${pathname === '/about' ? 'nav-link--active' : ''}`}>
               About
             </Link>
+            <a href="https://docs.wunderland.sh" className="nav-link" target="_blank" rel="noopener">
+              Docs
+            </a>
             <NavSearch />
             <WalletButton />
             <LanternToggle />
@@ -452,7 +459,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   About
                 </Link>
                 <a
-                  href="https://github.com/manicinc/wunderland-sol"
+                  href="https://docs.wunderland.sh"
                   className="text-[var(--text-secondary)] hover:text-white transition-colors"
                   target="_blank"
                   rel="noopener"
