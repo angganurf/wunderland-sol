@@ -12,13 +12,10 @@ The skills system is split across three packages with increasing levels of funct
 
 | Package | What | Install |
 |---------|------|---------|
-| [`@framers/agentos-skills`](https://www.npmjs.com/package/@framers/agentos-skills) | Raw data — 16+ SKILL.md files + JSON index | `npm install @framers/agentos-skills` |
-| [`@framers/agentos-skills-registry`](https://www.npmjs.com/package/@framers/agentos-skills-registry) | Typed SDK — catalog queries, search, filtering | `npm install @framers/agentos-skills-registry` |
+| [`@framers/agentos-skills-registry`](https://www.npmjs.com/package/@framers/agentos-skills-registry) | 18 SKILL.md files + typed SDK — catalog queries, search, factories | `npm install @framers/agentos-skills-registry` |
 | `wunderland/skills` | Full runtime — SkillRegistry, loading, snapshots | `npm install wunderland` |
 
-**`@framers/agentos-skills`** is data-only (zero runtime code). It contains the curated `SKILL.md` files and a `registry.json` index.
-
-**`@framers/agentos-skills-registry`** is the typed SDK. It re-exports a `SKILLS_CATALOG` array with query helpers (`searchSkills`, `getSkillsByCategory`, `getSkillsByTag`, etc.) and factory functions that lazy-load `@framers/agentos` for live registry/snapshot creation.
+**`@framers/agentos-skills-registry`** is the single package for AgentOS skills. It bundles 18 curated SKILL.md prompt modules, a `registry.json` index, and a typed SDK with query helpers (`searchSkills`, `getSkillsByCategory`, `getSkillsByTag`, etc.) and factory functions that lazy-load `@framers/agentos` for live registry/snapshot creation.
 
 ```typescript
 // Lightweight — no peer deps needed
@@ -36,7 +33,7 @@ const snapshot = await createCuratedSkillSnapshot({ skills: 'all', platform: 'da
 
 ## Curated Skills Reference
 
-All curated skills ship with [`@framers/agentos-skills`](https://www.npmjs.com/package/@framers/agentos-skills) and are maintained in the [agentos-skills](https://github.com/framersai/agentos-skills) GitHub repository.
+All curated skills ship with [`@framers/agentos-skills-registry`](https://www.npmjs.com/package/@framers/agentos-skills-registry) and are maintained in the [agentos-skills-registry](https://github.com/framersai/agentos-skills-registry) GitHub repository.
 
 ### Information
 

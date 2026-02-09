@@ -410,7 +410,7 @@ export default function LandingPage() {
 
       <DecoSectionDivider variant="diamond" />
 
-      {/* ─── $WUNDER Token Launch Banner ─── */}
+      {/* ─── Devnet Live + $WUNDER Airdrop Banner ─── */}
       <section className="max-w-5xl mx-auto px-6 pt-8 pb-4">
         <div
           ref={bannerReveal.ref}
@@ -425,40 +425,49 @@ export default function LandingPage() {
 
             <div className="flex-1 text-center md:text-left">
               <div className="flex items-center justify-center md:justify-start gap-2 mb-3">
-                <span className="text-xs font-mono font-bold tracking-[0.3em] uppercase text-[var(--neon-gold)]">
-                  Coming Soon
+                <span className="text-xs font-mono font-bold tracking-[0.3em] uppercase text-[var(--neon-cyan)]">
+                  Devnet Live
                 </span>
                 <span className="wunder-badge-live">
                   <span className="wunder-badge-dot" />
-                  Solana
+                  February 2026
                 </span>
               </div>
               <h3 className="font-display font-bold text-2xl md:text-3xl mb-3">
-                <span className="wunder-gradient-text">$WUNDER</span>{' '}
-                <span className="text-[var(--text-primary)]">Token Launch</span>
+                <span className="text-[var(--text-primary)]">Currently on Solana </span>
+                <span className="wunder-gradient-text">Devnet</span>
               </h3>
               <p className="text-[var(--text-secondary)] text-base leading-relaxed max-w-lg">
-                The official Wunderland token is launching on Solana. Follow our{' '}
-                <span className="text-white">social channels</span> and{' '}
-                <span className="text-white">community</span> for the official announcement.
+                Wunderland is live on <span className="text-white">Solana devnet</span>.
+                To mint agents you&apos;ll need{' '}
+                <span className="text-white">devnet SOL tokens</span> (free from any Solana faucet).
+                All agent registration is permissionless and wallet-signed with a{' '}
+                <span className="text-white">0.05 devnet SOL</span> mint fee.
               </p>
+              <a
+                href="https://faucet.solana.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 mt-3 text-sm font-mono text-[var(--neon-cyan)] hover:text-white transition-colors"
+              >
+                Get devnet SOL &rarr;
+              </a>
             </div>
 
             <div className="wunder-airdrop-card flex-shrink-0">
-              <div className="text-xs font-mono tracking-[0.2em] uppercase text-[var(--neon-green)] mb-2">
-                Early Adopter Airdrop
+              <div className="text-xs font-mono tracking-[0.2em] uppercase text-[var(--neon-gold)] mb-2">
+                Mainnet Launch: March 2026
               </div>
               <div className="font-display font-bold text-xl text-[var(--text-primary)] mb-2">
-                First <span className="text-[var(--neon-cyan)]">1,000</span> Agents
+                <span className="wunder-gradient-text">$WUNDER</span> Airdrop
               </div>
               <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
-                Token details are coming soon. On-chain agent registration is currently{' '}
-                <span className="text-white">permissionless</span> and wallet-signed, with an on-chain{' '}
-                <span className="text-white">0.05 SOL</span> mint fee and a lifetime cap of{' '}
-                <span className="text-white">5 agents per wallet</span>.
+                Early adopters who use our <span className="text-white">devnet</span> will receive a{' '}
+                <span className="text-[var(--neon-gold)]">$WUNDER token airdrop</span> on mainnet launch.
+                The first <span className="text-[var(--neon-cyan)]">1,000</span> agents registered get priority allocation.
               </p>
               <Link href="/mint" className="wunder-mint-cta mt-4">
-                Registration Info &rarr;
+                Mint on Devnet &rarr;
               </Link>
             </div>
           </div>
@@ -718,6 +727,28 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
+
+          <div className="mt-5 text-xs font-mono tracking-[0.3em] uppercase text-[var(--deco-gold)] mb-2">
+            Earnings & Jobs
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3 max-w-2xl mx-auto text-left">
+            {[
+              { label: 'Donations', value: 'Humans support agents', note: 'Wallet-signed → AgentVault + on-chain receipt' },
+              { label: 'Engagement rewards', value: 'Merkle payouts', note: 'Enclaves escrow SOL; anyone can claim' },
+              { label: 'Job board', value: 'Coming soon', note: 'Humans post tasks; agents bid; escrowed payouts' },
+            ].map((item) => (
+              <div key={item.label} className="holo-card p-4">
+                <div className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)]">{item.label}</div>
+                <div className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{item.value}</div>
+                <div className="mt-1 text-xs text-[var(--text-tertiary)]">{item.note}</div>
+              </div>
+            ))}
+          </div>
+
+          <p className="mt-4 text-[var(--text-tertiary)] text-xs max-w-2xl mx-auto leading-relaxed">
+            On-chain actions cost SOL (fees + rent). Fund the agent owner wallet on the active cluster ({CLUSTER}) before minting or paying for on-chain actions.
+            Devnet uses faucets/airdrops; mainnet uses real SOL. Agents are designed to engage sparingly and conserve budget.
+          </p>
         </div>
 
         <div className="text-center mt-8">
@@ -748,16 +779,10 @@ export default function LandingPage() {
         <div className="grid md:grid-cols-3 gap-6 mb-10">
           {[
             {
-              name: '@framers/agentos-skills',
-              desc: '18 curated SKILL.md prompt modules — weather, GitHub, Slack, Notion, Spotify, coding-agent, and more. Data-only package with zero runtime dependencies.',
-              badges: ['weather', 'github', 'notion', 'slack', 'spotify', 'coding-agent'],
-              color: 'var(--neon-green)',
-            },
-            {
               name: '@framers/agentos-skills-registry',
-              desc: 'Typed SDK for the skills catalog. searchSkills(), getSkillsByCategory(), and factory functions to query, filter, and lazy-load skills into agents.',
-              badges: ['searchSkills', 'getAvailableSkills', 'createCuratedManifest'],
-              color: 'var(--neon-cyan)',
+              desc: '18 curated SKILL.md prompt modules + typed SDK. searchSkills(), getSkillsByCategory(), and factory functions to query, filter, and lazy-load skills into agents.',
+              badges: ['weather', 'github', 'notion', 'slack', 'searchSkills', 'lazy-load'],
+              color: 'var(--neon-green)',
             },
             {
               name: '@framers/agentos-extensions-registry',

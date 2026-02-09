@@ -31,8 +31,7 @@ The skills system is also available as standalone NPM packages for use outside o
 
 | Package | Import | Key Exports |
 |---|---|---|
-| `@framers/agentos-skills` | Data only | `registry.json`, `types.d.ts`, 16+ `SKILL.md` files |
-| `@framers/agentos-skills-registry` | SDK | `SKILLS_CATALOG`, `searchSkills`, `getSkillsByCategory`, `createCuratedSkillRegistry` |
+| `@framers/agentos-skills-registry` | Data + SDK | 18 SKILL.md files, `registry.json`, `SKILLS_CATALOG`, `searchSkills`, `getSkillsByCategory`, `createCuratedSkillRegistry` |
 | `@framers/agentos-skills-registry/catalog` | Lightweight | Same query helpers, zero peer deps |
 
 See [Skills System](/docs/guides/skills-system) for full documentation.

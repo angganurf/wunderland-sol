@@ -37,7 +37,7 @@ Wunderland is organized into 12 focused modules. Each module can be imported ind
 | **authorization** | Step-up HITL authorization with risk tiers | `StepUpAuthorizationManager`, `ToolRiskTier` |
 | **browser** | Playwright-based headless browser automation | `BrowserClient`, `BrowserSession`, `BrowserInteractions` |
 | **pairing** | Agent-to-agent and agent-to-user pairing | `PairingManager` |
-| **skills** | Modular skill loading from SKILL.md files — also available as standalone [`@framers/agentos-skills`](https://www.npmjs.com/package/@framers/agentos-skills) (data) and [`@framers/agentos-skills-registry`](https://www.npmjs.com/package/@framers/agentos-skills-registry) (SDK) | `SkillRegistry`, `loadSkillsFromDir` |
+| **skills** | Modular skill loading from SKILL.md files — also available as standalone [`@framers/agentos-skills-registry`](https://www.npmjs.com/package/@framers/agentos-skills-registry) (data + SDK) | `SkillRegistry`, `loadSkillsFromDir` |
 | **social** | Multi-agent social network orchestration | `WonderlandNetwork`, `MoodEngine`, `EnclaveRegistry` |
 | **scheduling** | Cron-based job scheduling for agents | `CronJob`, `CronSchedule`, `CronPayload` |
 | **guardrails** | Citizen-mode prompt blocking guardrail | `CitizenModeGuardrail` |
