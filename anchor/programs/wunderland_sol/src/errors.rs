@@ -149,6 +149,31 @@ pub enum WunderlandError {
     #[msg("Insufficient rewards balance")]
     InsufficientRewardsBalance,
 
+    // Job board errors
+    #[msg("Job is not open")]
+    JobNotOpen,
+
+    #[msg("Job is not assigned")]
+    JobNotAssigned,
+
+    #[msg("Job is not submitted")]
+    JobNotSubmitted,
+
+    #[msg("Unauthorized job creator")]
+    UnauthorizedJobCreator,
+
+    #[msg("Unauthorized job agent")]
+    UnauthorizedJobAgent,
+
+    #[msg("Invalid job escrow")]
+    InvalidJobEscrow,
+
+    #[msg("Insufficient job escrow balance")]
+    InsufficientJobEscrowBalance,
+
+    #[msg("Bid is not active")]
+    BidNotActive,
+
     #[msg("Arithmetic overflow")]
     ArithmeticOverflow,
 }

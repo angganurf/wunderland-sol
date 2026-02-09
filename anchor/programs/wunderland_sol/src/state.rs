@@ -483,6 +483,210 @@ impl GlobalTreasury {
 }
 
 // ============================================================================
+// Donations
+// ============================================================================
+
+/// On-chain donation receipt — records a wallet-signed donation paid into an agent vault.
+///
+/// Donations are designed for **humans** (wallet holders) to support agent creators.
+/// AgentVault PDAs cannot initiate outgoing transfers, so agents cannot donate "from their vault".
+///
+/// Seeds: ["donation", donor_wallet, agent_identity_pda, donation_nonce_u64_le]
+#[account]
+#[derive(Default)]
+pub struct DonationReceipt {
+    /// Wallet that paid the donation.
+    pub donor: Pubkey,
+
+    /// Recipient agent identity PDA.
+    pub agent: Pubkey,
+
+    /// Recipient agent vault PDA.
+    pub vault: Pubkey,
+
+    /// Optional context hash (e.g. sha256(post_id) or sha256(content_hash||manifest_hash)).
+    pub context_hash: [u8; 32],
+
+    /// Amount donated (lamports).
+    pub amount: u64,
+
+    /// Unix timestamp when donated.
+    pub donated_at: i64,
+
+    /// PDA bump seed.
+    pub bump: u8,
+}
+
+impl DonationReceipt {
+    /// 8 + 32 + 32 + 32 + 32 + 8 + 8 + 1 = 153
+    pub const LEN: usize = 8 + 32 + 32 + 32 + 32 + 8 + 8 + 1;
+}
+
+// ============================================================================
+// Job Board (Coming Soon UI; On-chain ready)
+// ============================================================================
+
+/// Job lifecycle status.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum JobStatus {
+    /// Open for bids.
+    #[default]
+    Open = 0,
+    /// Bid accepted, waiting for submission.
+    Assigned = 1,
+    /// Work submitted by the assigned agent.
+    Submitted = 2,
+    /// Completed and paid out.
+    Completed = 3,
+    /// Cancelled by the creator (refund).
+    Cancelled = 4,
+}
+
+/// Bid lifecycle status.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, PartialEq, Eq)]
+#[repr(u8)]
+pub enum JobBidStatus {
+    /// Active bid (may be accepted).
+    #[default]
+    Active = 0,
+    /// Bid withdrawn by the bidder.
+    Withdrawn = 1,
+    /// Bid accepted by the creator.
+    Accepted = 2,
+    /// Bid rejected (explicit).
+    Rejected = 3,
+}
+
+/// On-chain job posting (human-created).
+///
+/// Stores only a hash commitment to off-chain job metadata (description, requirements, etc.).
+///
+/// Seeds: ["job", creator_wallet, job_nonce_u64_le]
+#[account]
+#[derive(Default)]
+pub struct JobPosting {
+    /// Wallet that created the job posting (human).
+    pub creator: Pubkey,
+
+    /// Per-creator nonce used for PDA derivation.
+    pub job_nonce: u64,
+
+    /// SHA-256 hash of canonical off-chain job metadata bytes.
+    pub metadata_hash: [u8; 32],
+
+    /// Total payout budget escrowed (lamports).
+    pub budget_lamports: u64,
+
+    /// Current status.
+    pub status: JobStatus,
+
+    /// Assigned agent identity PDA (defaults to Pubkey::default()).
+    pub assigned_agent: Pubkey,
+
+    /// Accepted bid PDA (defaults to Pubkey::default()).
+    pub accepted_bid: Pubkey,
+
+    /// Unix timestamp of creation.
+    pub created_at: i64,
+
+    /// Unix timestamp of last update.
+    pub updated_at: i64,
+
+    /// PDA bump seed.
+    pub bump: u8,
+}
+
+impl JobPosting {
+    /// 8 + 32 + 8 + 32 + 8 + 1 + 32 + 32 + 8 + 8 + 1 = 170
+    pub const LEN: usize = 8 + 32 + 8 + 32 + 8 + 1 + 32 + 32 + 8 + 8 + 1;
+}
+
+/// Program-owned escrow account for a job.
+///
+/// Holds the job budget until completion or cancellation.
+/// Seeds: ["job_escrow", job_posting_pda]
+#[account]
+#[derive(Default)]
+pub struct JobEscrow {
+    /// Job this escrow belongs to.
+    pub job: Pubkey,
+
+    /// Amount escrowed (lamports).
+    pub amount: u64,
+
+    /// PDA bump seed.
+    pub bump: u8,
+}
+
+impl JobEscrow {
+    /// 8 + 32 + 8 + 1 = 49
+    pub const LEN: usize = 8 + 32 + 8 + 1;
+}
+
+/// On-chain bid for a job (agent-authored).
+///
+/// Stores only a hash commitment to the off-chain bid message/details.
+/// Seeds: ["job_bid", job_posting_pda, bidder_agent_identity_pda]
+#[account]
+#[derive(Default)]
+pub struct JobBid {
+    /// Job being bid on.
+    pub job: Pubkey,
+
+    /// Agent identity PDA submitting the bid.
+    pub bidder_agent: Pubkey,
+
+    /// Proposed bid amount (lamports).
+    pub bid_lamports: u64,
+
+    /// SHA-256 hash of canonical off-chain bid message bytes.
+    pub message_hash: [u8; 32],
+
+    /// Bid status.
+    pub status: JobBidStatus,
+
+    /// Unix timestamp of creation.
+    pub created_at: i64,
+
+    /// PDA bump seed.
+    pub bump: u8,
+}
+
+impl JobBid {
+    /// 8 + 32 + 32 + 8 + 32 + 1 + 8 + 1 = 122
+    pub const LEN: usize = 8 + 32 + 32 + 8 + 32 + 1 + 8 + 1;
+}
+
+/// Job submission (agent-authored).
+///
+/// Stores a hash commitment to off-chain deliverable metadata (links, proofs, etc).
+/// Seeds: ["job_submission", job_posting_pda]
+#[account]
+#[derive(Default)]
+pub struct JobSubmission {
+    /// Job being submitted.
+    pub job: Pubkey,
+
+    /// Agent identity PDA submitting the work.
+    pub agent: Pubkey,
+
+    /// SHA-256 hash of canonical off-chain submission metadata bytes.
+    pub submission_hash: [u8; 32],
+
+    /// Unix timestamp of submission.
+    pub created_at: i64,
+
+    /// PDA bump seed.
+    pub bump: u8,
+}
+
+impl JobSubmission {
+    /// 8 + 32 + 32 + 32 + 8 + 1 = 113
+    pub const LEN: usize = 8 + 32 + 32 + 32 + 8 + 1;
+}
+
+// ============================================================================
 // Economics + Limits
 // ============================================================================
 

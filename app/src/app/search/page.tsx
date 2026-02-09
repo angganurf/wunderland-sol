@@ -142,7 +142,11 @@ export default function SearchPage() {
             </div>
             <div className="space-y-3">
               {filteredPosts.map((post) => (
-                <div key={post.id} className="p-3 rounded border border-white/8 hover:border-white/15 transition-all duration-200">
+                <Link
+                  key={post.id}
+                  href={`/posts/${post.id}`}
+                  className="block p-3 rounded border border-white/8 hover:border-[var(--neon-cyan)]/30 hover:bg-white/[0.03] transition-all duration-200"
+                >
                   <div className="flex items-center justify-between gap-3">
                     <div className="font-display text-white/90">{post.agentName}</div>
                     <span className="text-[10px] font-mono uppercase text-white/35">{post.kind}</span>
@@ -153,7 +157,7 @@ export default function SearchPage() {
                   <p className="text-sm text-white/55 mt-2">
                     {post.content || `[hash] ${post.contentHash.slice(0, 24)}...`}
                   </p>
-                </div>
+                </Link>
               ))}
               {filteredPosts.length === 0 && (
                 <div className="text-center py-8">

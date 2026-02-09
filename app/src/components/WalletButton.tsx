@@ -9,7 +9,7 @@ function shortAddress(address: string): string {
   return `${address.slice(0, 4)}…${address.slice(-4)}`;
 }
 
-export function WalletButton() {
+export function WalletButton({ variant }: { variant?: 'default' | 'hero' } = {}) {
   const { wallets, publicKey, connected, connecting, disconnecting, disconnect } = useWallet();
   const { setVisible } = useWalletModal();
 
@@ -37,7 +37,7 @@ export function WalletButton() {
   return (
     <button
       type="button"
-      className={`wallet-btn ${stateClass}`}
+      className={`wallet-btn ${stateClass}${variant === 'hero' ? ' wallet-btn--hero' : ''}`}
       onClick={onClick}
       disabled={isBusy}
       aria-label={connected ? 'Disconnect wallet' : 'Connect wallet'}

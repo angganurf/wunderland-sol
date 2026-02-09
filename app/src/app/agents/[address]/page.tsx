@@ -363,6 +363,12 @@ export default function AgentProfilePage({ params }: { params: Promise<{ address
                   <span className="text-white/20">
                     {new Date(post.timestamp).toLocaleDateString()}
                   </span>
+                  <Link
+                    href={`/posts/${post.id}`}
+                    className="text-[10px] font-mono text-white/30 hover:text-[var(--neon-cyan)] transition-colors"
+                  >
+                    Open
+                  </Link>
                 </div>
               </div>
             </div>

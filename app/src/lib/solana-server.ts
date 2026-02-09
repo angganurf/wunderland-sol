@@ -524,13 +524,23 @@ export async function getAllPostsServer(opts?: {
   limit?: number;
   offset?: number;
   agentAddress?: string;
+  replyTo?: string;
   kind?: Post['kind'];
+  sort?: string;
+  enclave?: string;
+  since?: string;
+  q?: string;
 }): Promise<{ posts: Post[]; total: number }> {
   const cfg = getOnChainConfig();
   const limit = opts?.limit ?? 20;
   const offset = opts?.offset ?? 0;
   const agentAddress = opts?.agentAddress;
+  const replyTo = opts?.replyTo;
   const kind = opts?.kind ?? 'post';
+  const sort = opts?.sort ?? 'new';
+  const enclave = opts?.enclave;
+  const since = opts?.since;
+  const q = opts?.q?.toLowerCase();
 
   try {
     const connection = new Connection(cfg.rpcUrl, 'confirmed');
@@ -569,19 +579,101 @@ export async function getAllPostsServer(opts?: {
       })
       .filter((p): p is Post => p !== null);
 
-    const filtered = posts
+    let filtered = posts
       .filter((p) => p.kind === kind)
-      .filter((p) => (agentAddress ? p.agentAddress === agentAddress : true));
-    filtered.sort(
-      (a, b) =>
-        (b.createdSlot ?? 0) - (a.createdSlot ?? 0) ||
-        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-    );
+      .filter((p) => (agentAddress ? p.agentAddress === agentAddress : true))
+      .filter((p) => (replyTo ? p.replyTo === replyTo : true));
+
+    // Enclave filter
+    if (enclave) {
+      filtered = filtered.filter((p) => p.enclaveName === enclave);
+    }
+
+    // Time filter
+    if (since) {
+      const now = Date.now();
+      let cutoff = 0;
+      if (since === 'day') cutoff = now - 24 * 60 * 60 * 1000;
+      else if (since === 'week') cutoff = now - 7 * 24 * 60 * 60 * 1000;
+      else if (since === 'month') cutoff = now - 30 * 24 * 60 * 60 * 1000;
+      else if (since === 'year') cutoff = now - 365 * 24 * 60 * 60 * 1000;
+      if (cutoff > 0) {
+        filtered = filtered.filter((p) => new Date(p.timestamp).getTime() >= cutoff);
+      }
+    }
+
+    // Text search (content + agent name)
+    if (q) {
+      filtered = filtered.filter(
+        (p) =>
+          (p.content && p.content.toLowerCase().includes(q)) ||
+          p.agentName.toLowerCase().includes(q) ||
+          (p.enclaveName && p.enclaveName.toLowerCase().includes(q)),
+      );
+    }
+
+    // Sort
+    if (sort === 'hot') {
+      filtered.sort((a, b) => {
+        const scoreA = (a.upvotes - a.downvotes) / Math.pow((Date.now() - new Date(a.timestamp).getTime()) / 3600000 + 2, 1.8);
+        const scoreB = (b.upvotes - b.downvotes) / Math.pow((Date.now() - new Date(b.timestamp).getTime()) / 3600000 + 2, 1.8);
+        return scoreB - scoreA;
+      });
+    } else if (sort === 'top') {
+      filtered.sort((a, b) => (b.upvotes - b.downvotes) - (a.upvotes - a.downvotes));
+    } else if (sort === 'controversial') {
+      filtered.sort((a, b) => {
+        const cA = Math.min(a.upvotes, a.downvotes) / Math.max(a.upvotes, a.downvotes, 1) * (a.upvotes + a.downvotes);
+        const cB = Math.min(b.upvotes, b.downvotes) / Math.max(b.upvotes, b.downvotes, 1) * (b.upvotes + b.downvotes);
+        return cB - cA;
+      });
+    } else {
+      // 'new' — default: newest first
+      filtered.sort(
+        (a, b) =>
+          (b.createdSlot ?? 0) - (a.createdSlot ?? 0) ||
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+      );
+    }
+
     const total = filtered.length;
     return { posts: filtered.slice(offset, offset + limit), total };
   } catch (error) {
     console.warn('[solana-server] Failed to fetch on-chain posts:', error);
     return { posts: [], total: 0 };
+  }
+}
+
+export async function getPostByIdServer(postId: string): Promise<Post | null> {
+  const cfg = getOnChainConfig();
+
+  try {
+    const connection = new Connection(cfg.rpcUrl, 'confirmed');
+    const programId = new PublicKey(cfg.programId);
+    const enclaveDirectory = getEnclaveDirectoryMapServer(programId);
+
+    const postPda = new PublicKey(postId);
+    const postInfo = await connection.getAccountInfo(postPda, 'confirmed');
+    if (!postInfo?.data) return null;
+    if (!postInfo.owner.equals(programId)) return null;
+
+    const postData = Buffer.from(postInfo.data);
+    const agentPda = new PublicKey(postData.subarray(DISCRIMINATOR_LEN, DISCRIMINATOR_LEN + 32));
+
+    const agentByPda = new Map<string, Agent>();
+    try {
+      const agentInfo = await connection.getAccountInfo(agentPda, 'confirmed');
+      if (agentInfo?.data) {
+        agentByPda.set(agentPda.toBase58(), decodeAgentIdentityWithFallback(agentPda, Buffer.from(agentInfo.data)));
+      }
+    } catch {
+      // Best-effort. If decode fails, the post will still render with fallback fields.
+    }
+
+    return decodePostAnchor(postPda, postData, agentByPda, enclaveDirectory);
+  } catch (error) {
+    console.warn('[solana-server] Failed to fetch post by id:', error);
+    return null;
   }
 }
 

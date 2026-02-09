@@ -67,6 +67,7 @@ const IX_EXECUTE_RECOVER_SIGNER = hexToBytes('ac5e230c0f5842db');
 const IX_CANCEL_RECOVER_SIGNER = hexToBytes('eeccb4606d06e240');
 const IX_SUBMIT_TIP = hexToBytes('df3b2e65a1bd9a25');
 const IX_CLAIM_TIMEOUT_REFUND = hexToBytes('df071e30230d0f4b');
+const IX_DONATE_TO_AGENT = hexToBytes('33de8f81d1180ddf');
 
 // ============================================================================
 // PDA helpers (must match on-chain seeds)
@@ -119,6 +120,24 @@ export function deriveTipPda(opts: { tipper: PublicKey; tipNonce: bigint; progra
 
 export function deriveTipEscrowPda(tip: PublicKey, programId: PublicKey = WUNDERLAND_PROGRAM_ID): [PublicKey, number] {
   return PublicKey.findProgramAddressSync([Buffer.from('escrow'), tip.toBuffer()], programId);
+}
+
+export function deriveDonationReceiptPda(opts: {
+  donor: PublicKey;
+  agentIdentity: PublicKey;
+  donationNonce: bigint;
+  programId?: PublicKey;
+}): [PublicKey, number] {
+  const programId = opts.programId ?? WUNDERLAND_PROGRAM_ID;
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from('donation'),
+      opts.donor.toBuffer(),
+      opts.agentIdentity.toBuffer(),
+      Buffer.from(u64LE(opts.donationNonce)),
+    ],
+    programId,
+  );
 }
 
 // ============================================================================
@@ -423,6 +442,50 @@ export function buildClaimTimeoutRefundIx(opts: {
     data: Buffer.from(IX_CLAIM_TIMEOUT_REFUND),
   });
   return { escrow, instruction };
+}
+
+export function buildDonateToAgentIx(opts: {
+  donor: PublicKey;
+  agentIdentity: PublicKey;
+  amountLamports: bigint;
+  donationNonce: bigint;
+  contextHash?: Uint8Array; // 32 bytes (optional attribution)
+  programId?: PublicKey;
+}): { vault: PublicKey; receipt: PublicKey; instruction: TransactionInstruction } {
+  const programId = opts.programId ?? WUNDERLAND_PROGRAM_ID;
+  if (opts.amountLamports <= 0n) throw new Error('amountLamports must be > 0.');
+
+  const contextHash = opts.contextHash ?? new Uint8Array(32);
+  if (contextHash.length !== 32) throw new Error('contextHash must be 32 bytes.');
+
+  const [vault] = deriveVaultPda(opts.agentIdentity, programId);
+  const [receipt] = deriveDonationReceiptPda({
+    donor: opts.donor,
+    agentIdentity: opts.agentIdentity,
+    donationNonce: opts.donationNonce,
+    programId,
+  });
+
+  const data = concatBytes([
+    IX_DONATE_TO_AGENT,
+    u64LE(opts.amountLamports),
+    contextHash,
+    u64LE(opts.donationNonce),
+  ]);
+
+  const instruction = new TransactionInstruction({
+    programId,
+    keys: [
+      { pubkey: opts.donor, isSigner: true, isWritable: true },
+      { pubkey: opts.agentIdentity, isSigner: false, isWritable: false },
+      { pubkey: vault, isSigner: false, isWritable: true },
+      { pubkey: receipt, isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.from(data),
+  });
+
+  return { vault, receipt, instruction };
 }
 
 export function lamportsToSol(lamports: bigint): number {

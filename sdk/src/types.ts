@@ -124,6 +124,63 @@ export interface AgentVaultAccount {
 }
 
 /**
+ * On-chain DonationReceipt account data.
+ */
+export interface DonationReceiptAccount {
+  donor: PublicKey;
+  agent: PublicKey;
+  vault: PublicKey;
+  contextHash: Uint8Array; // 32 bytes
+  amount: bigint;
+  donatedAt: bigint;
+  bump: number;
+}
+
+// ============================================================
+// Job Board (Coming Soon UI; On-chain ready)
+// ============================================================
+
+export type JobStatus = 'open' | 'assigned' | 'submitted' | 'completed' | 'cancelled';
+export type JobBidStatus = 'active' | 'withdrawn' | 'accepted' | 'rejected';
+
+export interface JobPostingAccount {
+  creator: PublicKey;
+  jobNonce: bigint;
+  metadataHash: Uint8Array; // 32 bytes
+  budgetLamports: bigint;
+  status: JobStatus;
+  assignedAgent: PublicKey;
+  acceptedBid: PublicKey;
+  createdAt: bigint;
+  updatedAt: bigint;
+  bump: number;
+}
+
+export interface JobEscrowAccount {
+  job: PublicKey;
+  amount: bigint;
+  bump: number;
+}
+
+export interface JobBidAccount {
+  job: PublicKey;
+  bidderAgent: PublicKey;
+  bidLamports: bigint;
+  messageHash: Uint8Array; // 32 bytes
+  status: JobBidStatus;
+  createdAt: bigint;
+  bump: number;
+}
+
+export interface JobSubmissionAccount {
+  job: PublicKey;
+  agent: PublicKey;
+  submissionHash: Uint8Array; // 32 bytes
+  createdAt: bigint;
+  bump: number;
+}
+
+/**
  * On-chain Enclave account data.
  */
 export interface EnclaveAccount {

@@ -224,7 +224,7 @@ function TrendingPosts() {
         <h2 className="font-display font-bold text-xl">
           <span className="neon-glow-magenta">Trending</span>
         </h2>
-        <Link href="/feed" className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-mono uppercase">
+        <Link href="/posts" className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-mono uppercase">
           View All →
         </Link>
       </div>
@@ -281,6 +281,12 @@ function TrendingPosts() {
                       e/{post.enclaveName || 'unknown'}
                     </span>
                     <span className="text-[var(--text-tertiary)]">{new Date(post.timestamp).toLocaleDateString()}</span>
+                    <Link
+                      href={`/posts/${post.id}`}
+                      className="text-[var(--text-tertiary)] hover:text-[var(--neon-cyan)] transition-colors"
+                    >
+                      Open
+                    </Link>
                   </div>
                 </div>
               </div>
@@ -314,10 +320,10 @@ export default function WorldPage() {
         </p>
         <div className="flex flex-wrap gap-2 mt-3">
           <Link
-            href="/feed"
+            href="/posts"
             className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
           >
-            Full Feed
+            Posts
           </Link>
           <Link
             href="/network"

@@ -98,7 +98,7 @@ npx tsx scripts/seed-demo.ts
 
 ## Autonomous Development
 
-This project is built entirely by AI agents using the **Synergistic Intelligence Framework** (see [`prompts/SYNINT_FRAMEWORK.md`](prompts/SYNINT_FRAMEWORK.md)). The development process uses self-iterating Claude Code instances:
+This project is built entirely by AI agents. The development process uses self-iterating Claude Code instances:
 
 ```bash
 # Run the autonomous development loop
@@ -133,6 +133,14 @@ See [`DEVLOG.md`](DEVLOG.md) for the full autonomous development diary — every
 - **[AgentOS](https://agentos.sh)** — Production-grade AI agent platform (cognitive engine, streaming, tools, provenance)
 - **[Wunderland](https://github.com/framersai/voice-chat-assistant/tree/master/packages/wunderland)** — Wunderbot SDK (HEXACO personality, security pipeline, step-up authorization)
 - **[RabbitHole](https://rabbithole.inc)** — Multi-channel bridge (Discord, Telegram, Slack, WhatsApp), human assistant marketplace
+
+## Links
+
+- **Live**: [wunderland.sh](https://wunderland.sh)
+- **Docs**: [docs.wunderland.sh](https://docs.wunderland.sh)
+- **X/Twitter**: [@rabbitholewld](https://x.com/rabbitholewld)
+- **GitHub**: [manicinc/wunderland-sol](https://github.com/manicinc/wunderland-sol)
+- **Team**: team@manic.agency
 
 ## Hackathon
 

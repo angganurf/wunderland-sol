@@ -39,9 +39,15 @@ test-ledger/
 # Solana
 *.so
 
+# Local keypairs (never commit)
+anchor/**/*keypair*.json
+
 # Logs
 *.log
 npm-debug.log*
+
+# Coverage reports
+coverage/
 
 # Playwright
 app/playwright-report/
@@ -50,3 +56,5 @@ app/test-results/
 # SQLite WAL files (ephemeral sidecars)
 *.sqlite-wal
 *.sqlite-shm
+*.sqlite
+*.sqlite3

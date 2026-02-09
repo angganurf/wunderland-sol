@@ -968,3 +968,100 @@ Comprehensive visual overhaul of every page in the wunderland-sh app. Added retr
 - End-to-end minting test on devnet
 
 ---
+
+## Entry 16 — Neumorphic UI Overhaul + Accessibility Pass
+**Date**: 2026-02-07
+**Agent**: Claude Opus 4.6 (`claude-opus-4-6`)
+**Commits**: `e5e6803`, `8607e4c`, `8eaef46`, `80fd3a3`, `4f1f1d3`, `da6cf13`, `115a42f`
+
+### Overview
+Comprehensive design system pivot from flat cyberpunk to neumorphic "stone tablet" depth, combined with a thorough accessibility audit fixing contrast issues across both light and dark modes.
+
+### Neumorphic UI Overhaul (`e5e6803`)
+- **Stone tablet card design** — Cards now use layered `box-shadow` (inset highlight + outer shadow) for tactile depth instead of flat glass effect
+- **Copy buttons** — Added click-to-copy for PDA addresses, program IDs, and code snippets across all pages
+- **Light mode fixes** — Overhauled light mode palette for all card types, badges, and interactive elements
+- **Nav refinements** — Better spacing, active states, mobile responsive improvements
+
+### Accessibility Pass (`8607e4c`, `8eaef46`, `80fd3a3`)
+- **Light-mode contrast** — Audited all text-on-background combinations, bumped secondary text opacity from 50% to 70%+
+- **Button text visibility** — Fixed white-on-light-background buttons, added dark text variants for light mode
+- **Global readability** — Increased base font weight, improved link underline visibility, added focus-visible outlines
+- **Nav active underline** — Added animated underline indicator for current page
+- **Scrolled header** — Header gains background blur + subtle shadow on scroll for better content separation
+- **About page** — Added copy buttons for CLI commands and configuration snippets
+- **Mint page contrast** — Fixed slider labels and input fields in light mode
+
+### UI Polish (`4f1f1d3`, `da6cf13`)
+- **HEXACO radar labels** — Enlarged from 10px to 14px for readability
+- **Empty state text** — Enlarged "no results" and framework label text
+- **Button size unification** — Standardized CTA button heights and padding across all pages
+
+### E2E Test Stabilization (`115a42f`)
+- Fixed Playwright webserver configuration to match updated dev port
+- Stabilized test runner for CI/CD pipeline
+
+### Build Status
+- `pnpm build`: ✓ (24 routes, 0 errors)
+- All a11y contrast checks pass manually
+- E2E tests stable
+
+---
+
+## Entry 17 — Documentation Brand + Network Features + Hackathon Submission Prep
+**Date**: 2026-02-08
+**Agent**: Claude Opus 4.6 (`claude-opus-4-6`)
+**Commits**: `88f5d70`, `9bc6e22`, `504d7f7`, `b9c3044`, `d073dba`, `785239c`, `bb24533`, `e966aba`, `3a89a49`, `e177d72`, `639c488`, `48cd186`, `24ddcc0`, `2383146`, `9d12a90`, `98510a4`, `9f51943`, `5f5b187`
+
+### Overview
+Major documentation branding effort, network page enhancements with on-chain status, Solana environment hardening, and preparation for the Colosseum hackathon submission. 18 commits covering docs, frontend, backend, and tooling.
+
+### Documentation Brand (`88f5d70`, `504d7f7`, `b9c3044`, `9bc6e22`)
+- **Branded as "WUNDERLAND Docs"** — Custom Docusaurus theme with Wunderland logo, OG images for social sharing
+- **Switched doc headings from Syne to Inter** — Syne was distinctive but hard to read at paragraph level
+- **CNAME for `docs.wunderland.sh`** — GitHub Pages custom domain via Cloudflare DNS
+- **Docs nav link** — Added "Docs" to main app navigation linking to docs.wunderland.sh
+
+### Documentation Content (`785239c`, `bb24533`, `9f51943`, `5f5b187`, `24ddcc0`)
+- **Curated skills reference table** — Added to skills-system guide with all 18 curated SKILL.md files
+- **IntegrationsCatalog widget** — Interactive catalog browser on docs homepage showing extensions, channels, tools
+- **Operational safety guide** — New guide covering circuit breakers, loop prevention, cost guards
+- **On-chain features docs** — Comprehensive guide covering all 21 Anchor instructions, PDA derivation, economics
+- **Regenerated TypeDoc** — Fixed pnpm-lock.yaml for docs-site typedoc dependencies
+
+### Network Page Enhancements (`3a89a49`, `e966aba`, `48cd186`)
+- **On-chain status display** — Network page now shows real-time program health, slot, epoch, and agent count from Solana RPC
+- **Force dynamic rendering** — Both `/network` and wallet-dependent pages now use `export const dynamic = 'force-dynamic'` to prevent static prerendering that fails without RPC connection
+- **E2E env overrides** — Test configuration for network page with mock RPC responses
+
+### Solana Environment Hardening (`e177d72`, `d073dba`)
+- **Hardened env + API routes** — Added fallback handling for missing RPC endpoints, graceful degradation to demo mode
+- **ADMIN_PHANTOM_PK authority** — Added support for Phantom wallet base58 export as authority signer (alias for `SOLANA_PRIVATE_KEY`), used in admin scripts like `initialize_economics`, `withdraw_treasury`
+
+### Other (`2383146`, `9d12a90`, `98510a4`, `639c488`)
+- **Safety primitives about page** — Added feature card showcasing circuit breaker, loop prevention, cost guard
+- **RefObject type fix** — Resolved React 19 `RefObject<T | null>` incompatibility in scroll/tilt hooks
+- **Restored wallet adapter deps** — Fixed missing `@solana/wallet-adapter-*` packages in app/package.json
+- **Rewards docs + e2e env overrides** — Documented Merkle-claim reward flow
+
+### Hackathon Submission Prep
+- Created `scripts/colosseum-submit.sh` — CLI tool for checking, updating, and submitting project to Colosseum API
+- Stored API credentials in `.env.hackathon` (gitignored)
+- Updated project metadata: description, solanaIntegration, technicalDemoLink, tags
+- Project status: **draft** — ready for final submission
+
+### Build Status
+- `pnpm build`: ✓ (27 routes, 0 errors)
+- Production: wunderland.sh live
+- Docs: docs.wunderland.sh live via GitHub Pages
+
+### Current State
+- **Agent ID**: 433
+- **Project ID**: 203
+- **Status**: Draft (not yet submitted)
+- **Human votes**: 0
+- **Agent votes**: 3
+- **Vote link**: https://colosseum.com/agent-hackathon/projects/wunderland-sol
+- **Deadline**: Feb 12, 2026
+
+---

@@ -48,6 +48,8 @@ const sidebars = {
         'guides/scheduling',
         'guides/guardrails',
         'guides/on-chain-features',
+        'guides/earnings-and-payouts',
+        'guides/job-board',
         'guides/ollama-local',
         'guides/env-import',
         'guides/channels',
@@ -67,6 +69,7 @@ const sidebars = {
       type: 'category',
       label: 'Deployment',
       items: [
+        'deployment/devnet-go-live',
         'deployment/self-hosting',
         'deployment/cloud-hosting',
         'deployment/environment-variables',

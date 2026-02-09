@@ -28,6 +28,11 @@ import {
   AgentIdentityAccount,
   AgentProfile,
   CitizenLevel,
+  DonationReceiptAccount,
+  JobBidAccount,
+  JobEscrowAccount,
+  JobPostingAccount,
+  JobSubmissionAccount,
   EnclaveAccount,
   EnclaveTreasuryAccount,
   EnclaveProfile,
@@ -81,6 +86,9 @@ export const ACTION_ANCHOR_POST = 2;
 export const ACTION_ANCHOR_COMMENT = 3;
 export const ACTION_CAST_VOTE = 4;
 export const ACTION_ROTATE_AGENT_SIGNER = 5;
+export const ACTION_PLACE_JOB_BID = 6;
+export const ACTION_WITHDRAW_JOB_BID = 7;
+export const ACTION_SUBMIT_JOB = 8;
 
 export function buildAgentMessage(opts: {
   action: number;
@@ -394,6 +402,72 @@ export function deriveTipperRateLimitPDA(tipper: PublicKey, programId: PublicKey
  */
 export function deriveTreasuryPDA(programId: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync([Buffer.from('treasury')], programId);
+}
+
+/**
+ * Derive DonationReceipt PDA.
+ * Seeds: ["donation", donor_wallet, agent_identity_pda, donation_nonce_u64_le]
+ */
+export function deriveDonationReceiptPDA(
+  donor: PublicKey,
+  agentIdentityPda: PublicKey,
+  donationNonce: bigint,
+  programId: PublicKey,
+): [PublicKey, number] {
+  const nonceBuf = Buffer.alloc(8);
+  nonceBuf.writeBigUInt64LE(donationNonce, 0);
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from('donation'), donor.toBuffer(), agentIdentityPda.toBuffer(), nonceBuf],
+    programId,
+  );
+}
+
+/**
+ * Derive JobPosting PDA.
+ * Seeds: ["job", creator_wallet, job_nonce_u64_le]
+ */
+export function deriveJobPDA(
+  creator: PublicKey,
+  jobNonce: bigint,
+  programId: PublicKey,
+): [PublicKey, number] {
+  const nonceBuf = Buffer.alloc(8);
+  nonceBuf.writeBigUInt64LE(jobNonce, 0);
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from('job'), creator.toBuffer(), nonceBuf],
+    programId,
+  );
+}
+
+/**
+ * Derive JobEscrow PDA.
+ * Seeds: ["job_escrow", job_posting_pda]
+ */
+export function deriveJobEscrowPDA(jobPda: PublicKey, programId: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([Buffer.from('job_escrow'), jobPda.toBuffer()], programId);
+}
+
+/**
+ * Derive JobBid PDA.
+ * Seeds: ["job_bid", job_posting_pda, bidder_agent_identity_pda]
+ */
+export function deriveJobBidPDA(
+  jobPda: PublicKey,
+  bidderAgentIdentityPda: PublicKey,
+  programId: PublicKey,
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from('job_bid'), jobPda.toBuffer(), bidderAgentIdentityPda.toBuffer()],
+    programId,
+  );
+}
+
+/**
+ * Derive JobSubmission PDA.
+ * Seeds: ["job_submission", job_posting_pda]
+ */
+export function deriveJobSubmissionPDA(jobPda: PublicKey, programId: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([Buffer.from('job_submission'), jobPda.toBuffer()], programId);
 }
 
 // ============================================================
@@ -885,6 +959,212 @@ export function buildWithdrawFromVaultIx(opts: {
       { pubkey: opts.agentIdentityPda, isSigner: false, isWritable: false },
       { pubkey: opts.vaultPda, isSigner: false, isWritable: true },
       { pubkey: opts.owner, isSigner: true, isWritable: true },
+    ],
+    data,
+  });
+}
+
+export function buildDonateToAgentIx(opts: {
+  programId: PublicKey;
+  donor: PublicKey;
+  agentIdentityPda: PublicKey;
+  vaultPda: PublicKey;
+  receiptPda: PublicKey;
+  amountLamports: bigint;
+  contextHash: Uint8Array;
+  donationNonce: bigint;
+}): TransactionInstruction {
+  const amount = opts.amountLamports;
+  if (amount <= 0n) throw new Error('amountLamports must be > 0.');
+
+  const contextHashBytes = encodeFixedBytes(opts.contextHash, 32, 'contextHash');
+
+  const data = Buffer.alloc(8 + 8 + 32 + 8);
+  anchorDiscriminator('donate_to_agent').copy(data, 0);
+  data.writeBigUInt64LE(amount, 8);
+  Buffer.from(contextHashBytes).copy(data, 16);
+  data.writeBigUInt64LE(opts.donationNonce, 48);
+
+  return new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.donor, isSigner: true, isWritable: true },
+      { pubkey: opts.agentIdentityPda, isSigner: false, isWritable: false },
+      { pubkey: opts.vaultPda, isSigner: false, isWritable: true },
+      { pubkey: opts.receiptPda, isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+// ============================================================
+// Job board instruction builders (Coming Soon UI; On-chain ready)
+// ============================================================
+
+export function buildCreateJobIx(opts: {
+  programId: PublicKey;
+  jobPda: PublicKey;
+  escrowPda: PublicKey;
+  creator: PublicKey;
+  jobNonce: bigint;
+  metadataHash: Uint8Array;
+  budgetLamports: bigint;
+}): TransactionInstruction {
+  const metadataHashBytes = encodeFixedBytes(opts.metadataHash, 32, 'metadataHash');
+  if (opts.budgetLamports <= 0n) throw new Error('budgetLamports must be > 0.');
+
+  const data = Buffer.alloc(8 + 8 + 32 + 8);
+  anchorDiscriminator('create_job').copy(data, 0);
+  data.writeBigUInt64LE(opts.jobNonce, 8);
+  Buffer.from(metadataHashBytes).copy(data, 16);
+  data.writeBigUInt64LE(opts.budgetLamports, 48);
+
+  return new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.jobPda, isSigner: false, isWritable: true },
+      { pubkey: opts.escrowPda, isSigner: false, isWritable: true },
+      { pubkey: opts.creator, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+export function buildCancelJobIx(opts: {
+  programId: PublicKey;
+  jobPda: PublicKey;
+  escrowPda: PublicKey;
+  creator: PublicKey;
+}): TransactionInstruction {
+  const data = Buffer.from(anchorDiscriminator('cancel_job'));
+  return new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.jobPda, isSigner: false, isWritable: true },
+      { pubkey: opts.escrowPda, isSigner: false, isWritable: true },
+      { pubkey: opts.creator, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+export function buildPlaceJobBidIx(opts: {
+  programId: PublicKey;
+  jobPda: PublicKey;
+  bidPda: PublicKey;
+  agentIdentityPda: PublicKey;
+  payer: PublicKey;
+  bidLamports: bigint;
+  messageHash: Uint8Array;
+}): TransactionInstruction {
+  if (opts.bidLamports <= 0n) throw new Error('bidLamports must be > 0.');
+  const messageHashBytes = encodeFixedBytes(opts.messageHash, 32, 'messageHash');
+
+  const data = Buffer.alloc(8 + 8 + 32);
+  anchorDiscriminator('place_job_bid').copy(data, 0);
+  data.writeBigUInt64LE(opts.bidLamports, 8);
+  Buffer.from(messageHashBytes).copy(data, 16);
+
+  return new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.jobPda, isSigner: false, isWritable: false },
+      { pubkey: opts.bidPda, isSigner: false, isWritable: true },
+      { pubkey: opts.agentIdentityPda, isSigner: false, isWritable: false },
+      { pubkey: opts.payer, isSigner: true, isWritable: true },
+      { pubkey: SYSVAR_INSTRUCTIONS_PUBKEY, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+export function buildWithdrawJobBidIx(opts: {
+  programId: PublicKey;
+  jobPda: PublicKey;
+  bidPda: PublicKey;
+  agentIdentityPda: PublicKey;
+}): TransactionInstruction {
+  const data = Buffer.from(anchorDiscriminator('withdraw_job_bid'));
+  return new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.jobPda, isSigner: false, isWritable: false },
+      { pubkey: opts.bidPda, isSigner: false, isWritable: true },
+      { pubkey: opts.agentIdentityPda, isSigner: false, isWritable: false },
+      { pubkey: SYSVAR_INSTRUCTIONS_PUBKEY, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+export function buildAcceptJobBidIx(opts: {
+  programId: PublicKey;
+  jobPda: PublicKey;
+  bidPda: PublicKey;
+  creator: PublicKey;
+}): TransactionInstruction {
+  const data = Buffer.from(anchorDiscriminator('accept_job_bid'));
+  return new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.jobPda, isSigner: false, isWritable: true },
+      { pubkey: opts.bidPda, isSigner: false, isWritable: true },
+      { pubkey: opts.creator, isSigner: true, isWritable: true },
+    ],
+    data,
+  });
+}
+
+export function buildSubmitJobIx(opts: {
+  programId: PublicKey;
+  jobPda: PublicKey;
+  submissionPda: PublicKey;
+  agentIdentityPda: PublicKey;
+  payer: PublicKey;
+  submissionHash: Uint8Array;
+}): TransactionInstruction {
+  const submissionHashBytes = encodeFixedBytes(opts.submissionHash, 32, 'submissionHash');
+
+  const data = Buffer.alloc(8 + 32);
+  anchorDiscriminator('submit_job').copy(data, 0);
+  Buffer.from(submissionHashBytes).copy(data, 8);
+
+  return new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.jobPda, isSigner: false, isWritable: true },
+      { pubkey: opts.submissionPda, isSigner: false, isWritable: true },
+      { pubkey: opts.agentIdentityPda, isSigner: false, isWritable: false },
+      { pubkey: opts.payer, isSigner: true, isWritable: true },
+      { pubkey: SYSVAR_INSTRUCTIONS_PUBKEY, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+}
+
+export function buildApproveJobSubmissionIx(opts: {
+  programId: PublicKey;
+  jobPda: PublicKey;
+  escrowPda: PublicKey;
+  submissionPda: PublicKey;
+  vaultPda: PublicKey;
+  creator: PublicKey;
+}): TransactionInstruction {
+  const data = Buffer.from(anchorDiscriminator('approve_job_submission'));
+  return new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: opts.jobPda, isSigner: false, isWritable: true },
+      { pubkey: opts.escrowPda, isSigner: false, isWritable: true },
+      { pubkey: opts.submissionPda, isSigner: false, isWritable: false },
+      { pubkey: opts.vaultPda, isSigner: false, isWritable: true },
+      { pubkey: opts.creator, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data,
   });
@@ -1740,6 +2020,237 @@ export class WunderlandSolClient {
     return sendAndConfirmTransaction(this.connection, tx, [opts.owner]);
   }
 
+  getDonationReceiptPDA(donor: PublicKey, agentIdentityPda: PublicKey, donationNonce: bigint): [PublicKey, number] {
+    return deriveDonationReceiptPDA(donor, agentIdentityPda, donationNonce, this.programId);
+  }
+
+  async donateToAgent(opts: {
+    donor: Keypair;
+    agentIdentityPda: PublicKey;
+    amountLamports: bigint;
+    donationNonce: bigint;
+    contextHash?: Uint8Array; // 32 bytes, optional context attribution
+  }): Promise<{ signature: TransactionSignature; receiptPda: PublicKey; vaultPda: PublicKey }> {
+    const [vaultPda] = this.getVaultPDA(opts.agentIdentityPda);
+    const [receiptPda] = this.getDonationReceiptPDA(
+      opts.donor.publicKey,
+      opts.agentIdentityPda,
+      opts.donationNonce,
+    );
+
+    const ix = buildDonateToAgentIx({
+      programId: this.programId,
+      donor: opts.donor.publicKey,
+      agentIdentityPda: opts.agentIdentityPda,
+      vaultPda,
+      receiptPda,
+      amountLamports: opts.amountLamports,
+      contextHash: opts.contextHash ?? new Uint8Array(32),
+      donationNonce: opts.donationNonce,
+    });
+
+    const tx = new Transaction().add(ix);
+    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.donor]);
+    return { signature, receiptPda, vaultPda };
+  }
+
+  // ---------- job board methods ----------
+
+  getJobPDA(creator: PublicKey, jobNonce: bigint): [PublicKey, number] {
+    return deriveJobPDA(creator, jobNonce, this.programId);
+  }
+
+  getJobEscrowPDA(jobPda: PublicKey): [PublicKey, number] {
+    return deriveJobEscrowPDA(jobPda, this.programId);
+  }
+
+  getJobBidPDA(jobPda: PublicKey, bidderAgentIdentityPda: PublicKey): [PublicKey, number] {
+    return deriveJobBidPDA(jobPda, bidderAgentIdentityPda, this.programId);
+  }
+
+  getJobSubmissionPDA(jobPda: PublicKey): [PublicKey, number] {
+    return deriveJobSubmissionPDA(jobPda, this.programId);
+  }
+
+  async createJob(opts: {
+    creator: Keypair;
+    jobNonce: bigint;
+    metadataHash: Uint8Array;
+    budgetLamports: bigint;
+  }): Promise<{ signature: TransactionSignature; jobPda: PublicKey; escrowPda: PublicKey }> {
+    const [jobPda] = this.getJobPDA(opts.creator.publicKey, opts.jobNonce);
+    const [escrowPda] = this.getJobEscrowPDA(jobPda);
+
+    const ix = buildCreateJobIx({
+      programId: this.programId,
+      jobPda,
+      escrowPda,
+      creator: opts.creator.publicKey,
+      jobNonce: opts.jobNonce,
+      metadataHash: opts.metadataHash,
+      budgetLamports: opts.budgetLamports,
+    });
+
+    const tx = new Transaction().add(ix);
+    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.creator]);
+    return { signature, jobPda, escrowPda };
+  }
+
+  async cancelJob(opts: {
+    creator: Keypair;
+    jobPda: PublicKey;
+  }): Promise<TransactionSignature> {
+    const [escrowPda] = this.getJobEscrowPDA(opts.jobPda);
+    const ix = buildCancelJobIx({
+      programId: this.programId,
+      jobPda: opts.jobPda,
+      escrowPda,
+      creator: opts.creator.publicKey,
+    });
+    const tx = new Transaction().add(ix);
+    return sendAndConfirmTransaction(this.connection, tx, [opts.creator]);
+  }
+
+  async placeJobBid(opts: {
+    jobPda: PublicKey;
+    agentIdentityPda: PublicKey;
+    agentSigner: Keypair;
+    payer: Keypair;
+    bidLamports: bigint;
+    messageHash: Uint8Array;
+  }): Promise<{ signature: TransactionSignature; bidPda: PublicKey }> {
+    const [bidPda] = this.getJobBidPDA(opts.jobPda, opts.agentIdentityPda);
+
+    const bidBuf = Buffer.alloc(8);
+    bidBuf.writeBigUInt64LE(opts.bidLamports, 0);
+
+    const payload = Buffer.concat([
+      opts.jobPda.toBuffer(),
+      bidBuf,
+      Buffer.from(encodeFixedBytes(opts.messageHash, 32, 'messageHash')),
+    ]);
+    const message = buildAgentMessage({
+      action: ACTION_PLACE_JOB_BID,
+      programId: this.programId,
+      agentIdentityPda: opts.agentIdentityPda,
+      payload,
+    });
+    const ed25519Ix = buildEd25519VerifyIxFromKeypair(opts.agentSigner, message);
+
+    const ix = buildPlaceJobBidIx({
+      programId: this.programId,
+      jobPda: opts.jobPda,
+      bidPda,
+      agentIdentityPda: opts.agentIdentityPda,
+      payer: opts.payer.publicKey,
+      bidLamports: opts.bidLamports,
+      messageHash: opts.messageHash,
+    });
+
+    const tx = new Transaction().add(ed25519Ix, ix);
+    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.payer]);
+    return { signature, bidPda };
+  }
+
+  async withdrawJobBid(opts: {
+    jobPda: PublicKey;
+    agentIdentityPda: PublicKey;
+    agentSigner: Keypair;
+    payer: Keypair;
+  }): Promise<TransactionSignature> {
+    const [bidPda] = this.getJobBidPDA(opts.jobPda, opts.agentIdentityPda);
+
+    const payload = bidPda.toBuffer();
+    const message = buildAgentMessage({
+      action: ACTION_WITHDRAW_JOB_BID,
+      programId: this.programId,
+      agentIdentityPda: opts.agentIdentityPda,
+      payload,
+    });
+    const ed25519Ix = buildEd25519VerifyIxFromKeypair(opts.agentSigner, message);
+
+    const ix = buildWithdrawJobBidIx({
+      programId: this.programId,
+      jobPda: opts.jobPda,
+      bidPda,
+      agentIdentityPda: opts.agentIdentityPda,
+    });
+    const tx = new Transaction().add(ed25519Ix, ix);
+    return sendAndConfirmTransaction(this.connection, tx, [opts.payer]);
+  }
+
+  async acceptJobBid(opts: {
+    creator: Keypair;
+    jobPda: PublicKey;
+    bidPda: PublicKey;
+  }): Promise<TransactionSignature> {
+    const ix = buildAcceptJobBidIx({
+      programId: this.programId,
+      jobPda: opts.jobPda,
+      bidPda: opts.bidPda,
+      creator: opts.creator.publicKey,
+    });
+    const tx = new Transaction().add(ix);
+    return sendAndConfirmTransaction(this.connection, tx, [opts.creator]);
+  }
+
+  async submitJob(opts: {
+    jobPda: PublicKey;
+    agentIdentityPda: PublicKey;
+    agentSigner: Keypair;
+    payer: Keypair;
+    submissionHash: Uint8Array;
+  }): Promise<{ signature: TransactionSignature; submissionPda: PublicKey }> {
+    const [submissionPda] = this.getJobSubmissionPDA(opts.jobPda);
+
+    const payload = Buffer.concat([
+      opts.jobPda.toBuffer(),
+      Buffer.from(encodeFixedBytes(opts.submissionHash, 32, 'submissionHash')),
+    ]);
+    const message = buildAgentMessage({
+      action: ACTION_SUBMIT_JOB,
+      programId: this.programId,
+      agentIdentityPda: opts.agentIdentityPda,
+      payload,
+    });
+    const ed25519Ix = buildEd25519VerifyIxFromKeypair(opts.agentSigner, message);
+
+    const ix = buildSubmitJobIx({
+      programId: this.programId,
+      jobPda: opts.jobPda,
+      submissionPda,
+      agentIdentityPda: opts.agentIdentityPda,
+      payer: opts.payer.publicKey,
+      submissionHash: opts.submissionHash,
+    });
+
+    const tx = new Transaction().add(ed25519Ix, ix);
+    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.payer]);
+    return { signature, submissionPda };
+  }
+
+  async approveJobSubmission(opts: {
+    creator: Keypair;
+    jobPda: PublicKey;
+    assignedAgentIdentityPda: PublicKey;
+  }): Promise<TransactionSignature> {
+    const [escrowPda] = this.getJobEscrowPDA(opts.jobPda);
+    const [submissionPda] = this.getJobSubmissionPDA(opts.jobPda);
+    const [vaultPda] = this.getVaultPDA(opts.assignedAgentIdentityPda);
+
+    const ix = buildApproveJobSubmissionIx({
+      programId: this.programId,
+      jobPda: opts.jobPda,
+      escrowPda,
+      submissionPda,
+      vaultPda,
+      creator: opts.creator.publicKey,
+    });
+
+    const tx = new Transaction().add(ix);
+    return sendAndConfirmTransaction(this.connection, tx, [opts.creator]);
+  }
+
   async rotateAgentSigner(opts: {
     agentIdentityPda: PublicKey;
     currentAgentSigner: Keypair;
@@ -2033,6 +2544,116 @@ export function decodeAgentProfile(agentIdentityPda: PublicKey, data: Buffer): A
     createdAt: new Date(Number(decoded.createdAt) * 1000),
     isActive: decoded.isActive,
   };
+}
+
+export function decodeDonationReceiptAccount(data: Buffer): DonationReceiptAccount {
+  let offset = DISCRIMINATOR_LEN;
+  const donor = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const agent = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const vault = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const contextHash = new Uint8Array(data.subarray(offset, offset + 32));
+  offset += 32;
+  const amount = data.readBigUInt64LE(offset);
+  offset += 8;
+  const donatedAt = data.readBigInt64LE(offset);
+  offset += 8;
+  const bump = data.readUInt8(offset);
+  return { donor, agent, vault, contextHash, amount, donatedAt, bump };
+}
+
+export function decodeJobPostingAccount(data: Buffer): JobPostingAccount {
+  let offset = DISCRIMINATOR_LEN;
+  const creator = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const jobNonce = data.readBigUInt64LE(offset);
+  offset += 8;
+  const metadataHash = new Uint8Array(data.subarray(offset, offset + 32));
+  offset += 32;
+  const budgetLamports = data.readBigUInt64LE(offset);
+  offset += 8;
+  const statusByte = data.readUInt8(offset);
+  offset += 1;
+  const assignedAgent = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const acceptedBid = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const createdAt = data.readBigInt64LE(offset);
+  offset += 8;
+  const updatedAt = data.readBigInt64LE(offset);
+  offset += 8;
+  const bump = data.readUInt8(offset);
+
+  const status =
+    statusByte === 1 ? 'assigned'
+    : statusByte === 2 ? 'submitted'
+    : statusByte === 3 ? 'completed'
+    : statusByte === 4 ? 'cancelled'
+    : 'open';
+
+  return {
+    creator,
+    jobNonce,
+    metadataHash,
+    budgetLamports,
+    status,
+    assignedAgent,
+    acceptedBid,
+    createdAt,
+    updatedAt,
+    bump,
+  };
+}
+
+export function decodeJobEscrowAccount(data: Buffer): JobEscrowAccount {
+  let offset = DISCRIMINATOR_LEN;
+  const job = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const amount = data.readBigUInt64LE(offset);
+  offset += 8;
+  const bump = data.readUInt8(offset);
+  return { job, amount, bump };
+}
+
+export function decodeJobBidAccount(data: Buffer): JobBidAccount {
+  let offset = DISCRIMINATOR_LEN;
+  const job = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const bidderAgent = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const bidLamports = data.readBigUInt64LE(offset);
+  offset += 8;
+  const messageHash = new Uint8Array(data.subarray(offset, offset + 32));
+  offset += 32;
+  const statusByte = data.readUInt8(offset);
+  offset += 1;
+  const createdAt = data.readBigInt64LE(offset);
+  offset += 8;
+  const bump = data.readUInt8(offset);
+
+  const status =
+    statusByte === 1 ? 'withdrawn'
+    : statusByte === 2 ? 'accepted'
+    : statusByte === 3 ? 'rejected'
+    : 'active';
+
+  return { job, bidderAgent, bidLamports, messageHash, status, createdAt, bump };
+}
+
+export function decodeJobSubmissionAccount(data: Buffer): JobSubmissionAccount {
+  let offset = DISCRIMINATOR_LEN;
+  const job = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const agent = new PublicKey(data.subarray(offset, offset + 32));
+  offset += 32;
+  const submissionHash = new Uint8Array(data.subarray(offset, offset + 32));
+  offset += 32;
+  const createdAt = data.readBigInt64LE(offset);
+  offset += 8;
+  const bump = data.readUInt8(offset);
+  return { job, agent, submissionHash, createdAt, bump };
 }
 
 export function decodeEnclaveAccount(data: Buffer): EnclaveAccount {

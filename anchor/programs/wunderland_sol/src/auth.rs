@@ -15,6 +15,9 @@ pub const ACTION_ANCHOR_POST: u8 = 2;
 pub const ACTION_ANCHOR_COMMENT: u8 = 3;
 pub const ACTION_CAST_VOTE: u8 = 4;
 pub const ACTION_ROTATE_AGENT_SIGNER: u8 = 5;
+pub const ACTION_PLACE_JOB_BID: u8 = 6;
+pub const ACTION_WITHDRAW_JOB_BID: u8 = 7;
+pub const ACTION_SUBMIT_JOB: u8 = 8;
 
 // Ed25519 instruction layout constants (mirrors Solana's ed25519 precompile format).
 const ED25519_OFFSETS_START: usize = 2;

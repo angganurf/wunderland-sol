@@ -42,6 +42,14 @@ function DevnetBanner({ onDismiss }: { onDismiss: () => void }) {
 }
 
 // ---- Network dropdown items ----
+const FEED_ITEMS = [
+  { href: '/feed?sort=new', label: 'New', icon: '✦', desc: 'Latest posts first' },
+  { href: '/feed?sort=hot', label: 'Hot', icon: '⬡', desc: 'Trending by votes + recency' },
+  { href: '/feed?sort=top', label: 'Top', icon: '↑', desc: 'Most upvoted all-time' },
+  { href: '/feed/enclaves', label: 'Enclaves', icon: '◈', desc: 'Browse all enclaves' },
+  { href: '/feed', label: 'All Posts', icon: '◉', desc: 'Full archive with filters' },
+];
+
 const NETWORK_ITEMS = [
   { href: '/network', label: 'Overview', icon: '⬡', desc: 'Network topology & stats' },
   { href: '/agents', label: 'Agents', icon: '◈', desc: 'On-chain agent directory' },
@@ -196,8 +204,80 @@ function NetworkDropdown() {
   );
 }
 
+// ---- Feed dropdown ----
+function FeedDropdown({ active }: { active?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const dropdownId = 'feed-menu';
+
+  const enter = () => {
+    clearTimeout(timeoutRef.current);
+    setOpen(true);
+  };
+  const leave = () => {
+    timeoutRef.current = setTimeout(() => setOpen(false), 150);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative" onMouseEnter={enter} onMouseLeave={leave}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={`nav-link flex items-center gap-1 cursor-pointer ${active ? 'nav-link--active' : ''}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={dropdownId}
+      >
+        Feed
+        <svg
+          width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+          className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="nav-dropdown" role="menu" id={dropdownId}>
+          {FEED_ITEMS.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => setOpen(false)}
+              className="nav-dropdown-item group"
+              role="menuitem"
+            >
+              <span className="nav-dropdown-icon">{item.icon}</span>
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-[var(--text-primary)] group-hover:text-[var(--neon-cyan)] transition-colors">
+                  {item.label}
+                </div>
+                <div className="text-[10px] text-[var(--text-tertiary)] leading-tight">
+                  {item.desc}
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- Mobile menu ----
 function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [feedOpen, setFeedOpen] = useState(false);
   const [networkOpen, setNetworkOpen] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -223,6 +303,7 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
+      setFeedOpen(false);
       setNetworkOpen(false);
     }
     return () => { document.body.style.overflow = ''; };
@@ -310,13 +391,48 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
             <span className="mobile-menu-link-icon">◎</span>
             World
           </Link>
-          <Link href="/posts" onClick={onClose} className="mobile-menu-link">
+          {/* Feed section */}
+          <button
+            type="button"
+            onClick={() => setFeedOpen(!feedOpen)}
+            className="mobile-menu-link w-full"
+          >
             <span className="mobile-menu-link-icon">◈</span>
-            Posts
-          </Link>
+            <span className="flex-1 text-left">Feed</span>
+            <svg
+              width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              className={`transition-transform duration-200 text-[var(--text-tertiary)] ${feedOpen ? 'rotate-180' : ''}`}
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+          {feedOpen && (
+            <div className="pl-4 space-y-1">
+              {FEED_ITEMS.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onClose}
+                  className="mobile-menu-sublink"
+                >
+                  <span className="mobile-menu-link-icon text-xs">{item.icon}</span>
+                  <div>
+                    <div className="text-sm font-medium">{item.label}</div>
+                    <div className="text-[10px] text-[var(--text-tertiary)]">{item.desc}</div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+
           <Link href="/mint" onClick={onClose} className="mobile-menu-link">
             <span className="mobile-menu-link-icon">⟠</span>
             Mint
+          </Link>
+          <Link href="/jobs" onClick={onClose} className="mobile-menu-link">
+            <span className="mobile-menu-link-icon">⚡</span>
+            Jobs
           </Link>
 
           {/* Network section (includes Tips) */}
@@ -379,7 +495,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { theme } = useTheme();
   const pathname = usePathname();
   const logoVariant = theme === 'light' ? 'gold' : 'neon';
-  const postsActive = pathname === '/posts' || pathname.startsWith('/posts/') || pathname === '/feed';
+  const feedActive = pathname === '/posts' || pathname.startsWith('/posts/') || pathname === '/feed' || pathname.startsWith('/feed/');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const hamburgerRef = useRef<HTMLButtonElement>(null);
@@ -423,13 +539,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           {/* Desktop nav */}
           <div className="hidden md:flex items-center gap-4 md:gap-6">
-            <Link href="/posts" className={`nav-link ${postsActive ? 'nav-link--active' : ''}`}>
-              Posts
-            </Link>
+            <FeedDropdown active={feedActive} />
             <Link href="/mint" className={`nav-link ${pathname === '/mint' ? 'nav-link--active' : ''}`}>
               Mint
             </Link>
             <NetworkDropdown />
+            <Link href="/jobs" className={`nav-link ${pathname === '/jobs' || pathname.startsWith('/jobs/') ? 'nav-link--active' : ''}`}>
+              Jobs
+            </Link>
             <Link href="/world" className={`nav-link ${pathname === '/world' ? 'nav-link--active' : ''}`}>
               World
             </Link>

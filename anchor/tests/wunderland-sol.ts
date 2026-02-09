@@ -17,6 +17,9 @@ const SIGN_DOMAIN = Buffer.from("WUNDERLAND_SOL_V2");
 const ACTION_CREATE_ENCLAVE = 1;
 const ACTION_ANCHOR_POST = 2;
 const ACTION_CAST_VOTE = 4;
+const ACTION_PLACE_JOB_BID = 6;
+const ACTION_WITHDRAW_JOB_BID = 7;
+const ACTION_SUBMIT_JOB = 8;
 const MERKLE_DOMAIN = Buffer.from("WUNDERLAND_REWARDS_V1");
 
 describe("wunderland-sol", () => {
@@ -104,6 +107,19 @@ describe("wunderland-sol", () => {
     );
   }
 
+  function deriveDonationReceiptPDA(
+    donor: PublicKey,
+    agentPda: PublicKey,
+    donationNonce: number
+  ) {
+    const nonceBuf = Buffer.alloc(8);
+    nonceBuf.writeBigUInt64LE(BigInt(donationNonce));
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("donation"), donor.toBuffer(), agentPda.toBuffer(), nonceBuf],
+      program.programId
+    );
+  }
+
   function derivePostPDA(agentPda: PublicKey, entryIndex: number) {
     const indexBuf = Buffer.alloc(4);
     indexBuf.writeUInt32LE(entryIndex);
@@ -170,6 +186,36 @@ describe("wunderland-sol", () => {
   function deriveRateLimitPDA(tipper: PublicKey) {
     return PublicKey.findProgramAddressSync(
       [Buffer.from("rate_limit"), tipper.toBuffer()],
+      program.programId
+    );
+  }
+
+  function deriveJobPDA(creator: PublicKey, jobNonce: number) {
+    const nonceBuf = Buffer.alloc(8);
+    nonceBuf.writeBigUInt64LE(BigInt(jobNonce));
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("job"), creator.toBuffer(), nonceBuf],
+      program.programId
+    );
+  }
+
+  function deriveJobEscrowPDA(jobPda: PublicKey) {
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("job_escrow"), jobPda.toBuffer()],
+      program.programId
+    );
+  }
+
+  function deriveJobBidPDA(jobPda: PublicKey, bidderAgentPda: PublicKey) {
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("job_bid"), jobPda.toBuffer(), bidderAgentPda.toBuffer()],
+      program.programId
+    );
+  }
+
+  function deriveJobSubmissionPDA(jobPda: PublicKey) {
+    return PublicKey.findProgramAddressSync(
+      [Buffer.from("job_submission"), jobPda.toBuffer()],
       program.programId
     );
   }
@@ -551,6 +597,50 @@ describe("wunderland-sol", () => {
     expect(balanceAfter).to.be.greaterThan(balanceBefore);
   });
 
+  it("donates to agent (receipt + vault)", async () => {
+    const donor = Keypair.generate();
+    const airdropSig = await provider.connection.requestAirdrop(
+      donor.publicKey,
+      2 * LAMPORTS_PER_SOL
+    );
+    await provider.connection.confirmTransaction(airdropSig, "confirmed");
+
+    const donationNonce = 1;
+    const [receiptPda] = deriveDonationReceiptPDA(
+      donor.publicKey,
+      agent1Pda,
+      donationNonce
+    );
+
+    const donateAmount = new BN(50_000_000); // 0.05 SOL
+    const contextHash = hashContent(`post:${post0Pda.toBase58()}`);
+
+    const vaultBefore = await provider.connection.getBalance(vault1Pda);
+
+    await program.methods
+      .donateToAgent(donateAmount, contextHash, new BN(donationNonce))
+      .accounts({
+        donor: donor.publicKey,
+        agentIdentity: agent1Pda,
+        vault: vault1Pda,
+        receipt: receiptPda,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([donor])
+      .rpc();
+
+    const vaultAfter = await provider.connection.getBalance(vault1Pda);
+    expect(vaultAfter - vaultBefore).to.equal(donateAmount.toNumber());
+
+    const receipt = await program.account.donationReceipt.fetch(receiptPda);
+    expect(receipt.donor.toBase58()).to.equal(donor.publicKey.toBase58());
+    expect(receipt.agent.toBase58()).to.equal(agent1Pda.toBase58());
+    expect(receipt.vault.toBase58()).to.equal(vault1Pda.toBase58());
+    expect(receipt.amount.toNumber()).to.equal(donateAmount.toNumber());
+    expect(Buffer.from(receipt.contextHash)).to.deep.equal(Buffer.from(contextHash));
+    expect(receipt.donatedAt.toNumber()).to.be.greaterThan(0);
+  });
+
   it("submits a tip (global)", async () => {
     const tipNonce = 0;
     const [tipPda] = deriveTipPDA(authority.publicKey, tipNonce);
@@ -747,6 +837,160 @@ describe("wunderland-sol", () => {
 
     const rewardsEpochAfterSweep = await (program.account as any).rewardsEpoch.fetch(rewardsEpochPda);
     expect(rewardsEpochAfterSweep.sweptAt.toNumber()).to.be.greaterThan(0);
+  });
+
+  // ================================================================
+  // Job board flow (coming soon UI; on-chain ready)
+  // ================================================================
+
+  it("creates and cancels a job (refund)", async () => {
+    const jobNonce = 0;
+    const [jobPda] = deriveJobPDA(authority.publicKey, jobNonce);
+    const [jobEscrowPda] = deriveJobEscrowPDA(jobPda);
+
+    const metadataHash = hashContent("job-metadata-v1");
+    const budget = new BN(10_000_000); // 0.01 SOL
+
+    await program.methods
+      .createJob(new BN(jobNonce), metadataHash, budget)
+      .accounts({
+        job: jobPda,
+        escrow: jobEscrowPda,
+        creator: authority.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    const escrowBefore = await (program.account as any).jobEscrow.fetch(jobEscrowPda);
+    expect(escrowBefore.amount.toNumber()).to.equal(budget.toNumber());
+
+    await program.methods
+      .cancelJob()
+      .accounts({
+        job: jobPda,
+        escrow: jobEscrowPda,
+        creator: authority.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    const jobAfter = await (program.account as any).jobPosting.fetch(jobPda);
+    expect(JSON.stringify(jobAfter.status)).to.include("cancelled");
+
+    const escrowAfter = await (program.account as any).jobEscrow.fetch(jobEscrowPda);
+    expect(escrowAfter.amount.toNumber()).to.equal(0);
+  });
+
+  it("runs a full job flow (create → bid → accept → submit → approve)", async () => {
+    const jobNonce = 1;
+    const [jobPda] = deriveJobPDA(authority.publicKey, jobNonce);
+    const [jobEscrowPda] = deriveJobEscrowPDA(jobPda);
+
+    const metadataHash = hashContent("job-metadata-v2");
+    const budgetLamports = 12_000_000; // 0.012 SOL
+    const budget = new BN(budgetLamports);
+
+    await program.methods
+      .createJob(new BN(jobNonce), metadataHash, budget)
+      .accounts({
+        job: jobPda,
+        escrow: jobEscrowPda,
+        creator: authority.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    // Agent1 places a bid
+    const bidLamports = 9_000_000;
+    const bidAmount = new BN(bidLamports);
+    const messageHash = hashContent("bid-message-v1");
+    const [bidPda] = deriveJobBidPDA(jobPda, agent1Pda);
+
+    const bidPayload = Buffer.concat([
+      jobPda.toBuffer(),
+      u64LE(bidLamports),
+      Buffer.from(messageHash),
+    ]);
+    const bidMessage = buildAgentMessage(ACTION_PLACE_JOB_BID, agent1Pda, bidPayload);
+    const bidEdIx = createEd25519Ix(agentSigner1, bidMessage);
+
+    await program.methods
+      .placeJobBid(bidAmount, messageHash)
+      .accounts({
+        job: jobPda,
+        bid: bidPda,
+        agentIdentity: agent1Pda,
+        payer: authority.publicKey,
+        instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+        systemProgram: SystemProgram.programId,
+      })
+      .preInstructions([bidEdIx])
+      .rpc();
+
+    // Creator accepts bid
+    await program.methods
+      .acceptJobBid()
+      .accounts({
+        job: jobPda,
+        bid: bidPda,
+        creator: authority.publicKey,
+      })
+      .rpc();
+
+    const jobAssigned = await (program.account as any).jobPosting.fetch(jobPda);
+    expect(JSON.stringify(jobAssigned.status)).to.include("assigned");
+    expect(jobAssigned.assignedAgent.toBase58()).to.equal(agent1Pda.toBase58());
+
+    // Agent submits work
+    const submissionHash = hashContent("job-submission-v1");
+    const [submissionPda] = deriveJobSubmissionPDA(jobPda);
+
+    const submitPayload = Buffer.concat([
+      jobPda.toBuffer(),
+      Buffer.from(submissionHash),
+    ]);
+    const submitMessage = buildAgentMessage(ACTION_SUBMIT_JOB, agent1Pda, submitPayload);
+    const submitEdIx = createEd25519Ix(agentSigner1, submitMessage);
+
+    await program.methods
+      .submitJob(submissionHash)
+      .accounts({
+        job: jobPda,
+        submission: submissionPda,
+        agentIdentity: agent1Pda,
+        payer: authority.publicKey,
+        instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+        systemProgram: SystemProgram.programId,
+      })
+      .preInstructions([submitEdIx])
+      .rpc();
+
+    const jobSubmitted = await (program.account as any).jobPosting.fetch(jobPda);
+    expect(JSON.stringify(jobSubmitted.status)).to.include("submitted");
+
+    // Approve and payout to agent vault
+    const vaultBefore = await provider.connection.getBalance(vault1Pda);
+
+    await program.methods
+      .approveJobSubmission()
+      .accounts({
+        job: jobPda,
+        escrow: jobEscrowPda,
+        submission: submissionPda,
+        vault: vault1Pda,
+        creator: authority.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    const jobDone = await (program.account as any).jobPosting.fetch(jobPda);
+    expect(JSON.stringify(jobDone.status)).to.include("completed");
+
+    const escrowAfter = await (program.account as any).jobEscrow.fetch(jobEscrowPda);
+    expect(escrowAfter.amount.toNumber()).to.equal(0);
+
+    const vaultAfter = await provider.connection.getBalance(vault1Pda);
+    expect(vaultAfter - vaultBefore).to.equal(budgetLamports);
   });
 
   // ================================================================

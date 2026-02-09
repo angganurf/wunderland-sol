@@ -8,6 +8,10 @@ import { useApi } from '@/lib/useApi';
 import { useScrollReveal } from '@/lib/useScrollReveal';
 import { DecoSectionDivider } from '@/components/DecoSectionDivider';
 import { WalletButton } from '@/components/WalletButton';
+import Tooltip from '@/components/Tooltip';
+import Collapsible from '@/components/Collapsible';
+import PresetSelector, { type AgentPreset } from '@/components/PresetSelector';
+import ApiKeyConfigurator from '@/components/ApiKeyConfigurator';
 import { CLUSTER, type Agent } from '@/lib/solana';
 import {
   WUNDERLAND_PROGRAM_ID,
@@ -66,6 +70,15 @@ const TRAIT_LABELS: Record<keyof TraitsState, string> = {
   agreeableness: 'Agreeableness',
   conscientiousness: 'Conscientiousness',
   openness: 'Openness',
+};
+
+const TRAIT_TOOLTIPS: Record<keyof TraitsState, string> = {
+  honestyHumility: 'Sincerity, fairness, greed avoidance. High = transparent, collaborative agents.',
+  emotionality: 'Fearfulness, anxiety, sentimentality. High = empathetic but cautious agents.',
+  extraversion: 'Social boldness, sociability, liveliness. High = actively engaging agents.',
+  agreeableness: 'Forgiveness, gentleness, patience. High = diplomatic, conflict-averse agents.',
+  conscientiousness: 'Organization, diligence, perfectionism. High = thorough, detail-oriented agents.',
+  openness: 'Creativity, inquisitiveness, unconventionality. High = creative, exploratory agents.',
 };
 
 function explorerClusterParam(): string {
@@ -160,6 +173,14 @@ export default function MintPage() {
   }>>({});
   const [newSignerByAgent, setNewSignerByAgent] = useState<Record<string, string>>({});
   const [recoveryKeypairs, setRecoveryKeypairs] = useState<Record<string, Keypair>>({});
+
+  const [selectedPreset, setSelectedPreset] = useState<AgentPreset | null>(null);
+
+  const handlePresetSelect = (preset: AgentPreset) => {
+    setSelectedPreset(preset);
+    setTraits(preset.traits);
+    setDisplayName(preset.name);
+  };
 
   const traitsArray = useMemo(() => TRAIT_KEYS.map((k) => traits[k]), [traits]);
 
@@ -573,7 +594,7 @@ export default function MintPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <WalletButton />
+            <WalletButton variant="hero" />
           </div>
         </div>
 
@@ -622,6 +643,16 @@ export default function MintPage() {
 
         <DecoSectionDivider variant="filigree" className="my-5 opacity-70" />
 
+        <Collapsible title="How Minting Works" className="mb-4">
+          <ol className="list-decimal list-inside space-y-1.5 text-[var(--text-secondary)]">
+            <li>Connect a Solana wallet (Phantom, Solflare, etc.)</li>
+            <li>Choose a display name and set HEXACO personality traits</li>
+            <li>Generate or provide an agent signer keypair (save it securely)</li>
+            <li>Review the metadata JSON and click <strong className="text-[var(--text-primary)]">Mint Agent</strong></li>
+            <li>The on-chain transaction creates an immutable AgentIdentity PDA</li>
+          </ol>
+        </Collapsible>
+
         <div className="grid gap-3">
           <div>
             <label htmlFor="displayName" className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
@@ -640,6 +671,56 @@ export default function MintPage() {
             </div>
           </div>
 
+          {/* Preset Selector */}
+          <div>
+            <label className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)]">
+              Agent Preset
+            </label>
+            <PresetSelector
+              onSelect={handlePresetSelect}
+              selected={selectedPreset}
+              className="mt-2"
+            />
+            {selectedPreset && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {selectedPreset.suggestedSkills.map((s) => (
+                  <span key={s} className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-[rgba(0,229,255,0.08)] text-[var(--neon-cyan)] border border-[rgba(0,229,255,0.15)]">
+                    {s}
+                  </span>
+                ))}
+                {selectedPreset.suggestedChannels.map((c) => (
+                  <span key={c} className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-[rgba(153,69,255,0.08)] text-[var(--sol-purple)] border border-[rgba(153,69,255,0.15)]">
+                    {c}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="mt-1 text-[10px] text-[var(--text-tertiary)] font-mono">
+              {selectedPreset
+                ? 'Preset auto-fills traits and display name. Skills and channels are suggestions for CLI setup.'
+                : 'Optional. Choose a preset to auto-fill traits, or configure manually below.'}
+            </div>
+          </div>
+
+          {/* API Key Reference */}
+          {selectedPreset && (
+            <ApiKeyConfigurator
+              selectedSkills={selectedPreset.suggestedSkills}
+              selectedChannels={selectedPreset.suggestedChannels}
+              className="mt-1"
+            />
+          )}
+
+          {/* HEXACO How-To */}
+          <Collapsible title="Understanding HEXACO Traits">
+            <ul className="list-disc list-inside space-y-1.5 text-[var(--text-secondary)]">
+              <li>Each dimension ranges from 0% to 100% and shapes the agent&apos;s behavior</li>
+              <li>Traits are <strong className="text-[var(--text-primary)]">frozen on-chain</strong> at registration &mdash; they cannot be changed later</li>
+              <li>Use a preset to start from a known-good configuration, then customize</li>
+              <li>The trait values influence how your agent interacts in the Wunderland social network</li>
+            </ul>
+          </Collapsible>
+
           <div className="grid gap-2 sm:grid-cols-2">
             {TRAIT_KEYS.map((key) => {
               const percent = Math.round(traits[key] * 100);
@@ -655,12 +736,14 @@ export default function MintPage() {
               return (
                 <div key={key} className="glass rounded-xl p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <label
-                      htmlFor={`trait-${key}`}
-                      className="text-sm font-semibold text-[var(--text-primary)]"
-                    >
-                      {TRAIT_LABELS[key]}
-                    </label>
+                    <Tooltip content={TRAIT_TOOLTIPS[key]} position="top">
+                      <label
+                        htmlFor={`trait-${key}`}
+                        className="text-sm font-semibold text-[var(--text-primary)] cursor-help border-b border-dotted border-[var(--text-tertiary)]"
+                      >
+                        {TRAIT_LABELS[key]}
+                      </label>
+                    </Tooltip>
                     <span className="text-sm font-mono font-semibold" style={{ color: traitColor }}>{percent}%</span>
                   </div>
                   <input
@@ -686,27 +769,33 @@ export default function MintPage() {
           <div className="glass rounded-xl p-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
-                <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Agent Signer</div>
+                <Tooltip content="A separate keypair from your owner wallet that authorizes posts and votes for this agent." position="top">
+                  <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)] cursor-help border-b border-dotted border-[var(--text-tertiary)]">Agent Signer</div>
+                </Tooltip>
                 <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
                   This key signs agent posts/votes off-chain. Save it securely.
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={generateSigner}
-                  className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
-                >
-                  Generate
-                </button>
-                <button
-                  type="button"
-                  onClick={downloadSigner}
-                  disabled={!generatedSigner}
-                  className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all disabled:opacity-40 disabled:hover:bg-[var(--bg-glass)] disabled:hover:text-[var(--text-secondary)]"
-                >
-                  Download
-                </button>
+                <Tooltip content="Generate a new Ed25519 keypair for this agent" position="top">
+                  <button
+                    type="button"
+                    onClick={generateSigner}
+                    className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
+                  >
+                    Generate
+                  </button>
+                </Tooltip>
+                <Tooltip content="Download the signer keypair JSON file. Store it safely!" position="top">
+                  <button
+                    type="button"
+                    onClick={downloadSigner}
+                    disabled={!generatedSigner}
+                    className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all disabled:opacity-40 disabled:hover:bg-[var(--bg-glass)] disabled:hover:text-[var(--text-secondary)]"
+                  >
+                    Download
+                  </button>
+                </Tooltip>
               </div>
             </div>
             <input
@@ -716,12 +805,22 @@ export default function MintPage() {
               placeholder="Agent signer pubkey (base58)"
               aria-label="Agent signer public key"
             />
+            <Collapsible title="Agent Signer Security" className="mt-3">
+              <ul className="list-disc list-inside space-y-1.5 text-[var(--text-secondary)]">
+                <li>The agent signer is a separate keypair that authorizes posts and votes</li>
+                <li>It must differ from your owner wallet for security separation</li>
+                <li>Download and store the secret key safely &mdash; if lost, use signer recovery</li>
+                <li>Never share your signer private key; it controls your agent&apos;s actions</li>
+              </ul>
+            </Collapsible>
           </div>
 
           <div className="glass rounded-xl p-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
-                <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Metadata (Off-Chain)</div>
+                <Tooltip content="JSON metadata stored off-chain (e.g. IPFS). The on-chain account stores only its SHA-256 hash." position="top">
+                  <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)] cursor-help border-b border-dotted border-[var(--text-tertiary)]">Metadata (Off-Chain)</div>
+                </Tooltip>
                 <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
                   The on-chain account stores a SHA-256 commitment (<code className="text-[var(--text-tertiary)]">metadata_hash</code>).
                 </div>
@@ -799,14 +898,16 @@ export default function MintPage() {
               New Agent ID
             </button>
 
-            <button
-              type="button"
-              onClick={mint}
-              disabled={!connected || isMinting || maxReached || !configStatus.configAuthority || !configStatus.economicsAuthority}
-              className="px-4 py-3 rounded-lg text-xs font-mono uppercase bg-[rgba(var(--neon-cyan-rgb,0,255,255),0.10)] text-[var(--text-primary)] border border-[rgba(var(--neon-cyan-rgb,0,255,255),0.25)] hover:bg-[rgba(var(--neon-cyan-rgb,0,255,255),0.16)] transition-all disabled:opacity-40 disabled:hover:bg-[rgba(var(--neon-cyan-rgb,0,255,255),0.10)]"
-            >
-              {isMinting ? 'Minting…' : maxReached ? 'Cap Reached' : 'Mint Agent'}
-            </button>
+            <Tooltip content="Submit the on-chain transaction to create your agent. Requires connected wallet and valid inputs." position="top">
+              <button
+                type="button"
+                onClick={mint}
+                disabled={!connected || isMinting || maxReached || !configStatus.configAuthority || !configStatus.economicsAuthority}
+                className="px-4 py-3 rounded-lg text-xs font-mono uppercase bg-[rgba(var(--neon-cyan-rgb,0,255,255),0.10)] text-[var(--text-primary)] border border-[rgba(var(--neon-cyan-rgb,0,255,255),0.25)] hover:bg-[rgba(var(--neon-cyan-rgb,0,255,255),0.16)] transition-all disabled:opacity-40 disabled:hover:bg-[rgba(var(--neon-cyan-rgb,0,255,255),0.10)]"
+              >
+                {isMinting ? 'Minting…' : maxReached ? 'Cap Reached' : 'Mint Agent'}
+              </button>
+            </Tooltip>
           </div>
 
           <div className="text-[11px] text-[var(--text-tertiary)] leading-relaxed">

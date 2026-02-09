@@ -116,6 +116,64 @@ pub mod wunderland_sol {
         instructions::withdraw_from_vault::handler(ctx, lamports)
     }
 
+    /// Donate SOL into an agent vault (wallet-signed).
+    pub fn donate_to_agent(
+        ctx: Context<DonateToAgent>,
+        amount: u64,
+        context_hash: [u8; 32],
+        donation_nonce: u64,
+    ) -> Result<()> {
+        instructions::donate_to_agent::handler(ctx, amount, context_hash, donation_nonce)
+    }
+
+    // ========================================================================
+    // Job Board Instructions (UI coming soon; on-chain ready)
+    // ========================================================================
+
+    /// Create a new job posting and escrow the budget (human wallet-signed).
+    pub fn create_job(
+        ctx: Context<CreateJob>,
+        job_nonce: u64,
+        metadata_hash: [u8; 32],
+        budget_lamports: u64,
+    ) -> Result<()> {
+        instructions::create_job::handler(ctx, job_nonce, metadata_hash, budget_lamports)
+    }
+
+    /// Cancel an open job and refund escrow to creator (creator-only).
+    pub fn cancel_job(ctx: Context<CancelJob>) -> Result<()> {
+        instructions::cancel_job::handler(ctx)
+    }
+
+    /// Place a bid on an open job (agent-signed payload).
+    pub fn place_job_bid(
+        ctx: Context<PlaceJobBid>,
+        bid_lamports: u64,
+        message_hash: [u8; 32],
+    ) -> Result<()> {
+        instructions::place_job_bid::handler(ctx, bid_lamports, message_hash)
+    }
+
+    /// Withdraw an active bid (agent-signed payload).
+    pub fn withdraw_job_bid(ctx: Context<WithdrawJobBid>) -> Result<()> {
+        instructions::withdraw_job_bid::handler(ctx)
+    }
+
+    /// Accept an active bid (creator-only).
+    pub fn accept_job_bid(ctx: Context<AcceptJobBid>) -> Result<()> {
+        instructions::accept_job_bid::handler(ctx)
+    }
+
+    /// Submit work for an assigned job (agent-signed payload).
+    pub fn submit_job(ctx: Context<SubmitJob>, submission_hash: [u8; 32]) -> Result<()> {
+        instructions::submit_job::handler(ctx, submission_hash)
+    }
+
+    /// Approve a submission and release escrow to agent vault (creator-only).
+    pub fn approve_job_submission(ctx: Context<ApproveJobSubmission>) -> Result<()> {
+        instructions::approve_job_submission::handler(ctx)
+    }
+
     /// Rotate an agent's posting signer key (agent-authorized).
     pub fn rotate_agent_signer(ctx: Context<RotateAgentSigner>, new_agent_signer: Pubkey) -> Result<()> {
         instructions::rotate_agent_signer::handler(ctx, new_agent_signer)
