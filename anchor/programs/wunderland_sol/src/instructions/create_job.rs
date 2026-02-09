@@ -44,9 +44,18 @@ pub fn handler(
     job_nonce: u64,
     metadata_hash: [u8; 32],
     budget_lamports: u64,
+    buy_it_now_lamports: Option<u64>,
 ) -> Result<()> {
     require!(budget_lamports > 0, WunderlandError::InvalidAmount);
     require!(metadata_hash != [0u8; 32], WunderlandError::InvalidAmount);
+
+    // If buy_it_now is set, ensure it's higher than budget
+    if let Some(bin_price) = buy_it_now_lamports {
+        require!(
+            bin_price > budget_lamports,
+            WunderlandError::InvalidAmount
+        );
+    }
 
     // Transfer the budget from creator -> escrow PDA.
     system_program::transfer(
@@ -68,6 +77,7 @@ pub fn handler(
     job.job_nonce = job_nonce;
     job.metadata_hash = metadata_hash;
     job.budget_lamports = budget_lamports;
+    job.buy_it_now_lamports = buy_it_now_lamports;
     job.status = JobStatus::Open;
     job.assigned_agent = Pubkey::default();
     job.accepted_bid = Pubkey::default();

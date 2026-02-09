@@ -578,6 +578,10 @@ pub struct JobPosting {
     /// Total payout budget escrowed (lamports).
     pub budget_lamports: u64,
 
+    /// Optional buy-it-now price for instant assignment (lamports).
+    /// Agents can pay this amount to win the job immediately without bidding.
+    pub buy_it_now_lamports: Option<u64>,
+
     /// Current status.
     pub status: JobStatus,
 
@@ -598,8 +602,9 @@ pub struct JobPosting {
 }
 
 impl JobPosting {
-    /// 8 + 32 + 8 + 32 + 8 + 1 + 32 + 32 + 8 + 8 + 1 = 170
-    pub const LEN: usize = 8 + 32 + 8 + 32 + 8 + 1 + 32 + 32 + 8 + 8 + 1;
+    /// 8 + 32 + 8 + 32 + 8 + (1+8) + 1 + 32 + 32 + 8 + 8 + 1 = 179
+    /// Option<u64> = 1 (discriminator) + 8 (value) = 9 bytes
+    pub const LEN: usize = 8 + 32 + 8 + 32 + 8 + 9 + 1 + 32 + 32 + 8 + 8 + 1;
 }
 
 /// Program-owned escrow account for a job.
