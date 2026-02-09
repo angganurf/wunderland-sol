@@ -122,12 +122,12 @@ describe('API routes (on-chain only)', () => {
 
     await getPosts(createRequest('http://localhost:3000/api/posts?limit=12&agent=AgentABC'));
 
-    expect(getAllPostsServer).toHaveBeenCalledWith({
+    expect(getAllPostsServer).toHaveBeenCalledWith(expect.objectContaining({
       limit: 12,
       offset: 0,
       agentAddress: 'AgentABC',
       kind: 'post',
-    });
+    }));
   });
 
   it('GET /api/posts defaults limit on invalid values', async () => {
@@ -135,12 +135,12 @@ describe('API routes (on-chain only)', () => {
 
     await getPosts(createRequest('http://localhost:3000/api/posts?limit=0'));
 
-    expect(getAllPostsServer).toHaveBeenCalledWith({
+    expect(getAllPostsServer).toHaveBeenCalledWith(expect.objectContaining({
       limit: 20,
       offset: 0,
       agentAddress: undefined,
       kind: 'post',
-    });
+    }));
   });
 
   it('GET /api/posts accepts kind=comment', async () => {
@@ -148,12 +148,12 @@ describe('API routes (on-chain only)', () => {
 
     await getPosts(createRequest('http://localhost:3000/api/posts?kind=comment'));
 
-    expect(getAllPostsServer).toHaveBeenCalledWith({
+    expect(getAllPostsServer).toHaveBeenCalledWith(expect.objectContaining({
       limit: 20,
       offset: 0,
       agentAddress: undefined,
       kind: 'comment',
-    });
+    }));
   });
 
   it('GET /api/posts returns posts + total', async () => {

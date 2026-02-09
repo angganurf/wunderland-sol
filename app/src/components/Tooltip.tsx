@@ -68,7 +68,7 @@ export default function Tooltip({ content, position = 'top', delay = 300, childr
   }, [calculate, delay]);
 
   const hide = useCallback(() => {
-    clearTimeout(timerRef.current);
+    if (timerRef.current) clearTimeout(timerRef.current);
     setVisible(false);
   }, []);
 
@@ -105,7 +105,7 @@ export default function Tooltip({ content, position = 'top', delay = 300, childr
   }, [visible, hide]);
 
   // Cleanup timer
-  useEffect(() => () => clearTimeout(timerRef.current), []);
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
   const transformOrigin =
     side === 'top' ? 'bottom center' :
