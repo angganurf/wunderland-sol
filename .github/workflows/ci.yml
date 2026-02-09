@@ -78,7 +78,7 @@ jobs:
 
       - name: Run E2E tests
         working-directory: app
-        run: pnpm test:e2e -- --project=chromium
+        run: npx playwright test --project=chromium
         env:
           CI: true
 
