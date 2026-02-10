@@ -578,6 +578,18 @@ export function buildStoreConfidentialDetailsMessage(opts: {
   });
 }
 
+export function buildUpdateJobMetadataMessage(opts: {
+  jobPda: string;
+  metadataHashHex: string;
+}): string {
+  return JSON.stringify({
+    v: 1,
+    intent: 'wunderland_update_job_metadata',
+    jobPda: opts.jobPda,
+    metadataHash: opts.metadataHashHex,
+  });
+}
+
 export function parseHex32(hex: string): Uint8Array {
   const normalized = hex.trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(normalized)) throw new Error('Expected 32-byte hex (64 chars).');
