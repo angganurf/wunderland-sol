@@ -10,14 +10,67 @@ import { useTheme } from './ThemeProvider';
 import { WalletButton } from './WalletButton';
 import { CLUSTER } from '@/lib/solana';
 
-// ---- Devnet top banner ----
-const BANNER_HEIGHT = 32; // px — matches py-1.5 + text-xs line height
+// ---- Banner heights ----
+const DEVNET_BANNER_HEIGHT = 32;
+const HACKATHON_BANNER_HEIGHT = 36;
 
+// ---- Colosseum Hackathon banner ----
+const HACKATHON_END = new Date('2026-02-12T17:00:00Z');
+
+function HackathonBanner({ topOffset, onDismiss }: { topOffset: number; onDismiss: () => void }) {
+  const [timeLeft, setTimeLeft] = useState('');
+
+  useEffect(() => {
+    const tick = () => {
+      const diff = HACKATHON_END.getTime() - Date.now();
+      if (diff <= 0) { setTimeLeft('ENDED'); return; }
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      setTimeLeft(`${h}h ${m}m left`);
+    };
+    tick();
+    const id = setInterval(tick, 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <a
+      href="https://colosseum.com/agent-hackathon/projects/wunderland-sol"
+      target="_blank"
+      rel="noopener noreferrer"
+      className="fixed left-0 right-0 z-[59] flex items-center justify-center gap-2 sm:gap-3 px-4 py-1.5 text-xs font-mono bg-gradient-to-r from-[#f59e0b]/90 via-[#f97316]/80 to-[#f59e0b]/90 backdrop-blur-md border-b border-[#f59e0b]/30 text-black/90 hover:brightness-110 transition-all cursor-pointer group no-underline"
+      style={{ top: topOffset, height: HACKATHON_BANNER_HEIGHT }}
+    >
+      <span className="font-black tracking-wider">COLOSSEUM HACKATHON</span>
+      <span className="hidden sm:inline opacity-70">|</span>
+      <span className="hidden sm:inline font-bold">Vote for WUNDERLAND</span>
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/20 text-white font-bold text-[10px] tracking-wide">
+        {timeLeft}
+      </span>
+      <span className="group-hover:translate-x-0.5 transition-transform">&rarr;</span>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          localStorage.setItem('wunderland_hackathon_banner_dismissed', '1');
+          onDismiss();
+        }}
+        className="ml-1 text-black/40 hover:text-black/80 transition-colors"
+        aria-label="Dismiss hackathon banner"
+      >
+        &times;
+      </button>
+    </a>
+  );
+}
+
+// ---- Devnet top banner ----
 function DevnetBanner({ onDismiss }: { onDismiss: () => void }) {
   return (
     <div
       className="fixed top-0 left-0 right-0 z-[60] flex items-center justify-center gap-3 px-4 py-1.5 text-xs font-mono bg-gradient-to-r from-[var(--sol-purple)]/90 via-[var(--neon-cyan)]/20 to-[var(--sol-purple)]/90 backdrop-blur-md border-b border-[var(--neon-cyan)]/20 text-[var(--text-secondary)]"
-      style={{ height: BANNER_HEIGHT }}
+      style={{ height: DEVNET_BANNER_HEIGHT }}
       role="status"
     >
       <span className="inline-flex items-center gap-1.5">
@@ -500,14 +553,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [scrolled, setScrolled] = useState(false);
   const hamburgerRef = useRef<HTMLButtonElement>(null);
 
-  // Devnet banner state — show banner only on devnet, allow dismissal
+  // Devnet banner state
   const [bannerVisible, setBannerVisible] = useState(false);
   useEffect(() => {
     if (CLUSTER === 'devnet' && !localStorage.getItem('wunderland_devnet_banner_dismissed')) {
       setBannerVisible(true);
     }
   }, []);
-  const bannerOffset = bannerVisible ? BANNER_HEIGHT : 0;
+
+  // Hackathon banner state — show until hackathon ends or dismissed
+  const [hackathonVisible, setHackathonVisible] = useState(false);
+  useEffect(() => {
+    const dismissed = localStorage.getItem('wunderland_hackathon_banner_dismissed');
+    const ended = Date.now() >= HACKATHON_END.getTime();
+    if (!dismissed && !ended) {
+      setHackathonVisible(true);
+    }
+  }, []);
+
+  const devnetHeight = bannerVisible ? DEVNET_BANNER_HEIGHT : 0;
+  const hackathonHeight = hackathonVisible ? HACKATHON_BANNER_HEIGHT : 0;
+  const bannerOffset = devnetHeight + hackathonHeight;
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -519,6 +585,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       {bannerVisible && <DevnetBanner onDismiss={() => setBannerVisible(false)} />}
+      {hackathonVisible && <HackathonBanner topOffset={devnetHeight} onDismiss={() => setHackathonVisible(false)} />}
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-[var(--bg-elevated)] focus:text-[var(--text-primary)] focus:border focus:border-[var(--border-glass)]"
