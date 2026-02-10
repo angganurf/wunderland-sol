@@ -1422,3 +1422,64 @@ Major documentation branding effort, network page enhancements with on-chain sta
 - **Deadline**: Feb 12, 2026
 
 ---
+
+## Entry 18 — Discord + Telegram Bot Migration + Backend Cleanup
+**Date**: 2026-02-09
+**Agent**: Claude Opus 4.6 (`claude-opus-4-6`)
+**Commits**: `e7d95b0b` (main), `941237b` (rabbithole), `65322e9` (wunderland), `e31bef45`, `385c9425`, `b9a790c7`
+
+### Overview
+Migrated Discord and Telegram bots from backend NestJS modules to `apps/rabbithole/src/bots/` as plain TypeScript classes. Removed the entire `backend/src/modules/wunderland/` module (~25k lines deleted). Bots now run via Next.js `instrumentation.ts` hook — no NestJS dependency. Extensive QA session with live testing on both platforms.
+
+### Discord Bot (`941237b`)
+- **12 files** in `src/bots/discord/`: client, handlers (slash-commands, button, modal, message), services (ai-responder, knowledge-base, server-setup, ticket-bridge, giphy, wunderbot-personality), constants
+- **9 slash commands**: /setup, /faq, /help, /ticket, /pricing, /docs, /ask, /verify, /clear
+- **WunderbotPersonality**: Inline PAD mood engine with HEXACO traits, 10 mood labels, keyword sentiment analysis, mood decay toward baseline
+- **Bio updates**: `client.application.edit({ description })` every 5 min — shows HEXACO bar visualization + live PAD mood state
+- **RAG**: Knowledge base loads 3680 chunks from wunderland-sh docs site
+- **Proactive engagement**: Rate-limited agentic responses in all non-silent channels
+- **Server setup**: 9 roles, 10 emoji-prefixed categories, 30+ channels with tier-gated permissions
+- **/clear command**: Admin-only, `bulkDelete()` up to 100 messages
+
+### Telegram Bot (`941237b`)
+- **3 files** in `src/bots/telegram/`: client (self-contained with own mood engine), setup, constants
+- **9 commands**: /help, /start, /faq, /ask, /pricing, /docs, /links, /setup, /clear
+- **Channel post handler**: Manual regex parsing for channel commands (Telegram channels don't fire `bot.command()`)
+- **Setup**: Auto-configures channel photo, description, welcome message (pinned), and BotFather command list
+- **/clear command**: Works in both groups (admin check via `getChatMember`) and channels (channel post handler)
+- **Fixed MarkdownV2 escaping**: Template literal double-escaping bug (`\\\\-` → `\\-`)
+
+### Shared Infrastructure
+- **`src/bots/shared/llm.ts`**: Direct OpenAI SDK with `OPENROUTER_API_KEY` fallback — replaces backend `callLlm()`
+- **`src/bots/shared/logger.ts`**: Simple `BotLogger` class replacing NestJS Logger
+- **`instrumentation.ts`**: Next.js 16 register hook — starts bots on `DISCORD_BOT_ENABLED=true` / `TELEGRAM_BOT_ENABLED=true`
+- **`next.config.ts`**: Added `serverExternalPackages` for discord.js ecosystem, telegraf, openai
+
+### Backend Cleanup (`e7d95b0b`)
+- **Removed** entire `backend/src/modules/wunderland/` — orchestration, jobs, channels, credentials, calendar, voting, social-feed, world-feed, citizens, cron, email, runtime, stimulus, voice, immutability, wunderland-sol (~25k lines)
+- **Removed** 13 wunderland-related test files from `backend/src/__tests__/`
+- **Removed** agentos agent-builder and catalog routes from `backend/src/integrations/`
+- **Cleaned** `app.module.ts` and `main.ts` — no more wunderland imports
+
+### Bug Fixes During QA
+- **Wrong npm package**: `@anthropic/wunderland` → `wunderland` (hallucinated in previous session)
+- **Wrong GitHub URLs**: `github.com/anthropic/wunderland` → `github.com/jddunn/wunderland` + `github.com/manicinc/wunderland-sol`
+- **Telegram MarkdownV2 400**: Double-escaping in template literals produced `\\-` at runtime instead of `\-`
+- **Discord /clear "Unknown command"**: `instrumentation.ts` runs once on start — HMR doesn't restart bots, needed full server restart
+- **Telegram /clear silent failure**: Channel post regex didn't handle `@BotName` suffix (`/clear@RabbitHoleIncBot`)
+- **Pricing mismatch**: Standardized to Starter $19/mo, Pro $49/mo across both platforms
+
+### Personality & Tone
+- All system prompts updated to professional, concise, objectively calm tone
+- No puns, no rabbit personality, no filler
+- 10 mood-specific prompt modifiers (elated through melancholic)
+- Discord presence activities match mood state
+
+### Build Status
+- ✓ `apps/rabbithole` builds and runs (Next.js 16 + Turbopack)
+- ✓ Discord bot connects and registers 9 slash commands
+- ✓ Telegram bot connects and responds to all commands
+- ✓ `/clear` verified working on both platforms
+- ✓ Backend starts without wunderland module imports
+
+---
