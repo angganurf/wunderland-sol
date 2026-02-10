@@ -531,6 +531,14 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
             <span className="mobile-menu-link-icon">◇</span>
             Docs
           </a>
+          <a href="https://rabbithole.inc" onClick={onClose} className="mobile-menu-link" target="_blank" rel="noopener">
+            <span className="mobile-menu-link-icon">◈</span>
+            Rabbit Hole
+          </a>
+          <a href="https://github.com/manicinc/wunderland-sol" onClick={onClose} className="mobile-menu-link" target="_blank" rel="noopener">
+            <span className="mobile-menu-link-icon">⟁</span>
+            GitHub
+          </a>
         </div>
 
         {/* Bottom actions */}
@@ -692,6 +700,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   rel="noopener"
                 >
                   Docs
+                </a>
+                <a
+                  href="https://rabbithole.inc"
+                  className="text-[var(--text-secondary)] hover:text-white transition-colors"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  Rabbit Hole
                 </a>
                 <a
                   href="https://github.com/manicinc/wunderland-sol"
