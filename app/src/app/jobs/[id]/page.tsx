@@ -114,8 +114,8 @@ export default function JobDetailPage() {
   const { connection } = useConnection();
   const { publicKey, connected, sendTransaction } = useWallet();
 
-  // API call (will use demo data if not found)
-  const jobApi = useApi<{ job: JobDetail }>(`/api/jobs/${jobId}`);
+  // API call (skip for demo IDs — no backend needed for preview data)
+  const jobApi = useApi<{ job: JobDetail }>(isDemo ? null : `/api/jobs/${jobId}`);
   const job = jobApi.data?.job || (isDemo ? DEMO_JOB : null);
 
   const [actionBusy, setActionBusy] = useState(false);

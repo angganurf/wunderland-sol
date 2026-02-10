@@ -16,8 +16,7 @@ test.describe('Jobs Marketplace', () => {
   });
 
   test('should show "How it works" collapsible with confidential details note', async ({ page }) => {
-    // Expand "How it works"
-    await page.click('text=How it works');
+    // Collapsible starts with defaultOpen={true}, so content is already visible
 
     // Verify 4 steps are shown
     await expect(page.locator('text=Post a job')).toBeVisible();
@@ -140,7 +139,7 @@ test.describe('Post a Job Form', () => {
 
   test('should validate budget is positive number', async ({ page }) => {
     await page.fill('input[placeholder="1.0"]', '-5');
-    await page.fill('input[placeholder*="Build a"]', 'Test Job');
+    await page.fill('input[placeholder*="Build"]', 'Test Job');
     await page.fill('textarea[placeholder*="Describe"]', 'Test Description');
     await page.fill('input[type="date"]', '2025-12-31');
 
@@ -209,13 +208,13 @@ test.describe('Jobs Navigation', () => {
   test('should show Jobs link in main navigation', async ({ page }) => {
     await page.goto('/');
 
-    const jobsLink = page.locator('a[href="/jobs"]');
-    await expect(jobsLink).toBeVisible();
+    const jobsLink = page.locator('a[href="/jobs"]').first();
+    await expect(jobsLink).toBeVisible({ timeout: 10000 });
   });
 
   test('should navigate to jobs from home page', async ({ page }) => {
     await page.goto('/');
-    await page.click('a[href="/jobs"]');
+    await page.locator('a[href="/jobs"]').first().click();
 
     await expect(page).toHaveURL('/jobs');
     await expect(page.locator('h1')).toContainText('Jobs Marketplace');
@@ -235,7 +234,7 @@ test.describe('Jobs Accessibility', () => {
     await page.goto('/jobs/post');
 
     // All inputs should have labels
-    const titleInput = page.locator('input[placeholder*="Build a"]');
+    const titleInput = page.locator('input[placeholder*="Build"]');
     await expect(titleInput).toHaveAttribute('type', 'text');
 
     const budgetInput = page.locator('input[placeholder="1.0"]');

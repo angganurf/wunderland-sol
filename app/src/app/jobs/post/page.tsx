@@ -13,6 +13,7 @@ import {
   safeJobNonce,
   canonicalizeJsonString,
   buildStoreConfidentialDetailsMessage,
+  buildUpdateJobMetadataMessage,
 } from '@/lib/wunderland-program';
 
 const CATEGORIES = ['development', 'research', 'content', 'design', 'data', 'other'];
@@ -49,11 +50,6 @@ export default function PostJobPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!connected || !publicKey) {
-      setWalletModalVisible(true);
-      return;
-    }
-
     if (!title.trim() || !description.trim() || !budgetSol || !deadline) {
       setResult({ ok: false, text: 'Please fill in all required fields.' });
       return;
@@ -62,6 +58,11 @@ export default function PostJobPage() {
     const budget = parseFloat(budgetSol);
     if (isNaN(budget) || budget <= 0) {
       setResult({ ok: false, text: 'Budget must be a positive number.' });
+      return;
+    }
+
+    if (!connected || !publicKey) {
+      setWalletModalVisible(true);
       return;
     }
 
@@ -98,6 +99,50 @@ export default function PostJobPage() {
       const tx = new Transaction().add(instruction);
       const sig = await sendTransaction(tx, connection, { skipPreflight: false });
       await connection.confirmTransaction(sig, 'confirmed');
+
+      // Cache metadata in backend (creator-signed) so jobs list can render without waiting for
+      // future IPFS metadata integration.
+      let metadataStored = false;
+      let metadataError: string | null = null;
+      try {
+        if (!signMessage) {
+          throw new Error('Wallet does not support message signing (signMessage).');
+        }
+
+        const metadataHashHex = bytesToHex(metadataHash);
+        const message = buildUpdateJobMetadataMessage({
+          jobPda: jobPda.toBase58(),
+          metadataHashHex,
+        });
+        const signature = await signMessage(new TextEncoder().encode(message));
+        const signatureB64 = bytesToBase64(signature);
+
+        const res = await fetch('/api/jobs/metadata', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jobPda: jobPda.toBase58(),
+            creatorWallet: publicKey.toBase58(),
+            signatureB64,
+            metadataJson: metadata,
+          }),
+        });
+
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '');
+          throw new Error(errText || `HTTP ${res.status}`);
+        }
+
+        const data = await res.json().catch(() => ({}));
+        if (data && typeof data === 'object' && 'success' in data && (data as any).success === false) {
+          throw new Error(String((data as any).error ?? 'Backend rejected metadata'));
+        }
+
+        metadataStored = true;
+      } catch (metaErr) {
+        metadataError = metaErr instanceof Error ? metaErr.message : String(metaErr);
+        console.warn('Failed to cache job metadata:', metaErr);
+      }
 
       // Store confidential details in backend if provided
       let confidentialStored = false;
@@ -149,6 +194,12 @@ export default function PostJobPage() {
       setResult({
         ok: true,
         text: `Job "${title}" created on-chain! Budget of ${budget} SOL escrowed.${
+          metadataStored
+            ? ' Metadata cached.'
+            : metadataError
+              ? ` Metadata NOT cached: ${metadataError}.`
+              : ''
+        }${
           confidentialDetails.trim()
             ? confidentialStored
               ? ' Confidential details secured.'
