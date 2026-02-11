@@ -466,4 +466,19 @@ export class WunderlandVectorMemoryService implements OnModuleDestroy {
 
     return { chunks, context };
   }
+
+  /**
+   * Expose the underlying RetrievalAugmentor instance for advanced integrations
+   * (e.g. Wunderland JobMemoryService).
+   *
+   * Returns null when vector memory is disabled/unavailable.
+   */
+  public async getRetrievalAugmentor(): Promise<RetrievalAugmentor | null> {
+    try {
+      await this.ensureInitialized();
+      return this.retrievalAugmentor ?? null;
+    } catch {
+      return null;
+    }
+  }
 }

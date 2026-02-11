@@ -16,6 +16,7 @@ import { DatabaseService } from '../../../database/database.service';
 import { callLlm } from '../../../core/llm/llm.factory';
 import { ragService } from '../../../integrations/rag/rag.service.js';
 import { WunderlandVectorMemoryService } from './wunderland-vector-memory.service';
+import { WunderlandSolService } from '../wunderland-sol/wunderland-sol.service.js';
 import {
   WonderlandNetwork,
   TrustEngine,
@@ -36,6 +37,10 @@ import type {
   NewsroomConfig,
   WunderlandSeedConfig,
   HEXACOTraits,
+  StimulusEvent,
+  StimulusSource,
+  TipPayload,
+  WorldFeedPayload,
 } from 'wunderland';
 
 // Import all 7 persistence adapters
@@ -59,6 +64,8 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
   private cronIntervals: Map<string, NodeJS.Timeout> = new Map();
   private cronTickCounts: Map<string, number> = new Map();
   private readonly enabled: boolean;
+  private stimulusDispatchInFlight = false;
+  private readonly routingLastSelectedAtMs: Map<string, number> = new Map();
 
   constructor(
     private readonly db: DatabaseService,
@@ -69,7 +76,8 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
     private readonly dmPersistence: DMPersistenceService,
     private readonly safetyPersistence: SafetyPersistenceService,
     private readonly alliancePersistence: AlliancePersistenceService,
-    private readonly vectorMemory: WunderlandVectorMemoryService
+    private readonly vectorMemory: WunderlandVectorMemoryService,
+    private readonly wunderlandSol: WunderlandSolService
   ) {
     this.enabled = process.env.ENABLE_SOCIAL_ORCHESTRATION === 'true';
   }
@@ -193,9 +201,222 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
       this.trustEngine?.decayAll(1);
     });
 
+    // Stimulus dispatcher: poll DB stimuli and dispatch into the running network.
+    // This is the bridge between on-chain tip ingestion / world feed ingestion and the agent runtime.
+    this.scheduleCron('stimulus_dispatch', 3_000, async () => {
+      await this.dispatchPendingStimuliOnce();
+    });
+
     // 8. Start the network
     await this.network.start();
     this.logger.log(`Social orchestration started. ${agentCount} agents registered.`);
+  }
+
+  // ── Stimulus Dispatch (DB → StimulusRouter) ───────────────────────────────
+
+  private normalizePriority(raw: unknown): StimulusEvent['priority'] {
+    const value = String(raw ?? 'normal').trim().toLowerCase();
+    if (value === 'breaking') return 'breaking';
+    if (value === 'high') return 'high';
+    if (value === 'low') return 'low';
+    return 'normal';
+  }
+
+  private parseJson<T>(raw: string | null | undefined, fallback: T): T {
+    if (!raw) return fallback;
+    try {
+      return (JSON.parse(raw) as T) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private selectTargetsForStimulus(opts: {
+    type: 'world_feed' | 'tip';
+    priority: StimulusEvent['priority'];
+    payload: any;
+  }): string[] {
+    if (!this.network) return [];
+
+    const citizens = this.network.listCitizens();
+    const moodEngine = this.network.getMoodEngine();
+    const now = Date.now();
+
+    const desired =
+      opts.type === 'tip'
+        ? opts.priority === 'breaking'
+          ? 4
+          : opts.priority === 'high'
+            ? 2
+            : 1
+        : opts.priority === 'breaking'
+          ? 3
+          : 2;
+
+    const category = opts.type === 'world_feed' ? String(opts.payload?.category ?? '').trim() : '';
+
+    const scored = citizens
+      .filter((c) => c.isActive)
+      .map((c) => {
+        const seedId = c.seedId;
+        let score = Math.random();
+
+        if (opts.type === 'world_feed') {
+          const topics = Array.isArray(c.subscribedTopics) ? c.subscribedTopics : [];
+          if (category && topics.includes(category)) score += 1.25;
+          else if (topics.length === 0) score += 0.15; // generalist
+          else score -= 0.4; // off-topic
+        }
+
+        const mood = moodEngine?.getMoodLabel(seedId) ?? 'bored';
+        if (mood === 'excited' || mood === 'engaged' || mood === 'curious') score += 0.35;
+        if (mood === 'bored') score -= 0.15;
+
+        const last = this.routingLastSelectedAtMs.get(seedId) ?? 0;
+        const sinceLast = last > 0 ? now - last : Number.POSITIVE_INFINITY;
+        if (sinceLast < 15 * 60_000) score -= 0.5;
+        else if (sinceLast < 60 * 60_000) score -= 0.15;
+
+        return { seedId, score };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    const chosen = scored.slice(0, Math.max(1, desired)).map((s) => s.seedId);
+    for (const seedId of chosen) {
+      this.routingLastSelectedAtMs.set(seedId, now);
+    }
+    return chosen;
+  }
+
+  private buildEventFromStimulusRow(row: any, targetSeedIds: string[]): StimulusEvent | null {
+    const createdAtMs = Number(row.created_at ?? Date.now());
+    const timestamp = new Date(Number.isFinite(createdAtMs) ? createdAtMs : Date.now()).toISOString();
+    const eventId = String(row.event_id ?? '');
+    const typeRaw = String(row.type ?? '').trim();
+    const priority = this.normalizePriority(row.priority);
+    const payloadRaw = this.parseJson<Record<string, unknown>>(row.payload, {});
+
+    const source: StimulusSource = {
+      providerId: String((row.source_provider_id ?? typeRaw) || 'stimulus'),
+      externalId: row.source_external_id ? String(row.source_external_id) : undefined,
+      verified: Number(row.source_verified ?? 0) === 1,
+    };
+
+    if (typeRaw === 'world_feed') {
+      const p = payloadRaw as any;
+      const payload: WorldFeedPayload = {
+        type: 'world_feed',
+        headline: String(p.title ?? p.headline ?? p.content ?? p.summary ?? 'World feed item'),
+        body: p.summary ? String(p.summary) : p.body ? String(p.body) : undefined,
+        category: String(p.category ?? 'general'),
+        sourceUrl: p.url ? String(p.url) : p.sourceUrl ? String(p.sourceUrl) : undefined,
+        sourceName: String(row.source_provider_id ?? p.sourceName ?? 'world_feed'),
+      };
+      return {
+        eventId,
+        type: 'world_feed',
+        timestamp,
+        payload,
+        priority,
+        targetSeedIds,
+        source,
+      };
+    }
+
+    // Default to tip-like stimuli (covers on-chain tips and admin-injected text prompts).
+    const p = payloadRaw as any;
+    const payload: TipPayload = {
+      type: 'tip',
+      content: String(p.content ?? p.title ?? p.topic ?? p.prompt ?? ''),
+      dataSourceType: (p.dataSourceType === 'url' || p.url ? 'url' : 'text') as TipPayload['dataSourceType'],
+      tipId: String(p.tipId ?? eventId),
+      attribution: p.tipper
+        ? { type: 'wallet', identifier: String(p.tipper) }
+        : p.attribution?.type
+          ? { type: p.attribution.type, identifier: p.attribution.identifier }
+          : { type: 'anonymous' },
+    };
+
+    if (!payload.content.trim()) return null;
+
+    return {
+      eventId,
+      type: 'tip',
+      timestamp,
+      payload,
+      priority,
+      targetSeedIds,
+      source,
+    };
+  }
+
+  private async dispatchPendingStimuliOnce(): Promise<void> {
+    if (!this.enabled) return;
+    if (!this.network) return;
+    if (this.stimulusDispatchInFlight) return;
+    this.stimulusDispatchInFlight = true;
+
+    try {
+      const rows = await this.db.all<any>(
+        `
+          SELECT
+            event_id,
+            type,
+            priority,
+            payload,
+            source_provider_id,
+            source_external_id,
+            source_verified,
+            target_seed_ids,
+            created_at
+          FROM wunderland_stimuli
+          WHERE processed_at IS NULL
+          ORDER BY created_at ASC
+          LIMIT 25
+        `
+      );
+
+      if (!rows || rows.length === 0) return;
+
+      const router = this.network.getStimulusRouter();
+
+      for (const row of rows) {
+        const eventId = String(row.event_id ?? '');
+        if (!eventId) continue;
+
+        const rawTargets = this.parseJson<string[] | null>(row.target_seed_ids, null);
+        const targetSeedIds =
+          rawTargets && rawTargets.length > 0
+            ? rawTargets
+            : this.selectTargetsForStimulus({
+                type: row.type === 'world_feed' ? 'world_feed' : 'tip',
+                priority: this.normalizePriority(row.priority),
+                payload: this.parseJson(row.payload, {}),
+              });
+
+        const event = this.buildEventFromStimulusRow(row, targetSeedIds);
+        if (!event) {
+          await this.db.run('UPDATE wunderland_stimuli SET processed_at = ? WHERE event_id = ? AND processed_at IS NULL', [
+            Date.now(),
+            eventId,
+          ]);
+          continue;
+        }
+
+        try {
+          await router.dispatchExternalEvent(event);
+          await this.db.run('UPDATE wunderland_stimuli SET processed_at = ? WHERE event_id = ? AND processed_at IS NULL', [
+            Date.now(),
+            eventId,
+          ]);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          this.logger.warn(`Failed to dispatch stimulus ${eventId}: ${message}`);
+        }
+      }
+    } finally {
+      this.stimulusDispatchInFlight = false;
+    }
   }
 
   // ── Agent Loading ─────────────────────────────────────────────────────────
@@ -251,7 +472,7 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
           postingCadence: { type: 'interval', value: 3_600_000 },
           maxPostsPerHour: 10,
           approvalTimeoutMs: 300_000,
-          requireApproval: true,
+          requireApproval: false,
         };
 
         await this.network!.registerCitizen(newsroomConfig);
@@ -272,7 +493,12 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
 
     // Tools (web/news/image/etc.) + memory tool
     try {
-      const tools = await createWunderlandTools();
+      // Safe default: no CLI/file tools, no browser automation by default.
+      const tools = await createWunderlandTools({
+        tools: ['web-search', 'news-search', 'image-search', 'giphy', 'voice-synthesis'],
+        voice: 'none',
+        productivity: 'none',
+      });
 
       tools.push(
         createMemoryReadTool(async ({ query, topK, context }) => {
@@ -400,6 +626,14 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
       ]
     );
 
+    // Best-effort on-chain anchoring (hash commitments + IPFS raw blocks).
+    // No-op when Solana integration is disabled or not configured.
+    try {
+      this.wunderlandSol.scheduleAnchorForPost(post.postId);
+    } catch {
+      // non-critical; anchoring is an asynchronous best-effort pipeline
+    }
+
     // Ingest the post into the seed's long-term memory store (vector-first; keyword fallback).
     try {
       await this.vectorMemory.ingestSeedPost({
@@ -460,15 +694,6 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
   }
 
   // ── Utility ───────────────────────────────────────────────────────────────
-
-  private parseJson<T>(raw: string | null | undefined, fallback: T): T {
-    if (!raw) return fallback;
-    try {
-      return JSON.parse(raw) as T;
-    } catch {
-      return fallback;
-    }
-  }
 
   // ── Public Accessors ──────────────────────────────────────────────────────
 

@@ -397,9 +397,9 @@ export default function LandingPage() {
             external
           />
           <OrganicButton
-            href="https://www.colosseum.org"
+            href="https://colosseum.com/agent-hackathon/projects/wunderland-sol"
             label="Colosseum Hackathon"
-            sublabel="sol.wunderland.sh"
+            sublabel="colosseum.com/agent-hackathon"
             icon="trophy"
             color="#14f195"
             accentColor="#00f0ff"

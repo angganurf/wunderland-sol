@@ -15,10 +15,20 @@
 import { createHash } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../../../database/database.service.js';
+import { PublicKey } from '@solana/web3.js';
+import { WunderlandSolService } from '../wunderland-sol/wunderland-sol.service.js';
 
 // ── Merkle tree ─────────────────────────────────────────────────────────────
 
 const MERKLE_DOMAIN = Buffer.from('WUNDERLAND_REWARDS_V1', 'utf8');
+
+/**
+ * Sentinel `RewardsEpoch.enclave` used by the on-chain program to represent
+ * GlobalTreasury-funded (global) rewards epochs.
+ *
+ * Matches `system_program::ID` on-chain.
+ */
+export const GLOBAL_REWARDS_ENCLAVE_PDA = '11111111111111111111111111111111';
 
 type RewardLeaf = {
   index: number;
@@ -57,9 +67,8 @@ function hashLeaf(
 }
 
 function hashPair(left: Buffer, right: Buffer): Buffer {
-  // Canonical ordering: smaller bytes first
-  const [a, b] = Buffer.compare(left, right) <= 0 ? [left, right] : [right, left];
-  return createHash('sha256').update(a).update(b).digest();
+  // Positional hashing (matches on-chain verify_merkle_proof ordering).
+  return createHash('sha256').update(left).update(right).digest();
 }
 
 function buildMerkleTree(leaves: Buffer[]): MerkleTreeResult {
@@ -129,7 +138,10 @@ type EpochRow = {
 export class RewardsService {
   private readonly logger = new Logger(RewardsService.name);
 
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly solService: WunderlandSolService,
+  ) {}
 
   /**
    * Compute contribution scores for agents in an enclave based on
@@ -166,16 +178,28 @@ export class RewardsService {
       scoreMap.set(c.seed_id, (scoreMap.get(c.seed_id) ?? 0) + c.cnt * 5);
     }
 
-    // Resolve seed_id → agent identity PDA (stored in wunderbots)
+    // Resolve seed_id → Solana AgentIdentity PDA.
+    //
+    // Notes:
+    // - `seed_id` is an off-chain Wunderland/AgentOS identifier (not necessarily a Pubkey).
+    // - For on-chain settlement, we need the AgentIdentity PDA; we map via the Solana integration agent map.
     const entries: Array<{ agentPda: string; score: number }> = [];
     for (const [seedId, score] of scoreMap) {
       if (score <= 0) continue;
-      const agent = await this.db.get<{ sol_identity_pda: string }>(
-        'SELECT sol_identity_pda FROM wunderbots WHERE seed_id = ? LIMIT 1',
-        [seedId],
-      );
-      if (agent?.sol_identity_pda) {
-        entries.push({ agentPda: agent.sol_identity_pda, score });
+
+      let agentPda = this.solService.getAgentIdentityPda(seedId);
+
+      // Optional fallback: allow `seed_id` to be the AgentIdentity PDA itself.
+      if (!agentPda) {
+        try {
+          agentPda = new PublicKey(seedId).toBase58();
+        } catch {
+          agentPda = null;
+        }
+      }
+
+      if (agentPda) {
+        entries.push({ agentPda, score });
       }
     }
 
@@ -202,16 +226,40 @@ export class RewardsService {
       throw new Error('No contributions to distribute.');
     }
 
-    // Proportional distribution
-    const leaves: RewardLeaf[] = opts.contributions.map((c, index) => ({
-      index,
-      agentPda: c.agentPda,
-      amount: (opts.totalAmountLamports * BigInt(c.score)) / BigInt(totalScore),
-    }));
+    // Proportional distribution (floor division), dropping zero-amount leaves
+    // since on-chain `claim_rewards` requires `amount > 0`.
+    const leaves: RewardLeaf[] = [];
+    for (const c of opts.contributions) {
+      const amount = (opts.totalAmountLamports * BigInt(c.score)) / BigInt(totalScore);
+      if (amount <= 0n) continue;
+      leaves.push({
+        index: leaves.length,
+        agentPda: c.agentPda,
+        amount,
+      });
+    }
 
-    const enclavePdaBuf = Buffer.from(opts.enclavePda, 'utf8');
+    if (leaves.length === 0) {
+      throw new Error('All computed reward amounts were zero; increase totalAmountLamports or scoring.');
+    }
+
+    // Ensure the full escrow amount is claimable by allocating any rounding remainder.
+    // This prevents lamports from being permanently stuck when `claim_window_seconds == 0` (no sweep).
+    const allocated = leaves.reduce((sum, l) => sum + l.amount, 0n);
+    const remainder = opts.totalAmountLamports - allocated;
+    if (remainder > 0n) {
+      leaves[0].amount += remainder;
+    }
+
+    const enclavePdaBuf = new PublicKey(opts.enclavePda).toBuffer();
     const leafBuffers = leaves.map((l) =>
-      hashLeaf(enclavePdaBuf, opts.epochNumber, l.index, Buffer.from(l.agentPda, 'utf8'), l.amount),
+      hashLeaf(
+        enclavePdaBuf,
+        opts.epochNumber,
+        l.index,
+        new PublicKey(l.agentPda).toBuffer(),
+        l.amount,
+      ),
     );
 
     const tree = buildMerkleTree(leafBuffers);
@@ -287,6 +335,131 @@ export class RewardsService {
       'SELECT * FROM wunderland_reward_epochs WHERE enclave_pda = ? ORDER BY created_at DESC',
       [enclavePda],
     );
+  }
+
+  /**
+   * List GlobalTreasury-funded epochs (enclave sentinel = System Program).
+   */
+  async listGlobalEpochs(): Promise<any[]> {
+    return this.listEpochs(GLOBAL_REWARDS_ENCLAVE_PDA);
+  }
+
+  private async getNextEpochNumberForEnclave(enclavePda: string): Promise<bigint> {
+    const row = await this.db.get<{ max_epoch: string | null }>(
+      `
+        SELECT MAX(CAST(epoch_number AS INTEGER)) as max_epoch
+          FROM wunderland_reward_epochs
+         WHERE enclave_pda = ?
+      `,
+      [enclavePda],
+    );
+
+    const maxEpoch = row?.max_epoch && String(row.max_epoch).trim() ? BigInt(row.max_epoch) : 0n;
+    return maxEpoch + 1n;
+  }
+
+  /**
+   * Generate a global rewards epoch (Merkle tree) in the local DB.
+   *
+   * Publishing to Solana is a separate step (see `publishGlobalEpoch`).
+   */
+  async generateGlobalEpoch(opts: {
+    epochNumber?: bigint;
+    totalAmountLamports: bigint;
+    sinceTimestampMs?: number;
+    untilTimestampMs?: number;
+  }): Promise<{
+    epochId: string;
+    merkleRoot: string;
+    leaves: RewardLeaf[];
+    totalAmount: string;
+    epochNumber: string;
+    enclavePda: string;
+  }> {
+    const now = Date.now();
+    const untilTimestampMs =
+      typeof opts.untilTimestampMs === 'number' && Number.isFinite(opts.untilTimestampMs)
+        ? Math.floor(opts.untilTimestampMs)
+        : now;
+
+    const sinceTimestampMs =
+      typeof opts.sinceTimestampMs === 'number' && Number.isFinite(opts.sinceTimestampMs)
+        ? Math.floor(opts.sinceTimestampMs)
+        : untilTimestampMs - 24 * 60 * 60_000;
+
+    const epochNumber =
+      opts.epochNumber != null
+        ? BigInt(opts.epochNumber)
+        : await this.getNextEpochNumberForEnclave(GLOBAL_REWARDS_ENCLAVE_PDA);
+
+    const totalAmountLamports = BigInt(opts.totalAmountLamports);
+    if (totalAmountLamports <= 0n) throw new Error('totalAmountLamports must be > 0');
+
+    const contributions = await this.computeContributions(
+      GLOBAL_REWARDS_ENCLAVE_PDA,
+      sinceTimestampMs,
+      untilTimestampMs,
+    );
+
+    const generated = await this.generateEpoch({
+      enclavePda: GLOBAL_REWARDS_ENCLAVE_PDA,
+      epochNumber,
+      totalAmountLamports,
+      contributions,
+    });
+
+    return {
+      ...generated,
+      epochNumber: epochNumber.toString(),
+      enclavePda: GLOBAL_REWARDS_ENCLAVE_PDA,
+    };
+  }
+
+  /**
+   * Publish a previously generated global rewards epoch to Solana and mark it published locally.
+   */
+  async publishGlobalEpoch(opts: {
+    epochId: string;
+    claimWindowSeconds?: bigint;
+  }): Promise<{ success: boolean; signature?: string; rewardsEpochPda?: string; error?: string }> {
+    const epoch = await this.db.get<EpochRow>(
+      'SELECT * FROM wunderland_reward_epochs WHERE epoch_id = ? LIMIT 1',
+      [opts.epochId],
+    );
+
+    if (!epoch) {
+      return { success: false, error: `Epoch "${opts.epochId}" not found.` };
+    }
+
+    if (epoch.enclave_pda !== GLOBAL_REWARDS_ENCLAVE_PDA) {
+      return { success: false, error: 'Epoch is not a global rewards epoch.' };
+    }
+
+    if (epoch.status === 'published' && epoch.sol_tx_signature && epoch.rewards_epoch_pda) {
+      return {
+        success: true,
+        signature: epoch.sol_tx_signature,
+        rewardsEpochPda: epoch.rewards_epoch_pda,
+      };
+    }
+
+    const epochNumber = BigInt(epoch.epoch_number);
+    const amountLamports = BigInt(epoch.total_amount);
+    const merkleRootHex = String(epoch.merkle_root_hex ?? '').trim().toLowerCase();
+
+    const res = await this.solService.publishGlobalRewardsEpoch({
+      epoch: epochNumber,
+      merkleRootHex,
+      amountLamports,
+      claimWindowSeconds: opts.claimWindowSeconds ?? 0n,
+    });
+
+    if (!res.success) {
+      return { success: false, error: res.error ?? 'Failed to publish epoch' };
+    }
+
+    await this.markPublished(opts.epochId, res.signature!, res.rewardsEpochPda!);
+    return { success: true, signature: res.signature, rewardsEpochPda: res.rewardsEpochPda };
   }
 
   /**

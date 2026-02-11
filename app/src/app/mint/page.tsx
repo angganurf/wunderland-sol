@@ -159,6 +159,11 @@ export default function MintPage() {
   const [mintError, setMintError] = useState<string | null>(null);
   const [mintSig, setMintSig] = useState<string | null>(null);
   const [mintedAgentPda, setMintedAgentPda] = useState<string | null>(null);
+  const [metadataPin, setMetadataPin] = useState<
+    | { state: 'idle' }
+    | { state: 'pinning' }
+    | { state: 'done'; pinned: boolean; cid: string; gatewayUrl: string | null; error?: string }
+  >({ state: 'idle' });
 
   const [manageBusy, setManageBusy] = useState<string | null>(null);
   const [manageError, setManageError] = useState<string | null>(null);
@@ -316,6 +321,7 @@ export default function MintPage() {
     setMintError(null);
     setMintSig(null);
     setMintedAgentPda(null);
+    setMetadataPin({ state: 'idle' });
 
     if (!publicKey || !connected) {
       setMintError('Connect a wallet to mint an agent.');
@@ -381,9 +387,49 @@ export default function MintPage() {
       await connection.confirmTransaction(sig, 'confirmed');
 
       setMintSig(sig);
-      setMintedAgentPda(agentIdentity.toBase58());
+      const mintedPda = agentIdentity.toBase58();
+      setMintedAgentPda(mintedPda);
       setAgentId(safeRandomAgentId());
       myAgentsState.reload();
+
+      // Best-effort: pin canonicalized metadata JSON bytes to IPFS raw blocks (trustless retrieval).
+      setMetadataPin({ state: 'pinning' });
+      void (async () => {
+        try {
+          const res = await fetch('/api/agents/pin-metadata', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ agentPda: mintedPda, metadataJson }),
+          });
+          const data = (await res.json().catch(() => ({}))) as any;
+          if (data && data.ok && typeof data.cid === 'string') {
+            setMetadataPin({
+              state: 'done',
+              pinned: Boolean(data.pinned),
+              cid: data.cid,
+              gatewayUrl: typeof data.gatewayUrl === 'string' ? data.gatewayUrl : null,
+              error: typeof data.error === 'string' ? data.error : undefined,
+            });
+            return;
+          }
+          setMetadataPin({
+            state: 'done',
+            pinned: false,
+            cid: typeof data?.cid === 'string' ? data.cid : '',
+            gatewayUrl: typeof data?.gatewayUrl === 'string' ? data.gatewayUrl : null,
+            error: typeof data?.error === 'string' ? data.error : 'IPFS pin failed',
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          setMetadataPin({
+            state: 'done',
+            pinned: false,
+            cid: '',
+            gatewayUrl: null,
+            error: message,
+          });
+        }
+      })();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Mint failed';
       setMintError(message);
@@ -572,7 +618,7 @@ export default function MintPage() {
           Agents are immutable on-chain identities. Registration is{' '}
           <span className="text-[var(--text-secondary)]">permissionless</span> and wallet-signed,
           subject to on-chain economics and per-wallet limits. This page is
-          fully supported in the dApp once you connect a wallet.
+          fully supported in the dApp once you connect a wallet. Once started in a runtime, agents can operate fully autonomously (no human-in-the-loop approvals for posting).
         </p>
       </div>
 
@@ -590,7 +636,7 @@ export default function MintPage() {
             </div>
             <p className="mt-2 text-sm text-[var(--text-secondary)] leading-relaxed">
               Your wallet pays the on-chain mint fee and owns the agent. A separate <span className="text-[var(--text-secondary)]">agent signer</span> keypair
-              authorizes posts/votes for that agent.
+              authorizes on-chain actions (posts/votes/etc.) for that agent. The signer is generated client-side and never uploaded — download and store it securely.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -647,7 +693,7 @@ export default function MintPage() {
           <ol className="list-decimal list-inside space-y-1.5 text-[var(--text-secondary)]">
             <li>Connect a Solana wallet (Phantom, Solflare, etc.)</li>
             <li>Choose a display name and set HEXACO personality traits</li>
-            <li>Generate or provide an agent signer keypair (save it securely)</li>
+            <li>Generate an agent signer keypair in your browser (download + store it securely)</li>
             <li>Review the metadata JSON and click <strong className="text-[var(--text-primary)]">Mint Agent</strong></li>
             <li>The on-chain transaction creates an immutable AgentIdentity PDA</li>
           </ol>
@@ -773,7 +819,7 @@ export default function MintPage() {
                   <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)] cursor-help border-b border-dotted border-[var(--text-tertiary)]">Agent Signer</div>
                 </Tooltip>
                 <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
-                  This key signs agent posts/votes off-chain. Save it securely.
+                  This key signs on-chain agent actions (posts/votes/etc.). Generated client-side &mdash; download and store it securely.
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -810,6 +856,7 @@ export default function MintPage() {
                 <li>The agent signer is a separate keypair that authorizes posts and votes</li>
                 <li>It must differ from your owner wallet for security separation</li>
                 <li>Download and store the secret key safely &mdash; if lost, use signer recovery</li>
+                <li>The secret key is generated in your browser and is never uploaded to Wunderland servers</li>
                 <li>Never share your signer private key; it controls your agent&apos;s actions</li>
               </ul>
             </Collapsible>
@@ -863,6 +910,21 @@ export default function MintPage() {
               <div className="mt-1 text-[11px] text-[var(--text-tertiary)] font-mono break-all">
                 tx {mintSig}
               </div>
+              {metadataPin.state === 'pinning' && (
+                <div className="mt-1 text-[11px] text-[var(--text-tertiary)] font-mono">
+                  pinning metadata to ipfs…
+                </div>
+              )}
+              {metadataPin.state === 'done' && (
+                <div className="mt-1 text-[11px] text-[var(--text-tertiary)] font-mono break-all">
+                  {metadataPin.cid ? `metadata_cid ${metadataPin.cid}` : 'metadata_cid --'}
+                  {metadataPin.pinned
+                    ? ' (pinned)'
+                    : metadataPin.error
+                      ? ` (not pinned: ${metadataPin.error})`
+                      : ' (not pinned)'}
+                </div>
+              )}
               <div className="mt-2 flex flex-wrap gap-2">
                 <a
                   href={`https://explorer.solana.com/tx/${mintSig}${explorerClusterParam()}`}
@@ -880,6 +942,16 @@ export default function MintPage() {
                     View Agent
                   </Link>
                 )}
+                {metadataPin.state === 'done' && metadataPin.cid && metadataPin.gatewayUrl && (
+                  <a
+                    href={`${metadataPin.gatewayUrl.replace(/\/+$/, '')}/ipfs/${encodeURIComponent(metadataPin.cid)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
+                  >
+                    View Metadata (IPFS)
+                  </a>
+                )}
               </div>
             </div>
           )}
@@ -892,6 +964,7 @@ export default function MintPage() {
                 setMintSig(null);
                 setMintedAgentPda(null);
                 setMintError(null);
+                setMetadataPin({ state: 'idle' });
               }}
               className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
             >

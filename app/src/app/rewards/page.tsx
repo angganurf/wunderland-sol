@@ -31,6 +31,8 @@ type ClaimProof = {
   epochNumber: string;
 };
 
+const GLOBAL_REWARDS_ENCLAVE_PDA = '11111111111111111111111111111111';
+
 function lamportsToSol(lamports: string): string {
   const n = Number(lamports) / 1e9;
   return n.toFixed(4);
@@ -49,6 +51,7 @@ export default function RewardsPage() {
   const { publicKey, connected, sendTransaction } = useWallet();
   const { setVisible } = useWalletModal();
 
+  const [scope, setScope] = useState<'global' | 'enclave'>('global');
   const [enclavePda, setEnclavePda] = useState('');
   const [epochs, setEpochs] = useState<EpochInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -62,11 +65,14 @@ export default function RewardsPage() {
   const [claimSig, setClaimSig] = useState<string | null>(null);
 
   const fetchEpochs = useCallback(async () => {
-    if (!enclavePda.trim()) return;
+    const effectiveEnclavePda = scope === 'global' ? GLOBAL_REWARDS_ENCLAVE_PDA : enclavePda.trim();
+    if (!effectiveEnclavePda) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/rewards/epochs?enclave=${encodeURIComponent(enclavePda)}`);
+      const res = await fetch(
+        `/api/rewards/epochs?enclave=${encodeURIComponent(effectiveEnclavePda)}`,
+      );
       const data = await res.json();
       setEpochs(data.epochs ?? []);
     } catch (err) {
@@ -74,7 +80,7 @@ export default function RewardsPage() {
     } finally {
       setLoading(false);
     }
-  }, [enclavePda]);
+  }, [enclavePda, scope]);
 
   const fetchProof = useCallback(async () => {
     if (!selectedEpoch || !agentPda.trim()) return;
@@ -134,8 +140,6 @@ export default function RewardsPage() {
     }
   }, [claimProof, connected, publicKey, selectedEpoch, agentPda, connection, sendTransaction]);
 
-  const clusterParam = `?cluster=${encodeURIComponent(CLUSTER)}`;
-
   return (
     <div className="max-w-4xl mx-auto px-6 py-12">
       {/* Header */}
@@ -155,8 +159,8 @@ export default function RewardsPage() {
               <span className="neon-glow-green">Rewards</span>
             </h1>
             <p className="text-[var(--text-secondary)] text-sm">
-              Epoch-based Merkle reward distribution. Enclave treasuries fund agent rewards
-              from tip revenue (30% of tips go to enclave treasury).
+              Epoch-based Merkle reward distribution. Rewards can be funded by either enclave
+              treasuries (enclave tips) or the global treasury (global tips).
             </p>
           </div>
           <WalletButton />
@@ -172,16 +176,56 @@ export default function RewardsPage() {
           <span className="neon-glow-cyan">Browse Epochs</span>
         </h2>
 
+        <div className="flex gap-2 mb-3">
+          <button
+            type="button"
+            onClick={() => {
+              setScope('global');
+              setSelectedEpoch(null);
+              setEpochs([]);
+              setError(null);
+            }}
+            className={`px-4 py-2 rounded-lg text-[10px] font-mono uppercase transition-all ${
+              scope === 'global'
+                ? 'bg-[rgba(0,255,255,0.08)] border border-[rgba(0,255,255,0.18)] text-[var(--neon-cyan)]'
+                : 'bg-[var(--bg-glass)] border border-[var(--border-glass)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)]'
+            }`}
+          >
+            Global
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setScope('enclave');
+              setSelectedEpoch(null);
+              setEpochs([]);
+              setError(null);
+            }}
+            className={`px-4 py-2 rounded-lg text-[10px] font-mono uppercase transition-all ${
+              scope === 'enclave'
+                ? 'bg-[rgba(0,255,255,0.08)] border border-[rgba(0,255,255,0.18)] text-[var(--neon-cyan)]'
+                : 'bg-[var(--bg-glass)] border border-[var(--border-glass)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-glass-hover)]'
+            }`}
+          >
+            Enclave
+          </button>
+        </div>
+
         <div className="flex gap-3 mb-4">
           <input
-            value={enclavePda}
+            value={scope === 'global' ? GLOBAL_REWARDS_ENCLAVE_PDA : enclavePda}
             onChange={(e) => setEnclavePda(e.target.value)}
-            placeholder="Enclave PDA (base58)"
+            placeholder={
+              scope === 'global'
+                ? 'Global treasury epochs (System Program sentinel)'
+                : 'Enclave PDA (base58)'
+            }
+            disabled={scope === 'global'}
             className="flex-1 px-4 py-3 rounded-lg bg-black/30 border border-white/10 text-white/90 placeholder-white/30 text-sm focus:outline-none focus:border-[var(--neon-cyan)]/50 transition-all"
           />
           <button
             onClick={fetchEpochs}
-            disabled={loading || !enclavePda.trim()}
+            disabled={loading || (scope === 'enclave' && !enclavePda.trim())}
             className="px-6 py-3 rounded-lg text-xs font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all disabled:opacity-40"
           >
             {loading ? 'Loading...' : 'Load'}
@@ -192,7 +236,7 @@ export default function RewardsPage() {
 
         {epochs.length === 0 && !loading && !error && (
           <div className="text-center py-6 text-[var(--text-tertiary)] text-sm">
-            No epochs found. Enter an enclave PDA to browse reward epochs.
+            No epochs found. Load {scope === 'global' ? 'global' : 'enclave'} reward epochs to browse.
           </div>
         )}
 

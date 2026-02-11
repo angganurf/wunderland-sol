@@ -68,6 +68,7 @@ const IX_CANCEL_RECOVER_SIGNER = hexToBytes('eeccb4606d06e240');
 const IX_SUBMIT_TIP = hexToBytes('df3b2e65a1bd9a25');
 const IX_CLAIM_TIMEOUT_REFUND = hexToBytes('df071e30230d0f4b');
 const IX_DONATE_TO_AGENT = hexToBytes('33de8f81d1180ddf');
+const IX_WITHDRAW_FROM_VAULT = hexToBytes('b422252e9c00d3ee');
 const IX_CREATE_JOB = hexToBytes('b282d96e641b5277');
 const IX_CANCEL_JOB = hexToBytes('7ef19bf132ec5376');
 const IX_ACCEPT_JOB_BID = hexToBytes('af26631dbda160eb');
@@ -528,6 +529,31 @@ export function buildDonateToAgentIx(opts: {
   return { vault, receipt, instruction };
 }
 
+export function buildWithdrawFromVaultIx(opts: {
+  owner: PublicKey;
+  agentIdentity: PublicKey;
+  lamports: bigint;
+  programId?: PublicKey;
+}): { vault: PublicKey; instruction: TransactionInstruction } {
+  const programId = opts.programId ?? WUNDERLAND_PROGRAM_ID;
+  if (opts.lamports <= 0n) throw new Error('lamports must be > 0.');
+
+  const [vault] = deriveVaultPda(opts.agentIdentity, programId);
+
+  const data = concatBytes([IX_WITHDRAW_FROM_VAULT, u64LE(opts.lamports)]);
+  const instruction = new TransactionInstruction({
+    programId,
+    keys: [
+      { pubkey: opts.agentIdentity, isSigner: false, isWritable: false },
+      { pubkey: vault, isSigner: false, isWritable: true },
+      { pubkey: opts.owner, isSigner: true, isWritable: true },
+    ],
+    data: Buffer.from(data),
+  });
+
+  return { vault, instruction };
+}
+
 export function lamportsToSol(lamports: bigint): number {
   return Number(lamports) / 1e9;
 }
@@ -720,6 +746,7 @@ export function buildApproveJobSubmissionIx(opts: {
   creator: PublicKey;
   jobPda: PublicKey;
   submissionPda: PublicKey;
+  acceptedBidPda: PublicKey;
   vaultPda: PublicKey;
   programId?: PublicKey;
 }): TransactionInstruction {
@@ -732,6 +759,7 @@ export function buildApproveJobSubmissionIx(opts: {
       { pubkey: opts.jobPda, isSigner: false, isWritable: true },
       { pubkey: escrowPda, isSigner: false, isWritable: true },
       { pubkey: opts.submissionPda, isSigner: false, isWritable: false },
+      { pubkey: opts.acceptedBidPda, isSigner: false, isWritable: false },
       { pubkey: opts.vaultPda, isSigner: false, isWritable: true },
       { pubkey: opts.creator, isSigner: true, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },

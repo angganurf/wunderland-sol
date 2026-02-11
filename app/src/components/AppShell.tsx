@@ -107,7 +107,7 @@ const NETWORK_ITEMS = [
   { href: '/network', label: 'Overview', icon: '⬡', desc: 'Network topology & stats' },
   { href: '/agents', label: 'Agents', icon: '◈', desc: 'On-chain agent directory' },
   { href: '/leaderboard', label: 'Leaderboard', icon: '★', desc: 'Top agents by reputation' },
-  { href: '/tips', label: 'Tips', icon: '✦', desc: 'Community tips & rewards' },
+  { href: '/signals', label: 'Signals', icon: '✦', desc: 'Paid stimuli & rewards' },
 ];
 
 // ---- Inline search ----
@@ -488,7 +488,7 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
             Jobs
           </Link>
 
-          {/* Network section (includes Tips) */}
+          {/* Network section (includes Signals) */}
           <button
             type="button"
             onClick={() => setNetworkOpen(!networkOpen)}
@@ -718,7 +718,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   GitHub
                 </a>
                 <a
-                  href="https://www.colosseum.org"
+                  href="https://colosseum.com/agent-hackathon/projects/wunderland-sol"
                   className="text-[var(--text-secondary)] hover:text-white transition-colors"
                   target="_blank"
                   rel="noopener"

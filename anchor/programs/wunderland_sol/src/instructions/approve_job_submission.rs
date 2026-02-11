@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
 use crate::errors::WunderlandError;
-use crate::state::{AgentVault, JobEscrow, JobPosting, JobStatus, JobSubmission};
+use crate::state::{AgentVault, JobBid, JobBidStatus, JobEscrow, JobPosting, JobStatus, JobSubmission};
 
 /// Approve an assigned job submission and release escrowed funds into the agent vault.
 #[derive(Accounts)]
@@ -28,6 +28,15 @@ pub struct ApproveJobSubmission<'info> {
     )]
     pub submission: Account<'info, JobSubmission>,
 
+    /// Accepted bid PDA (sets payout amount).
+    #[account(
+        constraint = accepted_bid.key() == job.accepted_bid @ WunderlandError::InvalidJobBid,
+        constraint = accepted_bid.job == job.key() @ WunderlandError::InvalidJobBid,
+        constraint = accepted_bid.bidder_agent == job.assigned_agent @ WunderlandError::UnauthorizedJobAgent,
+        constraint = accepted_bid.status == JobBidStatus::Accepted @ WunderlandError::BidNotAccepted,
+    )]
+    pub accepted_bid: Account<'info, JobBid>,
+
     /// Recipient agent vault (payout destination).
     #[account(
         mut,
@@ -47,9 +56,12 @@ pub struct ApproveJobSubmission<'info> {
 pub fn handler(ctx: Context<ApproveJobSubmission>) -> Result<()> {
     let job = &mut ctx.accounts.job;
     let escrow = &mut ctx.accounts.escrow;
-    let amount = escrow.amount;
+    let payout_amount = ctx.accounts.accepted_bid.bid_lamports;
+    let escrow_amount = escrow.amount;
 
-    require!(amount > 0, WunderlandError::InvalidAmount);
+    require!(escrow_amount > 0, WunderlandError::InvalidAmount);
+    require!(payout_amount > 0, WunderlandError::InvalidAmount);
+    require!(payout_amount <= escrow_amount, WunderlandError::InvalidAmount);
     require!(
         ctx.accounts.submission.agent == job.assigned_agent,
         WunderlandError::UnauthorizedJobAgent
@@ -61,31 +73,49 @@ pub fn handler(ctx: Context<ApproveJobSubmission>) -> Result<()> {
     let escrow_info = escrow.to_account_info();
     let escrow_lamports = escrow_info.lamports();
     require!(
-        escrow_lamports >= min_balance.saturating_add(amount),
+        escrow_lamports >= min_balance.saturating_add(escrow_amount),
         WunderlandError::InsufficientJobEscrowBalance
     );
 
     // Transfer: escrow -> agent vault (both program-owned, safe to mutate lamports directly).
     **escrow_info.try_borrow_mut_lamports()? = escrow_lamports
-        .checked_sub(amount)
+        .checked_sub(payout_amount)
         .ok_or(WunderlandError::ArithmeticOverflow)?;
 
     let vault_info = ctx.accounts.vault.to_account_info();
     **vault_info.try_borrow_mut_lamports()? = vault_info
         .lamports()
-        .checked_add(amount)
+        .checked_add(payout_amount)
         .ok_or(WunderlandError::ArithmeticOverflow)?;
+
+    // Refund any remainder back to creator (budget - accepted bid).
+    let refund_amount = escrow_amount
+        .checked_sub(payout_amount)
+        .ok_or(WunderlandError::ArithmeticOverflow)?;
+
+    if refund_amount > 0 {
+        **escrow_info.try_borrow_mut_lamports()? = escrow_info
+            .lamports()
+            .checked_sub(refund_amount)
+            .ok_or(WunderlandError::ArithmeticOverflow)?;
+
+        let creator_info = ctx.accounts.creator.to_account_info();
+        **creator_info.try_borrow_mut_lamports()? = creator_info
+            .lamports()
+            .checked_add(refund_amount)
+            .ok_or(WunderlandError::ArithmeticOverflow)?;
+    }
 
     escrow.amount = 0;
     job.status = JobStatus::Completed;
     job.updated_at = Clock::get()?.unix_timestamp;
 
     msg!(
-        "Job completed: job={} paid={} lamports to vault={}",
+        "Job completed: job={} paid={} refunded={} vault={}",
         job.key(),
-        amount,
+        payout_amount,
+        refund_amount,
         ctx.accounts.vault.key()
     );
     Ok(())
 }
-

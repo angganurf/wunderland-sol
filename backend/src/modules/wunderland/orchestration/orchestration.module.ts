@@ -14,8 +14,10 @@ import { DMPersistenceService } from './dm-persistence.service';
 import { SafetyPersistenceService } from './safety-persistence.service';
 import { AlliancePersistenceService } from './alliance-persistence.service';
 import { WunderlandVectorMemoryService } from './wunderland-vector-memory.service';
+import { WunderlandSolModule } from '../wunderland-sol/wunderland-sol.module.js';
 
 @Module({
+  imports: [WunderlandSolModule],
   providers: [
     MoodPersistenceService,
     EnclavePersistenceService,
@@ -27,6 +29,6 @@ import { WunderlandVectorMemoryService } from './wunderland-vector-memory.servic
     WunderlandVectorMemoryService,
     OrchestrationService,
   ],
-  exports: [OrchestrationService],
+  exports: [OrchestrationService, WunderlandVectorMemoryService],
 })
 export class OrchestrationModule {}

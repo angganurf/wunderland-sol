@@ -132,6 +132,19 @@ export type JobSubmissionRow = {
   indexed_at: number;
 };
 
+export type ScannerJob = {
+  id: string;
+  title: string;
+  description: string;
+  budgetLamports: number;
+  buyItNowLamports?: number;
+  category: string;
+  deadline: string;
+  creatorWallet: string;
+  bidsCount: number;
+  status: 'open' | 'assigned' | 'submitted' | 'completed' | 'cancelled';
+};
+
 @Injectable()
 export class JobsService {
   constructor(private readonly db: DatabaseService) {}
@@ -457,6 +470,77 @@ export class JobsService {
     return { jobs, total };
   }
 
+  /**
+   * List jobs in the shape expected by `packages/wunderland`'s JobScanner.
+   */
+  async listJobsForScanner(opts: {
+    status?: 'open' | 'assigned' | 'submitted' | 'completed' | 'cancelled';
+    limit?: number;
+    offset?: number;
+  }): Promise<{ jobs: ScannerJob[]; total: number }> {
+    const status = opts.status ?? 'open';
+    const limit = Math.min(opts.limit ?? 50, 100);
+    const offset = opts.offset ?? 0;
+
+    const countRow = await this.db.get<{ cnt: number }>(
+      `SELECT COUNT(*) as cnt FROM wunderland_job_postings WHERE status = ?`,
+      [status],
+    );
+    const total = countRow?.cnt ?? 0;
+
+    const rows = await this.db.all<{
+      job_pda: string;
+      creator_wallet: string;
+      status: string;
+      budget_lamports: string;
+      buy_it_now_lamports: string | null;
+      title: string | null;
+      description: string | null;
+      metadata_json: string | null;
+      bids_count: number;
+    }>(
+      `
+        SELECT
+          p.job_pda,
+          p.creator_wallet,
+          p.status,
+          p.budget_lamports,
+          p.buy_it_now_lamports,
+          p.title,
+          p.description,
+          p.metadata_json,
+          (SELECT COUNT(*) FROM wunderland_job_bids b WHERE b.job_pda = p.job_pda) as bids_count
+        FROM wunderland_job_postings p
+        WHERE p.status = ?
+        ORDER BY p.created_at DESC
+        LIMIT ? OFFSET ?
+      `,
+      [status, limit, offset],
+    );
+
+    const jobs: ScannerJob[] = rows.map((row) => {
+      const metadata = row.metadata_json ? (tryParseJson(row.metadata_json) as any) : null;
+      const categoryRaw = metadata && typeof metadata.category === 'string' ? metadata.category : '';
+      const deadlineRaw = metadata && typeof metadata.deadline === 'string' ? metadata.deadline : '';
+
+      return {
+        id: row.job_pda,
+        title: row.title ?? (metadata && typeof metadata.title === 'string' ? metadata.title : 'Untitled job'),
+        description:
+          row.description ?? (metadata && typeof metadata.description === 'string' ? metadata.description : ''),
+        budgetLamports: Number(row.budget_lamports),
+        buyItNowLamports: row.buy_it_now_lamports ? Number(row.buy_it_now_lamports) : undefined,
+        category: String(categoryRaw || 'other'),
+        deadline: String(deadlineRaw || ''),
+        creatorWallet: row.creator_wallet,
+        bidsCount: Number(row.bids_count ?? 0),
+        status: status,
+      };
+    });
+
+    return { jobs, total };
+  }
+
   async getJob(jobPda: string): Promise<JobPostingRow | undefined> {
     return this.db.get<JobPostingRow>(
       'SELECT * FROM wunderland_job_postings WHERE job_pda = ? LIMIT 1',
@@ -686,5 +770,13 @@ export class JobsService {
       const message = err instanceof Error ? err.message : String(err);
       return { ok: false, error: `On-chain verification failed: ${message}` };
     }
+  }
+}
+
+function tryParseJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
   }
 }

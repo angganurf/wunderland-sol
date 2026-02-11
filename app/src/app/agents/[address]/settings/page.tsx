@@ -1,13 +1,15 @@
 'use client';
 
-import { use, useState, useEffect, useCallback } from 'react';
+import { use, useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
-import { useWallet } from '@solana/wallet-adapter-react';
+import { PublicKey, Transaction } from '@solana/web3.js';
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { WalletButton } from '@/components/WalletButton';
 import { useApi } from '@/lib/useApi';
 import { useScrollReveal } from '@/lib/useScrollReveal';
-import type { Agent } from '@/lib/solana';
+import { CLUSTER, type Agent } from '@/lib/solana';
+import { buildWithdrawFromVaultIx, deriveVaultPda, lamportsToSol } from '@/lib/wunderland-program';
 
 const LLM_PROVIDERS = [
   { id: 'anthropic', label: 'Anthropic (Claude)', models: ['claude-opus-4-6', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001'] },
@@ -46,9 +48,28 @@ type CredentialsResponse = {
   credentials: Credential[];
 };
 
+const AGENT_VAULT_ACCOUNT_LEN = 41;
+
+function explorerTxUrl(signature: string): string {
+  return `https://explorer.solana.com/tx/${encodeURIComponent(signature)}?cluster=${encodeURIComponent(CLUSTER)}`;
+}
+
+function parseSolToLamports(value: string): bigint | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
+
+  const [wholeRaw, fracRaw = ''] = trimmed.split('.');
+  const whole = wholeRaw ? BigInt(wholeRaw) : 0n;
+  const fracPadded = (fracRaw + '000000000').slice(0, 9);
+  const frac = fracPadded ? BigInt(fracPadded) : 0n;
+  return whole * 1_000_000_000n + frac;
+}
+
 export default function AgentSettingsPage({ params }: { params: Promise<{ address: string }> }) {
   const { address } = use(params);
-  const { publicKey, connected } = useWallet();
+  const { connection } = useConnection();
+  const { publicKey, connected, sendTransaction } = useWallet();
   const { setVisible: setWalletModalVisible } = useWalletModal();
 
   const agentsState = useApi<{ agents: Agent[]; total: number }>('/api/agents');
@@ -73,11 +94,63 @@ export default function AgentSettingsPage({ params }: { params: Promise<{ addres
   const [rotatingId, setRotatingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  // Vault state (on-chain)
+  const [vaultLoading, setVaultLoading] = useState(false);
+  const [vaultError, setVaultError] = useState<string | null>(null);
+  const [vaultBalanceLamports, setVaultBalanceLamports] = useState<bigint | null>(null);
+  const [vaultRentMinLamports, setVaultRentMinLamports] = useState<bigint | null>(null);
+  const [withdrawAmountSol, setWithdrawAmountSol] = useState('');
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawSig, setWithdrawSig] = useState<string | null>(null);
+
   const headerReveal = useScrollReveal();
   const llmReveal = useScrollReveal();
   const toolsReveal = useScrollReveal();
 
   const isOwner = connected && publicKey && agent && agent.owner === publicKey.toBase58();
+
+  const agentIdentityPk = useMemo(() => {
+    try {
+      return new PublicKey(address);
+    } catch {
+      return null;
+    }
+  }, [address]);
+
+  const vaultPk = useMemo(() => {
+    if (!agentIdentityPk) return null;
+    try {
+      const [vault] = deriveVaultPda(agentIdentityPk);
+      return vault;
+    } catch {
+      return null;
+    }
+  }, [agentIdentityPk]);
+
+  const withdrawableLamports =
+    vaultBalanceLamports != null && vaultRentMinLamports != null
+      ? vaultBalanceLamports > vaultRentMinLamports
+        ? vaultBalanceLamports - vaultRentMinLamports
+        : 0n
+      : null;
+
+  const loadVault = useCallback(async () => {
+    if (!vaultPk) return;
+    setVaultLoading(true);
+    setVaultError(null);
+    try {
+      const [balance, minRent] = await Promise.all([
+        connection.getBalance(vaultPk, 'confirmed'),
+        connection.getMinimumBalanceForRentExemption(AGENT_VAULT_ACCOUNT_LEN),
+      ]);
+      setVaultBalanceLamports(BigInt(balance));
+      setVaultRentMinLamports(BigInt(minRent));
+    } catch (err) {
+      setVaultError(err instanceof Error ? err.message : 'Failed to load vault balance');
+    } finally {
+      setVaultLoading(false);
+    }
+  }, [connection, vaultPk]);
 
   // Load credentials
   const loadCredentials = useCallback(async () => {
@@ -99,8 +172,9 @@ export default function AgentSettingsPage({ params }: { params: Promise<{ addres
   useEffect(() => {
     if (isOwner) {
       void loadCredentials();
+      void loadVault();
     }
-  }, [isOwner, loadCredentials]);
+  }, [isOwner, loadCredentials, loadVault]);
 
   const handleSaveLlm = async () => {
     if (!isOwner || !apiKeyValue.trim()) return;
@@ -263,8 +337,8 @@ export default function AgentSettingsPage({ params }: { params: Promise<{ addres
     );
   }
 
-  return (
-    <div className="max-w-3xl mx-auto px-6 py-12">
+	  return (
+	    <div className="max-w-3xl mx-auto px-6 py-12">
       <Link
         href={`/agents/${address}`}
         className="text-white/30 text-xs font-mono hover:text-white/50 transition-colors mb-6 inline-block"
@@ -286,8 +360,8 @@ export default function AgentSettingsPage({ params }: { params: Promise<{ addres
         <div className="mt-2 text-[10px] font-mono text-white/20">{address}</div>
       </div>
 
-      {/* Save result */}
-      {saveResult && (
+	      {/* Save result */}
+	      {saveResult && (
         <div className={`mb-6 p-3 rounded-lg text-xs ${
           saveResult.ok
             ? 'bg-[rgba(0,255,100,0.08)] text-[var(--neon-green)] border border-[rgba(0,255,100,0.15)]'
@@ -295,7 +369,130 @@ export default function AgentSettingsPage({ params }: { params: Promise<{ addres
         }`}>
           {saveResult.text}
         </div>
-      )}
+	      )}
+
+        {/* Vault */}
+        <div className="holo-card p-6 mb-6 section-glow-green">
+          <h2 className="text-xs font-mono uppercase tracking-wider text-[var(--text-tertiary)] mb-4">
+            Agent Vault (Withdraw)
+          </h2>
+
+          <div className="text-[11px] text-[var(--text-secondary)] mb-3">
+            Rewards, donations, and job payouts land in a program-owned <span className="font-mono">AgentVault</span>. Only the
+            owner wallet can withdraw to their wallet address.
+          </div>
+
+          {vaultPk && (
+            <div className="text-[10px] font-mono text-white/20 mb-3 break-all">
+              Vault PDA: {vaultPk.toBase58()}
+            </div>
+          )}
+
+          {vaultError && (
+            <div className="text-xs text-[var(--neon-red)] p-3 rounded-lg bg-[rgba(255,50,50,0.06)] border border-[rgba(255,50,50,0.15)] mb-3">
+              {vaultError}
+            </div>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-3 mb-4">
+            <div className="p-3 rounded-lg bg-[var(--bg-glass)] border border-[var(--border-glass)]">
+              <div className="text-[10px] font-mono text-[var(--text-tertiary)]">Balance</div>
+              <div className="text-sm font-semibold text-[var(--text-primary)]">
+                {vaultBalanceLamports != null ? `${lamportsToSol(vaultBalanceLamports).toFixed(4)} SOL` : '—'}
+              </div>
+            </div>
+            <div className="p-3 rounded-lg bg-[var(--bg-glass)] border border-[var(--border-glass)]">
+              <div className="text-[10px] font-mono text-[var(--text-tertiary)]">Rent Min</div>
+              <div className="text-sm font-semibold text-[var(--text-primary)]">
+                {vaultRentMinLamports != null ? `${lamportsToSol(vaultRentMinLamports).toFixed(4)} SOL` : '—'}
+              </div>
+            </div>
+            <div className="p-3 rounded-lg bg-[var(--bg-glass)] border border-[var(--border-glass)]">
+              <div className="text-[10px] font-mono text-[var(--text-tertiary)]">Withdrawable</div>
+              <div className="text-sm font-semibold text-[var(--text-primary)]">
+                {withdrawableLamports != null ? `${lamportsToSol(withdrawableLamports).toFixed(4)} SOL` : '—'}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-2 mb-3">
+            <button
+              type="button"
+              onClick={() => void loadVault()}
+              disabled={vaultLoading || !vaultPk}
+              className="px-3 py-2 rounded text-[10px] font-mono uppercase
+                bg-[var(--bg-glass)] border border-[var(--border-glass)]
+                text-[var(--text-secondary)] hover:text-[var(--neon-green)]
+                transition-all disabled:opacity-40"
+            >
+              {vaultLoading ? 'Refreshing…' : 'Refresh'}
+            </button>
+            <input
+              value={withdrawAmountSol}
+              onChange={(e) => setWithdrawAmountSol(e.target.value)}
+              placeholder="Amount (SOL)"
+              className="flex-1 px-4 py-2 rounded-lg bg-black/30 border border-white/10 text-white/90 placeholder-white/30 text-sm focus:outline-none focus:border-[var(--neon-green)]/50 transition-all"
+            />
+            <button
+              type="button"
+              disabled={
+                withdrawing ||
+                !isOwner ||
+                !publicKey ||
+                !vaultPk ||
+                withdrawableLamports == null ||
+                parseSolToLamports(withdrawAmountSol) == null ||
+                (parseSolToLamports(withdrawAmountSol) ?? 0n) <= 0n ||
+                (parseSolToLamports(withdrawAmountSol) ?? 0n) > withdrawableLamports
+              }
+              onClick={async () => {
+                if (!publicKey || !agentIdentityPk || !vaultPk) return;
+                const lamports = parseSolToLamports(withdrawAmountSol);
+                if (lamports == null || lamports <= 0n) return;
+                if (withdrawableLamports != null && lamports > withdrawableLamports) return;
+                setWithdrawing(true);
+                setWithdrawSig(null);
+                try {
+                  const { instruction } = buildWithdrawFromVaultIx({
+                    owner: publicKey,
+                    agentIdentity: agentIdentityPk,
+                    lamports,
+                  });
+                  const tx = new Transaction().add(instruction);
+                  const sig = await sendTransaction(tx, connection, { skipPreflight: false });
+                  await connection.confirmTransaction(sig, 'confirmed');
+                  setWithdrawSig(sig);
+                  setWithdrawAmountSol('');
+                  void loadVault();
+                } catch (err) {
+                  setVaultError(err instanceof Error ? err.message : 'Withdraw failed');
+                } finally {
+                  setWithdrawing(false);
+                }
+              }}
+              className="px-4 py-2 rounded text-[10px] font-mono uppercase
+                bg-[rgba(0,255,100,0.10)] border border-[rgba(0,255,100,0.20)]
+                text-[var(--neon-green)] hover:shadow-[0_0_20px_rgba(0,255,100,0.25)]
+                transition-all disabled:opacity-40"
+            >
+              {withdrawing ? 'Withdrawing…' : 'Withdraw'}
+            </button>
+          </div>
+
+          {withdrawSig && (
+            <div className="text-[10px] font-mono text-[var(--neon-green)]">
+              Withdraw successful:{' '}
+              <a
+                href={explorerTxUrl(withdrawSig)}
+                target="_blank"
+                rel="noreferrer"
+                className="underline hover:text-white"
+              >
+                view on explorer
+              </a>
+            </div>
+          )}
+        </div>
 
       {/* LLM Provider & Model */}
       <div

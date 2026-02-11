@@ -108,7 +108,16 @@ export class WunderlandSolService {
   private readonly enclavePdaOverride = process.env.WUNDERLAND_SOL_ENCLAVE_PDA ?? '';
   private readonly enclaveModeRaw = process.env.WUNDERLAND_SOL_ENCLAVE_MODE ?? '';
   private readonly relayerKeypairPath = process.env.WUNDERLAND_SOL_RELAYER_KEYPAIR_PATH ?? '';
+  private readonly authorityKeypairPath =
+    process.env.WUNDERLAND_SOL_AUTHORITY_KEYPAIR_PATH ?? this.relayerKeypairPath;
   private readonly anchorOnApproval = process.env.WUNDERLAND_SOL_ANCHOR_ON_APPROVAL !== 'false';
+  private readonly ipfsApiUrl = process.env.WUNDERLAND_IPFS_API_URL ?? '';
+  private readonly ipfsAuth = process.env.WUNDERLAND_IPFS_API_AUTH ?? '';
+  private readonly requireIpfsPin = process.env.WUNDERLAND_SOL_REQUIRE_IPFS_PIN !== 'false';
+  private readonly maxPostBytes = Math.min(
+    4_000_000,
+    Math.max(10_000, Number(process.env.WUNDERLAND_SOL_POST_MAX_BYTES ?? 500_000)),
+  );
 
   private readonly inFlight = new Set<string>();
   private readonly enclaveExistenceCache = new Map<
@@ -129,6 +138,7 @@ export class WunderlandSolService {
     enclaveMode: 'default' | 'map_if_exists';
     defaultEnclaveName: string | null;
     defaultEnclavePdaOverride: string | null;
+    hasAuthorityKeypair: boolean;
   } {
     return {
       enabled: this.enabled,
@@ -136,7 +146,91 @@ export class WunderlandSolService {
       enclaveMode: this.normalizeEnclaveMode(),
       defaultEnclaveName: this.enclaveName || null,
       defaultEnclavePdaOverride: this.enclavePdaOverride || null,
+      hasAuthorityKeypair: Boolean(this.authorityKeypairPath),
     };
+  }
+
+  getAgentIdentityPda(seedId: string): string | null {
+    const agentMap = this.loadAgentMap();
+    const agentEntry = agentMap?.agents?.[seedId];
+    const pda = agentEntry?.agentIdentityPda;
+    return pda && typeof pda === 'string' && pda.trim() ? pda.trim() : null;
+  }
+
+  /**
+   * Publish a GlobalTreasury-funded rewards epoch on-chain.
+   *
+   * Authority: `ProgramConfig.authority` (see `WUNDERLAND_SOL_AUTHORITY_KEYPAIR_PATH`).
+   */
+  async publishGlobalRewardsEpoch(opts: {
+    epoch: bigint;
+    merkleRootHex: string;
+    amountLamports: bigint;
+    claimWindowSeconds?: bigint;
+  }): Promise<{ success: boolean; signature?: string; rewardsEpochPda?: string; error?: string }> {
+    if (!this.enabled) {
+      return { success: false, error: 'Solana integration disabled' };
+    }
+
+    if (!this.programId) {
+      return { success: false, error: 'Missing Solana configuration (WUNDERLAND_SOL_PROGRAM_ID)' };
+    }
+
+    if (!this.authorityKeypairPath) {
+      return {
+        success: false,
+        error:
+          'Missing authority keypair (set WUNDERLAND_SOL_AUTHORITY_KEYPAIR_PATH or fallback to WUNDERLAND_SOL_RELAYER_KEYPAIR_PATH).',
+      };
+    }
+
+    const merkleRootHex = safeString(opts.merkleRootHex).trim().toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(merkleRootHex)) {
+      return { success: false, error: 'Invalid merkleRootHex (expected 32-byte hex).' };
+    }
+
+    const epoch = BigInt(opts.epoch);
+    const amountLamports = BigInt(opts.amountLamports);
+    const claimWindowSeconds = opts.claimWindowSeconds != null ? BigInt(opts.claimWindowSeconds) : 0n;
+
+    if (epoch < 0n) return { success: false, error: 'epoch must be >= 0' };
+    if (amountLamports <= 0n) return { success: false, error: 'amountLamports must be > 0' };
+    if (claimWindowSeconds < 0n) return { success: false, error: 'claimWindowSeconds must be >= 0' };
+
+    try {
+      const sdk = await import('@wunderland-sol/sdk');
+      const web3 = await import('@solana/web3.js');
+
+      const client = new sdk.WunderlandSolClient({
+        programId: this.programId,
+        rpcUrl: this.rpcUrl || undefined,
+        cluster: (this.cluster as any) || undefined,
+      });
+
+      const authority = this.loadKeypair(web3, this.authorityKeypairPath);
+
+      const res = await client.publishGlobalRewardsEpoch({
+        authority,
+        epoch,
+        merkleRoot: Buffer.from(merkleRootHex, 'hex'),
+        amount: amountLamports,
+        claimWindowSeconds,
+      });
+
+      this.logger.log(
+        `Published global rewards epoch: epoch=${epoch.toString()} amount=${amountLamports.toString()} (sig: ${res.signature})`,
+      );
+
+      return {
+        success: true,
+        signature: res.signature,
+        rewardsEpochPda: res.rewardsEpochPda.toBase58(),
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Failed to publish global rewards epoch: ${message}`);
+      return { success: false, error: message };
+    }
   }
 
   /**
@@ -223,6 +317,14 @@ export class WunderlandSolService {
       return;
     }
 
+    if (this.requireIpfsPin && !this.ipfsApiUrl) {
+      await this.missingConfig(
+        postId,
+        'Missing WUNDERLAND_IPFS_API_URL (required to pin post content/manifest as IPFS raw blocks).',
+      );
+      return;
+    }
+
     const row = await this.db.get<any>(
       `SELECT post_id, seed_id, content, manifest, status, subreddit_id, anchor_status, sol_tx_signature, sol_post_pda
          FROM wunderland_posts
@@ -281,6 +383,36 @@ export class WunderlandSolService {
       `,
       [contentHashHex, manifestHashHex, contentCid, manifestCid, solCluster, solProgramId, postId]
     );
+
+    // Pin bytes to IPFS raw blocks (CID derived from sha256) before anchoring on-chain.
+    if (this.ipfsApiUrl) {
+      try {
+        const contentBytes = Buffer.from(content, 'utf8');
+        const manifestBytes = Buffer.from(manifestCanonical, 'utf8');
+
+        if (contentBytes.length > this.maxPostBytes) {
+          throw new Error(`Post content too large to pin (${contentBytes.length} bytes).`);
+        }
+        if (manifestBytes.length > this.maxPostBytes) {
+          throw new Error(`Post manifest too large to pin (${manifestBytes.length} bytes).`);
+        }
+
+        await this.pinRawBlockToIpfs(contentBytes, contentCid);
+        await this.pinRawBlockToIpfs(manifestBytes, manifestCid);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await this.db.run(
+          `
+            UPDATE wunderland_posts
+               SET anchor_status = ?,
+                   anchor_error = ?
+             WHERE post_id = ?
+          `,
+          ['failed' satisfies AnchorStatus, `IPFS pin failed: ${message}`, postId],
+        );
+        return;
+      }
+    }
 
     const agentMap = this.loadAgentMap();
     const agentEntry = agentMap?.agents?.[seedId];
@@ -409,10 +541,38 @@ export class WunderlandSolService {
   }
 
   private async anchorCommentById(commentId: string): Promise<void> {
-    if (!this.enabled || !this.programId || !this.relayerKeypairPath) {
+    if (!this.enabled) {
       await this.db.run(
         `UPDATE wunderland_comments SET anchor_status = ?, anchor_error = ? WHERE comment_id = ?`,
-        [this.enabled ? 'missing_config' : 'disabled', this.enabled ? 'Missing SOL config' : null, commentId],
+        ['disabled' satisfies AnchorStatus, null, commentId],
+      );
+      return;
+    }
+
+    if (!this.programId) {
+      await this.db.run(
+        `UPDATE wunderland_comments SET anchor_status = ?, anchor_error = ? WHERE comment_id = ?`,
+        ['missing_config' satisfies AnchorStatus, 'Missing WUNDERLAND_SOL_PROGRAM_ID.', commentId],
+      );
+      return;
+    }
+
+    if (!this.relayerKeypairPath) {
+      await this.db.run(
+        `UPDATE wunderland_comments SET anchor_status = ?, anchor_error = ? WHERE comment_id = ?`,
+        ['missing_config' satisfies AnchorStatus, 'Missing WUNDERLAND_SOL_RELAYER_KEYPAIR_PATH.', commentId],
+      );
+      return;
+    }
+
+    if (this.requireIpfsPin && !this.ipfsApiUrl) {
+      await this.db.run(
+        `UPDATE wunderland_comments SET anchor_status = ?, anchor_error = ? WHERE comment_id = ?`,
+        [
+          'missing_config' satisfies AnchorStatus,
+          'Missing WUNDERLAND_IPFS_API_URL (required to pin comment content/manifest).',
+          commentId,
+        ],
       );
       return;
     }
@@ -437,6 +597,7 @@ export class WunderlandSolService {
     const manifestCanonical = canonicalizeJson(manifestObj);
     const manifestHashHex = sha256HexUtf8(manifestCanonical);
     const contentCid = cidFromSha256Hex(contentHashHex);
+    const manifestCid = cidFromSha256Hex(manifestHashHex);
 
     // Persist hashes early
     await this.db.run(
@@ -446,6 +607,31 @@ export class WunderlandSolService {
         WHERE comment_id = ?`,
       [contentHashHex, manifestHashHex, contentCid, this.cluster || 'devnet', this.programId, 'pending', commentId],
     );
+
+    // Pin bytes to IPFS raw blocks before anchoring on-chain.
+    if (this.ipfsApiUrl) {
+      try {
+        const contentBytes = Buffer.from(content, 'utf8');
+        const manifestBytes = Buffer.from(manifestCanonical, 'utf8');
+
+        if (contentBytes.length > this.maxPostBytes) {
+          throw new Error(`Comment content too large to pin (${contentBytes.length} bytes).`);
+        }
+        if (manifestBytes.length > this.maxPostBytes) {
+          throw new Error(`Comment manifest too large to pin (${manifestBytes.length} bytes).`);
+        }
+
+        await this.pinRawBlockToIpfs(contentBytes, contentCid);
+        await this.pinRawBlockToIpfs(manifestBytes, manifestCid);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await this.db.run(
+          `UPDATE wunderland_comments SET anchor_status = ?, anchor_error = ? WHERE comment_id = ?`,
+          ['failed' satisfies AnchorStatus, `IPFS pin failed: ${message}`, commentId],
+        );
+        return;
+      }
+    }
 
     const agentMap = this.loadAgentMap();
     const agentEntry = agentMap?.agents?.[seedId];
@@ -470,7 +656,25 @@ export class WunderlandSolService {
     const agentSigner = this.loadKeypair(web3, agentEntry.agentSignerKeypairPath);
     const agentIdentityPda = new web3.PublicKey(agentEntry.agentIdentityPda);
 
-    const enclavePda = await this.resolveDefaultEnclavePda({ sdk, web3 });
+    const parent = await this.db.get<{ sol_post_pda: string | null; sol_enclave_pda: string | null }>(
+      `SELECT sol_post_pda, sol_enclave_pda FROM wunderland_posts WHERE post_id = ? LIMIT 1`,
+      [safeString(row.post_id)],
+    );
+    const parentPostPda = parent?.sol_post_pda ? safeString(parent.sol_post_pda) : '';
+    const parentEnclavePda = parent?.sol_enclave_pda ? safeString(parent.sol_enclave_pda) : '';
+
+    if (!parentPostPda) {
+      await this.db.run(
+        `UPDATE wunderland_comments SET anchor_status = ?, anchor_error = ? WHERE comment_id = ?`,
+        ['missing_config', 'Parent post is not anchored on-chain yet (missing sol_post_pda).', commentId],
+      );
+      return;
+    }
+
+    const enclavePda =
+      parentEnclavePda ||
+      (await this.resolveDefaultEnclavePda({ sdk, web3 })) ||
+      '';
     if (!enclavePda) {
       await this.db.run(
         `UPDATE wunderland_comments SET anchor_status = ?, anchor_error = ? WHERE comment_id = ?`,
@@ -478,7 +682,9 @@ export class WunderlandSolService {
       );
       return;
     }
+
     const enclavePublicKey = new web3.PublicKey(enclavePda);
+    const parentPostPublicKey = new web3.PublicKey(parentPostPda);
 
     await this.db.run(
       `UPDATE wunderland_comments SET anchor_status = ? WHERE comment_id = ?`,
@@ -489,11 +695,12 @@ export class WunderlandSolService {
     const manifestHashBytes = Buffer.from(manifestHashHex, 'hex');
 
     try {
-      const res = await client.anchorPost({
+      const res = await client.anchorComment({
         agentIdentityPda,
         agentSigner,
         payer,
         enclavePda: enclavePublicKey,
+        parentPostPda: parentPostPublicKey,
         contentHash: contentHashBytes,
         manifestHash: manifestHashBytes,
       });
@@ -503,7 +710,7 @@ export class WunderlandSolService {
             SET anchor_status = ?, anchored_at = ?, sol_tx_signature = ?,
                 sol_post_pda = ?, anchor_error = NULL
           WHERE comment_id = ?`,
-        ['anchored', Date.now(), res.signature, res.postAnchorPda.toBase58(), commentId],
+        ['anchored', Date.now(), res.signature, res.commentAnchorPda.toBase58(), commentId],
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -512,6 +719,34 @@ export class WunderlandSolService {
         ['failed', message, commentId],
       );
     }
+  }
+
+  private async pinRawBlockToIpfs(content: Buffer, expectedCid: string): Promise<void> {
+    const endpoint = this.ipfsApiUrl.replace(/\/+$/, '');
+    if (!endpoint) throw new Error('IPFS pinning not configured (set WUNDERLAND_IPFS_API_URL).');
+
+    const headers: Record<string, string> = {};
+    if (this.ipfsAuth) headers.Authorization = this.ipfsAuth;
+
+    const formData = new FormData();
+    formData.append('file', new Blob([new Uint8Array(content)]));
+
+    const putUrl = `${endpoint}/api/v0/block/put?format=raw&mhtype=sha2-256&pin=true`;
+    const putRes = await fetch(putUrl, { method: 'POST', headers, body: formData });
+    if (!putRes.ok) {
+      const text = await putRes.text().catch(() => '');
+      throw new Error(`IPFS block/put failed: ${putRes.status} ${putRes.statusText} ${text}`.trim());
+    }
+
+    const putJson = (await putRes.json()) as { Key?: string };
+    const actualCid = String(putJson?.Key ?? '');
+    if (actualCid !== expectedCid) {
+      throw new Error(`IPFS CID mismatch (expected ${expectedCid}, got ${actualCid}).`);
+    }
+
+    // Extra safety: pin/add (some gateways ignore pin=true on block/put).
+    const pinUrl = `${endpoint}/api/v0/pin/add?arg=${encodeURIComponent(expectedCid)}`;
+    await fetch(pinUrl, { method: 'POST', headers }).catch(() => {});
   }
 
   private normalizeEnclaveMode(): 'default' | 'map_if_exists' {
@@ -612,6 +847,78 @@ export class WunderlandSolService {
       // RPC failures or decode errors: treat as unknown (still allows anchoring attempts).
       this.enclaveExistenceCache.set(opts.enclavePda, { status: 'unknown', checkedAt: now });
       return 'unknown';
+    }
+  }
+
+  /**
+   * Place an on-chain job bid (agent-authored).
+   *
+   * Note: payout semantics are enforced on-chain at approval time:
+   * - approval pays the accepted bid amount to the agent vault
+   * - any remainder is refunded to the creator
+   */
+  async placeJobBid(opts: {
+    seedId: string;
+    jobPdaAddress: string;
+    bidLamports: bigint;
+    messageHashHex: string;
+  }): Promise<{ success: boolean; signature?: string; bidPda?: string; error?: string }> {
+    if (!this.enabled) {
+      return { success: false, error: 'Solana integration disabled' };
+    }
+
+    if (!this.programId || !this.relayerKeypairPath) {
+      return { success: false, error: 'Missing Solana configuration (PROGRAM_ID or RELAYER_KEYPAIR)' };
+    }
+
+    const agentMap = this.loadAgentMap();
+    const agentEntry = agentMap?.agents?.[opts.seedId];
+    if (!agentEntry) {
+      return { success: false, error: `Agent ${opts.seedId} not found in agent map` };
+    }
+
+    const messageHashHex = safeString(opts.messageHashHex).trim().toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(messageHashHex)) {
+      return { success: false, error: 'Invalid messageHashHex (expected 32-byte hex)' };
+    }
+
+    try {
+      const sdk = await import('@wunderland-sol/sdk');
+      const web3 = await import('@solana/web3.js');
+
+      const client = new sdk.WunderlandSolClient({
+        programId: this.programId,
+        rpcUrl: this.rpcUrl || undefined,
+        cluster: (this.cluster as any) || undefined,
+      });
+
+      const payer = this.loadKeypair(web3, this.relayerKeypairPath);
+      const agentSigner = this.loadKeypair(web3, agentEntry.agentSignerKeypairPath);
+      const agentIdentityPda = new web3.PublicKey(agentEntry.agentIdentityPda);
+      const jobPda = new web3.PublicKey(opts.jobPdaAddress);
+
+      const res = await client.placeJobBid({
+        jobPda,
+        agentIdentityPda,
+        agentSigner,
+        payer,
+        bidLamports: BigInt(opts.bidLamports),
+        messageHash: Buffer.from(messageHashHex, 'hex'),
+      });
+
+      this.logger.log(
+        `Job bid placed: agent=${opts.seedId} job=${opts.jobPdaAddress} amount=${opts.bidLamports.toString()} (sig: ${res.signature})`
+      );
+
+      return {
+        success: true,
+        signature: res.signature,
+        bidPda: res.bidPda.toBase58(),
+      };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Failed to place job bid for ${opts.seedId}: ${error}`);
+      return { success: false, error };
     }
   }
 

@@ -757,6 +757,49 @@ export function buildPublishRewardsEpochIx(opts: {
   return { rewardsEpochPda, enclaveTreasuryPda, instruction };
 }
 
+export function buildPublishGlobalRewardsEpochIx(opts: {
+  programId: PublicKey;
+  authority: PublicKey;
+  epoch: bigint;
+  merkleRoot: Uint8Array; // 32
+  amount: bigint;
+  claimWindowSeconds: bigint;
+}): { rewardsEpochPda: PublicKey; treasuryPda: PublicKey; configPda: PublicKey; instruction: TransactionInstruction } {
+  const [configPda] = deriveConfigPDA(opts.programId);
+  const [treasuryPda] = deriveTreasuryPDA(opts.programId);
+  const [rewardsEpochPda] = deriveRewardsEpochPDA(SystemProgram.programId, opts.epoch, opts.programId);
+
+  const epochBuf = Buffer.alloc(8);
+  epochBuf.writeBigUInt64LE(opts.epoch, 0);
+  const rootBuf = encodeFixedBytes(opts.merkleRoot, 32, 'merkleRoot');
+  const amountBuf = Buffer.alloc(8);
+  amountBuf.writeBigUInt64LE(opts.amount, 0);
+  const windowBuf = Buffer.alloc(8);
+  windowBuf.writeBigInt64LE(opts.claimWindowSeconds, 0);
+
+  const data = Buffer.concat([
+    anchorDiscriminator('publish_global_rewards_epoch'),
+    epochBuf,
+    rootBuf,
+    amountBuf,
+    windowBuf,
+  ]);
+
+  const instruction = new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: configPda, isSigner: false, isWritable: false },
+      { pubkey: treasuryPda, isSigner: false, isWritable: true },
+      { pubkey: rewardsEpochPda, isSigner: false, isWritable: true },
+      { pubkey: opts.authority, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
+
+  return { rewardsEpochPda, treasuryPda, configPda, instruction };
+}
+
 export function buildClaimRewardsIx(opts: {
   programId: PublicKey;
   rewardsEpochPda: PublicKey;
@@ -825,6 +868,31 @@ export function buildSweepUnclaimedRewardsIx(opts: {
   });
 
   return { rewardsEpochPda, enclaveTreasuryPda, instruction };
+}
+
+export function buildSweepUnclaimedGlobalRewardsIx(opts: {
+  programId: PublicKey;
+  epoch: bigint;
+}): { rewardsEpochPda: PublicKey; treasuryPda: PublicKey; configPda: PublicKey; instruction: TransactionInstruction } {
+  const [configPda] = deriveConfigPDA(opts.programId);
+  const [treasuryPda] = deriveTreasuryPDA(opts.programId);
+  const [rewardsEpochPda] = deriveRewardsEpochPDA(SystemProgram.programId, opts.epoch, opts.programId);
+
+  const epochBuf = Buffer.alloc(8);
+  epochBuf.writeBigUInt64LE(opts.epoch, 0);
+  const data = Buffer.concat([anchorDiscriminator('sweep_unclaimed_global_rewards'), epochBuf]);
+
+  const instruction = new TransactionInstruction({
+    programId: opts.programId,
+    keys: [
+      { pubkey: configPda, isSigner: false, isWritable: false },
+      { pubkey: treasuryPda, isSigner: false, isWritable: true },
+      { pubkey: rewardsEpochPda, isSigner: false, isWritable: true },
+    ],
+    data,
+  });
+
+  return { rewardsEpochPda, treasuryPda, configPda, instruction };
 }
 
 export function buildAnchorPostIx(opts: {
@@ -1166,6 +1234,7 @@ export function buildApproveJobSubmissionIx(opts: {
   jobPda: PublicKey;
   escrowPda: PublicKey;
   submissionPda: PublicKey;
+  acceptedBidPda: PublicKey;
   vaultPda: PublicKey;
   creator: PublicKey;
 }): TransactionInstruction {
@@ -1176,6 +1245,7 @@ export function buildApproveJobSubmissionIx(opts: {
       { pubkey: opts.jobPda, isSigner: false, isWritable: true },
       { pubkey: opts.escrowPda, isSigner: false, isWritable: true },
       { pubkey: opts.submissionPda, isSigner: false, isWritable: false },
+      { pubkey: opts.acceptedBidPda, isSigner: false, isWritable: false },
       { pubkey: opts.vaultPda, isSigner: false, isWritable: true },
       { pubkey: opts.creator, isSigner: true, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
@@ -1824,6 +1894,26 @@ export class WunderlandSolClient {
     return { signature, rewardsEpochPda };
   }
 
+  async publishGlobalRewardsEpoch(opts: {
+    authority: Keypair;
+    epoch: bigint;
+    merkleRoot: Uint8Array;
+    amount: bigint;
+    claimWindowSeconds?: bigint;
+  }): Promise<{ signature: TransactionSignature; rewardsEpochPda: PublicKey }> {
+    const { rewardsEpochPda, instruction } = buildPublishGlobalRewardsEpochIx({
+      programId: this.programId,
+      authority: opts.authority.publicKey,
+      epoch: opts.epoch,
+      merkleRoot: opts.merkleRoot,
+      amount: opts.amount,
+      claimWindowSeconds: opts.claimWindowSeconds ?? 0n,
+    });
+    const tx = new Transaction().add(instruction);
+    const signature = await sendAndConfirmTransaction(this.connection, tx, [opts.authority]);
+    return { signature, rewardsEpochPda };
+  }
+
   async claimRewards(opts: {
     rewardsEpochPda: PublicKey;
     agentIdentityPda: PublicKey;
@@ -1854,6 +1944,18 @@ export class WunderlandSolClient {
     const { instruction } = buildSweepUnclaimedRewardsIx({
       programId: this.programId,
       enclavePda: opts.enclavePda,
+      epoch: opts.epoch,
+    });
+    const tx = new Transaction().add(instruction);
+    return sendAndConfirmTransaction(this.connection, tx, [opts.payer]);
+  }
+
+  async sweepUnclaimedGlobalRewards(opts: {
+    epoch: bigint;
+    payer: Keypair;
+  }): Promise<TransactionSignature> {
+    const { instruction } = buildSweepUnclaimedGlobalRewardsIx({
+      programId: this.programId,
       epoch: opts.epoch,
     });
     const tx = new Transaction().add(instruction);
@@ -2254,6 +2356,7 @@ export class WunderlandSolClient {
   }): Promise<TransactionSignature> {
     const [escrowPda] = this.getJobEscrowPDA(opts.jobPda);
     const [submissionPda] = this.getJobSubmissionPDA(opts.jobPda);
+    const [acceptedBidPda] = this.getJobBidPDA(opts.jobPda, opts.assignedAgentIdentityPda);
     const [vaultPda] = this.getVaultPDA(opts.assignedAgentIdentityPda);
 
     const ix = buildApproveJobSubmissionIx({
@@ -2261,6 +2364,7 @@ export class WunderlandSolClient {
       jobPda: opts.jobPda,
       escrowPda,
       submissionPda,
+      acceptedBidPda,
       vaultPda,
       creator: opts.creator.publicKey,
     });

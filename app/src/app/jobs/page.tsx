@@ -8,17 +8,20 @@ import { useScrollReveal } from '@/lib/useScrollReveal';
 import Collapsible from '@/components/Collapsible';
 
 type Job = {
-  id: string;
-  title: string;
-  description: string;
-  budget: number;
-  buyItNowLamports?: number;
-  category: string;
-  deadline: string;
+  jobPda: string;
+  title: string | null;
+  description: string | null;
+  metadataHash: string;
+  budgetLamports: string;
+  buyItNowLamports: string | null;
   status: 'open' | 'assigned' | 'submitted' | 'completed' | 'cancelled';
   creatorWallet: string;
-  bidsCount: number;
-  createdAt: string;
+  assignedAgent: string | null;
+  acceptedBid: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: number;
+  updatedAt: number;
+  cluster: string | null;
 };
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
@@ -34,26 +37,117 @@ const CATEGORIES = ['all', 'development', 'research', 'content', 'design', 'data
 // Demo jobs for display when no on-chain jobs exist
 const DEMO_JOBS: Job[] = [
   {
-    id: 'demo-1', title: 'Analyze DeFi protocol risk metrics', description: 'Research and compile risk analysis for top 10 Solana DeFi protocols.',
-    budget: 2_500_000_000, category: 'research', deadline: '2025-04-01', status: 'open', creatorWallet: 'Demo...User', bidsCount: 3, createdAt: '2025-03-01',
+    jobPda: 'demo-1',
+    title: 'Analyze DeFi protocol risk metrics',
+    description: 'Research and compile risk analysis for top 10 Solana DeFi protocols.',
+    metadataHash: 'demo',
+    budgetLamports: String(2_500_000_000),
+    buyItNowLamports: String(3_000_000_000),
+    status: 'open',
+    creatorWallet: 'Demo...User',
+    assignedAgent: null,
+    acceptedBid: null,
+    metadata: { category: 'research', deadline: '2025-04-01' },
+    createdAt: 1740787200,
+    updatedAt: 1740787200,
+    cluster: 'devnet',
   },
   {
-    id: 'demo-2', title: 'Build Telegram notification bot', description: 'Create a bot that forwards on-chain events to Telegram channels.',
-    budget: 5_000_000_000, buyItNowLamports: 6_000_000_000, category: 'development', deadline: '2025-04-15', status: 'open', creatorWallet: 'Demo...User', bidsCount: 7, createdAt: '2025-03-05',
+    jobPda: 'demo-2',
+    title: 'Build Telegram notification bot',
+    description: 'Create a bot that forwards on-chain events to Telegram channels.',
+    metadataHash: 'demo',
+    budgetLamports: String(5_000_000_000),
+    buyItNowLamports: String(6_000_000_000),
+    status: 'open',
+    creatorWallet: 'Demo...User',
+    assignedAgent: null,
+    acceptedBid: null,
+    metadata: { category: 'development', deadline: '2025-04-15' },
+    createdAt: 1741132800,
+    updatedAt: 1741132800,
+    cluster: 'devnet',
   },
   {
-    id: 'demo-3', title: 'Write weekly market summary', description: 'Produce a weekly digest of Solana ecosystem news and market trends.',
-    budget: 1_000_000_000, category: 'content', deadline: '2025-03-20', status: 'assigned', creatorWallet: 'Demo...User', bidsCount: 12, createdAt: '2025-02-28',
+    jobPda: 'demo-3',
+    title: 'Write weekly market summary',
+    description: 'Produce a weekly digest of Solana ecosystem news and market trends.',
+    metadataHash: 'demo',
+    budgetLamports: String(1_000_000_000),
+    buyItNowLamports: null,
+    status: 'assigned',
+    creatorWallet: 'Demo...User',
+    assignedAgent: 'AgntB...5678',
+    acceptedBid: null,
+    metadata: { category: 'content', deadline: '2025-03-20' },
+    createdAt: 1740700800,
+    updatedAt: 1740700800,
+    cluster: 'devnet',
   },
   {
-    id: 'demo-4', title: 'Design agent avatar generator', description: 'Create a procedural avatar system based on HEXACO trait vectors.',
-    budget: 3_000_000_000, category: 'design', deadline: '2025-05-01', status: 'open', creatorWallet: 'Demo...User', bidsCount: 2, createdAt: '2025-03-10',
+    jobPda: 'demo-4',
+    title: 'Design agent avatar generator',
+    description: 'Create a procedural avatar system based on HEXACO trait vectors.',
+    metadataHash: 'demo',
+    budgetLamports: String(3_000_000_000),
+    buyItNowLamports: null,
+    status: 'open',
+    creatorWallet: 'Demo...User',
+    assignedAgent: null,
+    acceptedBid: null,
+    metadata: { category: 'design', deadline: '2025-05-01' },
+    createdAt: 1741564800,
+    updatedAt: 1741564800,
+    cluster: 'devnet',
   },
   {
-    id: 'demo-5', title: 'Index historical post data', description: 'Build a data pipeline to index and analyze all historical post anchors.',
-    budget: 4_000_000_000, category: 'data', deadline: '2025-04-30', status: 'completed', creatorWallet: 'Demo...User', bidsCount: 5, createdAt: '2025-02-15',
+    jobPda: 'demo-5',
+    title: 'Index historical post data',
+    description: 'Build a data pipeline to index and analyze all historical post anchors.',
+    metadataHash: 'demo',
+    budgetLamports: String(4_000_000_000),
+    buyItNowLamports: null,
+    status: 'completed',
+    creatorWallet: 'Demo...User',
+    assignedAgent: 'AgntA...1234',
+    acceptedBid: null,
+    metadata: { category: 'data', deadline: '2025-04-30' },
+    createdAt: 1739577600,
+    updatedAt: 1739577600,
+    cluster: 'devnet',
   },
 ];
+
+function toLamportsBigInt(value: string | number | bigint | null | undefined): bigint {
+  try {
+    if (typeof value === 'bigint') return value;
+    if (typeof value === 'number' && Number.isFinite(value)) return BigInt(Math.trunc(value));
+    if (typeof value === 'string' && value.trim()) return BigInt(value.trim());
+    return 0n;
+  } catch {
+    return 0n;
+  }
+}
+
+function formatSolFromLamports(value: string | number | bigint | null | undefined, decimals = 2): string {
+  const lamports = toLamportsBigInt(value);
+  const sol = lamports / 1_000_000_000n;
+  const frac = lamports % 1_000_000_000n;
+  const fracStr = frac.toString().padStart(9, '0').slice(0, Math.max(0, decimals));
+  return decimals > 0 ? `${sol.toString()}.${fracStr}` : sol.toString();
+}
+
+function getJobCategory(job: Job): string {
+  const raw = job.metadata && typeof job.metadata.category === 'string' ? job.metadata.category : '';
+  const trimmed = raw.trim();
+  return trimmed || 'other';
+}
+
+function getJobDeadline(job: Job): string | null {
+  const raw = job.metadata && typeof job.metadata.deadline === 'string' ? job.metadata.deadline : '';
+  const trimmed = raw.trim();
+  return trimmed || null;
+}
 
 export default function JobsPage() {
   return (
@@ -98,10 +192,13 @@ function JobsContent() {
   const filtered = useMemo(() => {
     return jobs.filter((j) => {
       if (statusFilter !== 'all' && j.status !== statusFilter) return false;
-      if (categoryFilter !== 'all' && j.category !== categoryFilter) return false;
+      const category = getJobCategory(j);
+      if (categoryFilter !== 'all' && category !== categoryFilter) return false;
       if (debouncedQuery) {
         const q = debouncedQuery.toLowerCase();
-        if (!j.title.toLowerCase().includes(q) && !j.description.toLowerCase().includes(q)) return false;
+        const title = (j.title ?? '').toLowerCase();
+        const desc = (j.description ?? '').toLowerCase();
+        if (!title.includes(q) && !desc.includes(q)) return false;
       }
       return true;
     });
@@ -126,6 +223,7 @@ function JobsContent() {
           </p>
           <p className="mt-2 text-xs text-[var(--text-tertiary)] font-mono">
             Max payout is escrowed in a JobEscrow PDA (buy-it-now if set, otherwise budget) until work is approved.
+            Approval pays the <span className="text-[var(--text-secondary)]">accepted bid</span> to the agent vault and refunds any remainder back to the creator wallet.
           </p>
         </div>
         <Link
@@ -163,6 +261,7 @@ function JobsContent() {
               <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[rgba(153,69,255,0.15)] border border-[rgba(153,69,255,0.3)] flex items-center justify-center text-xs font-bold text-[var(--sol-purple)]">1</div>
               <div>
                 <strong className="text-[var(--text-primary)]">Post a job</strong> — Describe your task, set a base budget in SOL, and choose a deadline. The max payout is escrowed in a JobEscrow PDA (buy-it-now if set, otherwise budget) until completion.
+                On approval, the agent is paid the accepted bid amount and the remainder is refunded.
               </div>
             </div>
             <div className="flex items-start gap-3">
@@ -283,21 +382,23 @@ function JobsContent() {
 
         {filtered.map((job) => {
           const statusMeta = STATUS_COLORS[job.status] || STATUS_COLORS.open;
-          const budgetSol = (job.budget / 1e9).toFixed(2);
-          const buyItNowSol = job.buyItNowLamports ? (job.buyItNowLamports / 1e9).toFixed(2) : null;
-          const isExpired = new Date(job.deadline) < new Date() && job.status === 'open';
+          const budgetSol = formatSolFromLamports(job.budgetLamports, 2);
+          const buyItNowSol = job.buyItNowLamports ? formatSolFromLamports(job.buyItNowLamports, 2) : null;
+          const deadline = getJobDeadline(job);
+          const isExpired = Boolean(deadline) && new Date(deadline as string) < new Date() && job.status === 'open';
+          const category = getJobCategory(job);
 
           return (
             <Link
-              key={job.id}
-              href={`/jobs/${job.id}`}
+              key={job.jobPda}
+              href={`/jobs/${job.jobPda}`}
               className="holo-card p-5 block group hover:border-[rgba(153,69,255,0.25)] transition-all duration-200"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <h3 className="font-display font-semibold text-sm text-[var(--text-primary)] group-hover:text-[var(--neon-cyan)] transition-colors truncate">
-                      {job.title}
+                      {job.title || 'Untitled job'}
                     </h3>
                     <span
                       className="text-[10px] font-mono px-1.5 py-0.5 rounded whitespace-nowrap"
@@ -312,7 +413,7 @@ function JobsContent() {
                     )}
                   </div>
                   <p className="text-xs text-[var(--text-secondary)] leading-relaxed line-clamp-2">
-                    {job.description}
+                    {job.description || 'No description provided.'}
                   </p>
                 </div>
 
@@ -333,10 +434,9 @@ function JobsContent() {
 
               <div className="mt-3 flex items-center gap-4 text-[10px] font-mono text-[var(--text-tertiary)]">
                 <span className="badge text-[10px] bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)]">
-                  {job.category}
+                  {category}
                 </span>
-                <span>{job.bidsCount} bid{job.bidsCount !== 1 ? 's' : ''}</span>
-                <span>Due {new Date(job.deadline).toLocaleDateString()}</span>
+                {deadline && <span>Due {new Date(deadline).toLocaleDateString()}</span>}
                 <span>by {job.creatorWallet.slice(0, 8)}…</span>
               </div>
             </Link>

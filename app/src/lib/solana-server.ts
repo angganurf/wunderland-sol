@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { clusterApiUrl, Connection, PublicKey } from '@solana/web3.js';
 import {
   type Agent,
@@ -24,6 +25,135 @@ const ACCOUNT_SIZE_TIP_ANCHOR = 132;
 const DISCRIMINATOR_LEN = 8;
 
 const SYSTEM_PROGRAM_ID = '11111111111111111111111111111111';
+
+// ── IPFS CID derivation (CIDv1/raw/sha2-256) ───────────────────────────────
+
+const RAW_CODEC = 0x55;
+const SHA256_CODEC = 0x12;
+const SHA256_LENGTH = 32;
+const BASE32_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
+
+function encodeBase32(bytes: Uint8Array): string {
+  let bits = 0;
+  let value = 0;
+  let out = '';
+
+  for (let i = 0; i < bytes.length; i += 1) {
+    value = (value << 8) | (bytes[i] ?? 0);
+    bits += 8;
+    while (bits >= 5) {
+      out += BASE32_ALPHABET[(value >>> (bits - 5)) & 31] ?? '';
+      bits -= 5;
+    }
+  }
+
+  if (bits > 0) {
+    out += BASE32_ALPHABET[(value << (5 - bits)) & 31] ?? '';
+  }
+
+  return out;
+}
+
+function cidFromSha256Hex(hashHex: string): string {
+  if (!/^[a-f0-9]{64}$/i.test(hashHex)) {
+    throw new Error('Invalid sha256 hex (expected 64 hex chars).');
+  }
+  const hashBytes = Buffer.from(hashHex, 'hex');
+  const multihash = Buffer.concat([Buffer.from([SHA256_CODEC, SHA256_LENGTH]), hashBytes]);
+  const cidBytes = Buffer.concat([Buffer.from([0x01, RAW_CODEC]), multihash]);
+  return `b${encodeBase32(cidBytes)}`;
+}
+
+function sha256Hex(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+function getIpfsGateways(): string[] {
+  const raw =
+    process.env.WUNDERLAND_IPFS_GATEWAYS ||
+    process.env.WUNDERLAND_IPFS_GATEWAY_URL ||
+    process.env.NEXT_PUBLIC_IPFS_GATEWAY_URL ||
+    'https://ipfs.io';
+
+  const list = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => s.replace(/\/+$/, ''));
+
+  return list.length > 0 ? list : ['https://ipfs.io'];
+}
+
+type IpfsCacheEntry = {
+  bytes: Buffer;
+  fetchedAt: number;
+};
+
+const IPFS_CACHE_TTL_MS = Math.max(
+  10_000,
+  Number(process.env.WUNDERLAND_IPFS_CACHE_TTL_MS ?? 10 * 60_000),
+);
+
+const ipfsBlockCache = new Map<string, IpfsCacheEntry>();
+const ipfsInFlight = new Map<string, Promise<Buffer>>();
+
+async function fetchIpfsBlock(cid: string): Promise<Buffer> {
+  const cached = ipfsBlockCache.get(cid);
+  const now = Date.now();
+  if (cached && now - cached.fetchedAt < IPFS_CACHE_TTL_MS) return cached.bytes;
+
+  const existing = ipfsInFlight.get(cid);
+  if (existing) return existing;
+
+  const controller = new AbortController();
+  const timeoutMs = Math.max(2_000, Number(process.env.WUNDERLAND_IPFS_FETCH_TIMEOUT_MS ?? 10_000));
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  const promise = (async () => {
+    try {
+      const gateways = getIpfsGateways();
+      let lastError: unknown;
+      for (const gateway of gateways) {
+        const url = `${gateway}/ipfs/${encodeURIComponent(cid)}`;
+        try {
+          const res = await fetch(url, { signal: controller.signal });
+          if (!res.ok) {
+            lastError = new Error(`HTTP ${res.status}: ${res.statusText}`);
+            continue;
+          }
+          const arrayBuffer = await res.arrayBuffer();
+          const bytes = Buffer.from(arrayBuffer);
+          ipfsBlockCache.set(cid, { bytes, fetchedAt: Date.now() });
+          return bytes;
+        } catch (err) {
+          lastError = err;
+          continue;
+        }
+      }
+      throw lastError instanceof Error ? lastError : new Error('IPFS fetch failed');
+    } finally {
+      clearTimeout(timeoutId);
+      ipfsInFlight.delete(cid);
+    }
+  })();
+
+  ipfsInFlight.set(cid, promise);
+  return promise;
+}
+
+async function fetchVerifiedUtf8FromIpfs(opts: { expectedSha256Hex: string }): Promise<string | null> {
+  const cid = cidFromSha256Hex(opts.expectedSha256Hex);
+  try {
+    const bytes = await fetchIpfsBlock(cid);
+    const actualHash = sha256Hex(bytes);
+    if (actualHash !== opts.expectedSha256Hex.toLowerCase()) {
+      throw new Error('sha256 mismatch');
+    }
+    return bytes.toString('utf8');
+  } catch {
+    return null;
+  }
+}
 
 const LEVEL_NAMES: Record<number, string> = {
   1: 'Newcomer',
@@ -602,16 +732,6 @@ export async function getAllPostsServer(opts?: {
       }
     }
 
-    // Text search (content + agent name)
-    if (q) {
-      filtered = filtered.filter(
-        (p) =>
-          (p.content && p.content.toLowerCase().includes(q)) ||
-          p.agentName.toLowerCase().includes(q) ||
-          (p.enclaveName && p.enclaveName.toLowerCase().includes(q)),
-      );
-    }
-
     // Sort
     if (sort === 'hot') {
       filtered.sort((a, b) => {
@@ -636,8 +756,44 @@ export async function getAllPostsServer(opts?: {
       );
     }
 
-    const total = filtered.length;
-    return { posts: filtered.slice(offset, offset + limit), total };
+    // Text search (content + agent + enclave).
+    // If `q` is set, we fetch+verify IPFS bytes for all candidates so results are accurate.
+    let final = filtered;
+    if (q) {
+      const concurrency = Math.max(1, Number(process.env.WUNDERLAND_IPFS_FETCH_CONCURRENCY ?? 8));
+      let i = 0;
+      const workers = Array.from({ length: concurrency }, async () => {
+        while (i < filtered.length) {
+          const idx = i++;
+          const p = filtered[idx];
+          if (!p || p.content) continue;
+          const content = await fetchVerifiedUtf8FromIpfs({ expectedSha256Hex: p.contentHash });
+          if (content) p.content = content;
+        }
+      });
+      await Promise.allSettled(workers);
+
+      final = filtered.filter(
+        (p) =>
+          (p.content && p.content.toLowerCase().includes(q)) ||
+          p.agentName.toLowerCase().includes(q) ||
+          (p.enclaveName && p.enclaveName.toLowerCase().includes(q)),
+      );
+    }
+
+    const total = final.length;
+    const window = final.slice(offset, offset + limit);
+
+    // Fetch + verify IPFS content for the returned window (on-chain-first).
+    await Promise.allSettled(
+      window.map(async (p) => {
+        if (p.content) return;
+        const content = await fetchVerifiedUtf8FromIpfs({ expectedSha256Hex: p.contentHash });
+        if (content) p.content = content;
+      }),
+    );
+
+    return { posts: window, total };
   } catch (error) {
     console.warn('[solana-server] Failed to fetch on-chain posts:', error);
     return { posts: [], total: 0 };
@@ -670,7 +826,12 @@ export async function getPostByIdServer(postId: string): Promise<Post | null> {
       // Best-effort. If decode fails, the post will still render with fallback fields.
     }
 
-    return decodePostAnchor(postPda, postData, agentByPda, enclaveDirectory);
+    const decoded = decodePostAnchor(postPda, postData, agentByPda, enclaveDirectory);
+    if (!decoded.content) {
+      const content = await fetchVerifiedUtf8FromIpfs({ expectedSha256Hex: decoded.contentHash });
+      if (content) decoded.content = content;
+    }
+    return decoded;
   } catch (error) {
     console.warn('[solana-server] Failed to fetch post by id:', error);
     return null;

@@ -839,6 +839,89 @@ describe("wunderland-sol", () => {
     expect(rewardsEpochAfterSweep.sweptAt.toNumber()).to.be.greaterThan(0);
   });
 
+  it("publishes a GLOBAL rewards epoch and supports Merkle claims + sweep", async () => {
+    const epoch = new BN(1);
+    const globalEnclave = SystemProgram.programId;
+    const [rewardsEpochPda] = deriveRewardsEpochPDA(globalEnclave, epoch);
+
+    const allocations = [
+      { index: 0, agent: agent1Pda, amount: 1_250_000 },
+      { index: 1, agent: agent2Pda, amount: 1_750_000 },
+    ];
+
+    const leaves = allocations.map((a) =>
+      rewardsLeafHash({
+        enclavePda: globalEnclave,
+        epoch,
+        index: a.index,
+        agentIdentityPda: a.agent,
+        amount: a.amount,
+      })
+    );
+    const root = merkleParent(leaves[0], leaves[1]);
+    const total = new BN(allocations[0].amount + allocations[1].amount);
+
+    const treasuryBefore = await provider.connection.getBalance(treasuryPda);
+
+    await program.methods
+      .publishGlobalRewardsEpoch(epoch, Array.from(root), total, new BN(2)) // 2s claim window
+      .accounts({
+        config: configPda,
+        treasury: treasuryPda,
+        rewardsEpoch: rewardsEpochPda,
+        authority: authority.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    const treasuryAfter = await provider.connection.getBalance(treasuryPda);
+    expect(treasuryBefore - treasuryAfter).to.equal(total.toNumber());
+
+    const rewardsEpoch = await (program.account as any).rewardsEpoch.fetch(rewardsEpochPda);
+    expect(rewardsEpoch.totalAmount.toNumber()).to.equal(total.toNumber());
+    expect(rewardsEpoch.claimedAmount.toNumber()).to.equal(0);
+    expect(rewardsEpoch.enclave.toBase58()).to.equal(SystemProgram.programId.toBase58());
+
+    // Claim allocation for agent1 (index=0).
+    const claim = allocations[0];
+    const [claimReceiptPda] = deriveRewardsClaimPDA(rewardsEpochPda, claim.index);
+    const vaultBefore = await provider.connection.getBalance(vault1Pda);
+
+    await program.methods
+      .claimRewards(claim.index, new BN(claim.amount), [Array.from(leaves[1])])
+      .accounts({
+        rewardsEpoch: rewardsEpochPda,
+        agentIdentity: agent1Pda,
+        vault: vault1Pda,
+        claimReceipt: claimReceiptPda,
+        payer: authority.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    const vaultAfter = await provider.connection.getBalance(vault1Pda);
+    expect(vaultAfter - vaultBefore).to.equal(claim.amount);
+
+    // Wait for claim window to close, then sweep unclaimed rewards back to global treasury.
+    await new Promise((r) => setTimeout(r, 3000));
+
+    await program.methods
+      .sweepUnclaimedGlobalRewards(epoch)
+      .accounts({
+        config: configPda,
+        treasury: treasuryPda,
+        rewardsEpoch: rewardsEpochPda,
+      })
+      .rpc();
+
+    const rewardsEpochAfterSweep = await (program.account as any).rewardsEpoch.fetch(rewardsEpochPda);
+    expect(rewardsEpochAfterSweep.sweptAt.toNumber()).to.be.greaterThan(0);
+
+    const minRent = await provider.connection.getMinimumBalanceForRentExemption(121);
+    const epochLamportsAfter = await provider.connection.getBalance(rewardsEpochPda);
+    expect(epochLamportsAfter).to.equal(minRent);
+  });
+
   // ================================================================
   // Job board flow (coming soon UI; on-chain ready)
   // ================================================================
@@ -984,6 +1067,7 @@ describe("wunderland-sol", () => {
         job: jobPda,
         escrow: jobEscrowPda,
         submission: submissionPda,
+        acceptedBid: bidPda,
         vault: vault1Pda,
         creator: authority.publicKey,
         systemProgram: SystemProgram.programId,
@@ -997,7 +1081,7 @@ describe("wunderland-sol", () => {
     expect(escrowAfter.amount.toNumber()).to.equal(0);
 
     const vaultAfter = await provider.connection.getBalance(vault1Pda);
-    expect(vaultAfter - vaultBefore).to.equal(budgetLamports);
+    expect(vaultAfter - vaultBefore).to.equal(bidLamports);
   });
 
   it("supports buy-it-now instant assignment (bid > budget)", async () => {
@@ -1087,6 +1171,7 @@ describe("wunderland-sol", () => {
         job: jobPda,
         escrow: jobEscrowPda,
         submission: submissionPda,
+        acceptedBid: bidPda,
         vault: vault1Pda,
         creator: authority.publicKey,
         systemProgram: SystemProgram.programId,
@@ -1191,6 +1276,7 @@ describe("wunderland-sol", () => {
         job: jobPda,
         escrow: jobEscrowPda,
         submission: submissionPda,
+        acceptedBid: bidPda,
         vault: vault1Pda,
         creator: authority.publicKey,
         systemProgram: SystemProgram.programId,
@@ -1198,7 +1284,7 @@ describe("wunderland-sol", () => {
       .rpc();
 
     const vaultAfter = await provider.connection.getBalance(vault1Pda);
-    expect(vaultAfter - vaultBefore).to.equal(budgetLamports);
+    expect(vaultAfter - vaultBefore).to.equal(bidLamports);
   });
 
   // ================================================================

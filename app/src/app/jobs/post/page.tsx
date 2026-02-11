@@ -39,6 +39,7 @@ export default function PostJobPage() {
   const [description, setDescription] = useState('');
   const [confidentialDetails, setConfidentialDetails] = useState('');
   const [budgetSol, setBudgetSol] = useState('');
+  const [minAcceptedBidSol, setMinAcceptedBidSol] = useState('');
   const [buyItNowSol, setBuyItNowSol] = useState('');
   const [category, setCategory] = useState('development');
   const [deadline, setDeadline] = useState('');
@@ -70,17 +71,18 @@ export default function PostJobPage() {
     setResult(null);
 
     try {
-      // Compute metadata hash from job details
-      const metadata = canonicalizeJsonString(JSON.stringify({
-        title: title.trim(),
-        description: description.trim(),
-        category,
-        deadline,
-      }));
-      const metadataHash = await sha256Utf8(metadata);
-
       const jobNonce = safeJobNonce();
       const budgetLamports = BigInt(Math.round(budget * 1e9));
+
+      const minAcceptedBid = minAcceptedBidSol.trim() ? parseFloat(minAcceptedBidSol) : undefined;
+      const minAcceptedBidLamports =
+        minAcceptedBid && !isNaN(minAcceptedBid) && minAcceptedBid > 0
+          ? BigInt(Math.round(minAcceptedBid * 1e9))
+          : 0n;
+
+      if (minAcceptedBidLamports > 0n && minAcceptedBidLamports > budgetLamports) {
+        throw new Error('Minimum accepted bid must be less than or equal to the budget.');
+      }
 
       // Parse buy-it-now price if provided
       const buyItNow = buyItNowSol.trim() ? parseFloat(buyItNowSol) : undefined;
@@ -89,6 +91,19 @@ export default function PostJobPage() {
         : undefined;
       const escrowLamports = buyItNowLamports ?? budgetLamports;
       const escrowSol = Number(escrowLamports) / 1e9;
+
+      // Compute metadata hash from job details
+      const metadataObject: Record<string, unknown> = {
+        title: title.trim(),
+        description: description.trim(),
+        category,
+        deadline,
+      };
+      if (minAcceptedBidLamports > 0n) {
+        metadataObject.minAcceptedBidLamports = minAcceptedBidLamports.toString();
+      }
+      const metadata = canonicalizeJsonString(JSON.stringify(metadataObject));
+      const metadataHash = await sha256Utf8(metadata);
 
       const { jobPda, instruction } = buildCreateJobIx({
         creator: publicKey,
@@ -232,6 +247,7 @@ export default function PostJobPage() {
         </p>
         <p className="mt-2 text-xs text-[var(--text-tertiary)] font-mono">
           Max payout is escrowed on-chain (buy-it-now if set, otherwise budget) until you approve the completed work.
+          Approval pays the accepted bid amount to the agent vault and refunds any remainder back to your wallet.
         </p>
       </div>
 
@@ -335,6 +351,9 @@ export default function PostJobPage() {
                 focus:outline-none focus:border-[rgba(153,69,255,0.4)]
                 transition-all"
             />
+            <p className="text-[10px] text-[var(--text-tertiary)] leading-relaxed">
+              This is the maximum payout you escrow. Approval pays the accepted bid amount (not the full budget).
+            </p>
           </div>
           <div className="space-y-2">
             <label className="text-xs font-mono uppercase tracking-wider text-[var(--text-tertiary)]">
@@ -356,6 +375,29 @@ export default function PostJobPage() {
               ))}
             </select>
           </div>
+        </div>
+
+        {/* Minimum accepted bid (optional) */}
+        <div className="space-y-2">
+          <label className="text-xs font-mono uppercase tracking-wider text-[var(--text-tertiary)]">
+            Minimum Accepted Bid (SOL) (Optional)
+          </label>
+          <input
+            type="number"
+            value={minAcceptedBidSol}
+            onChange={(e) => setMinAcceptedBidSol(e.target.value)}
+            placeholder="e.g., 0.5"
+            step="0.01"
+            min="0"
+            className="w-full px-4 py-3 rounded-lg text-sm
+              bg-[var(--bg-glass)] border border-[var(--border-glass)]
+              text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]
+              focus:outline-none focus:border-[rgba(153,69,255,0.4)]
+              transition-all"
+          />
+          <p className="text-[10px] text-[var(--text-tertiary)] leading-relaxed">
+            Creator reserve price. Bids below this amount should be ignored when assigning the job.
+          </p>
         </div>
 
         {/* Buy it now price (optional) */}
@@ -413,6 +455,11 @@ export default function PostJobPage() {
               </div>
               <div className="text-right flex-shrink-0">
                 <div className="font-mono text-sm font-semibold text-[var(--deco-gold)]">{budgetSol} SOL</div>
+                {minAcceptedBidSol && parseFloat(minAcceptedBidSol) > 0 && (
+                  <div className="text-[10px] font-mono text-[var(--text-tertiary)] mt-0.5">
+                    Floor {minAcceptedBidSol} SOL
+                  </div>
+                )}
                 {buyItNowSol && parseFloat(buyItNowSol) > 0 && (
                   <div className="text-[10px] font-mono text-[var(--text-tertiary)] mt-0.5">⚡ {buyItNowSol} SOL instant</div>
                 )}

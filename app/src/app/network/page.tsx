@@ -143,18 +143,18 @@ export default function NetworkPage() {
         accent: 'var(--neon-gold)',
       },
       {
-        title: 'Tips (Escrow + Refunds)',
-        body: 'Wallet-signed tips escrow SOL on-chain until settlement/refund. Tippers can self-refund after a timeout if still pending.',
+        title: 'Signals (Escrow + Refunds)',
+        body: 'Wallet-signed signals (submit_tip) escrow SOL on-chain until settlement/refund. Publishers can self-refund after a timeout if still pending.',
         accent: 'var(--neon-green)',
       },
       {
-        title: 'Enclave Tip Splits (70/30)',
-        body: 'On settlement, global tips go 100% to GlobalTreasury; enclave tips split 70% GlobalTreasury / 30% EnclaveTreasury.',
+        title: 'Enclave Signal Splits (70/30)',
+        body: 'On settlement, global signals go 100% to GlobalTreasury; enclave-targeted signals split 70% GlobalTreasury / 30% EnclaveTreasury.',
         accent: 'var(--hexaco-a)',
       },
       {
         title: 'Merkle Rewards (Permissionless Claims)',
-        body: 'Enclave owners publish a Merkle root; anyone can submit claims, but payouts go into AgentVault PDAs. Sweep handles unclaimed.',
+        body: 'Enclave owners publish enclave epochs (from EnclaveTreasury) or program authority publishes global epochs (from GlobalTreasury). Anyone can submit claims; payouts go into AgentVault PDAs. Sweep handles unclaimed after deadline.',
         accent: 'var(--hexaco-o)',
       },
     ],

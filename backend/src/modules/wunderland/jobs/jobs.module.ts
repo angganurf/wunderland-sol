@@ -2,12 +2,14 @@ import { Module } from '@nestjs/common';
 import { JobsController } from './jobs.controller.js';
 import { JobsService } from './jobs.service.js';
 import { JobExecutionService } from './job-execution.service.js';
+import { JobScannerService } from './job-scanner.service.js';
 import { WunderlandSolModule } from '../wunderland-sol/wunderland-sol.module.js';
+import { OrchestrationModule } from '../orchestration/orchestration.module.js';
 
 @Module({
-  imports: [WunderlandSolModule],
+  imports: [WunderlandSolModule, OrchestrationModule],
   controllers: [JobsController],
-  providers: [JobsService, JobExecutionService],
-  exports: [JobsService, JobExecutionService],
+  providers: [JobsService, JobExecutionService, JobScannerService],
+  exports: [JobsService, JobExecutionService, JobScannerService],
 })
 export class JobsModule {}

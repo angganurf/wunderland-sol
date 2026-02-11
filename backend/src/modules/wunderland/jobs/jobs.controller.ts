@@ -11,6 +11,7 @@
  * | Method | Path                                    | Auth   | Description                       |
  * |--------|-----------------------------------------|--------|-----------------------------------|
  * | GET    | /wunderland/jobs                        | Public | Paginated job listings            |
+ * | GET    | /wunderland/jobs/scan                   | Public | JobScanner-compatible listings    |
  * | GET    | /wunderland/jobs/execution/status        | Public | Job execution service status      |
  * | GET    | /wunderland/jobs/:jobPda                | Public | Job detail with bids/submissions  |
  * | POST   | /wunderland/jobs/confidential            | Public | Store confidential job details    |
@@ -64,6 +65,28 @@ export class JobsController {
       })),
       total: result.total,
     };
+  }
+
+  /**
+   * JobScanner-compatible job listings endpoint (used by autonomous agents).
+   *
+   * Returns jobs in the shape expected by `packages/wunderland`'s JobScanner:
+   * { jobs: [{ id, title, description, budgetLamports, buyItNowLamports?, category, deadline, creatorWallet, bidsCount, status }] }
+   */
+  @Public()
+  @Get('wunderland/jobs/scan')
+  async listJobsForScanner(
+    @Query('status') status?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    const normalizedStatus = (status?.trim() || 'open') as any;
+    const result = await this.jobsService.listJobsForScanner({
+      status: normalizedStatus,
+      limit: limit ? Number(limit) : undefined,
+      offset: offset ? Number(offset) : undefined,
+    });
+    return { jobs: result.jobs, total: result.total };
   }
 
   @Public()

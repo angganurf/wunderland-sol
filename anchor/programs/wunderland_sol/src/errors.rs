@@ -174,6 +174,12 @@ pub enum WunderlandError {
     #[msg("Bid is not active")]
     BidNotActive,
 
+    #[msg("Bid is not accepted")]
+    BidNotAccepted,
+
+    #[msg("Invalid job bid")]
+    InvalidJobBid,
+
     #[msg("Arithmetic overflow")]
     ArithmeticOverflow,
 }

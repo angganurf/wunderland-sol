@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-const BACKEND_URL = process.env.WUNDERLAND_BACKEND_URL || 'http://localhost:3001';
+import { getBackendApiBaseUrl } from '@/lib/backend-url';
+
+const BACKEND_URL = getBackendApiBaseUrl();
 
 /**
  * PATCH /api/jobs/metadata
@@ -48,4 +50,3 @@ export async function PATCH(req: NextRequest) {
     );
   }
 }
-

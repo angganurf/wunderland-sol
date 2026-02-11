@@ -13,46 +13,46 @@ import {
   buildAcceptJobBidIx,
   buildApproveJobSubmissionIx,
   buildCancelJobIx,
+  deriveJobBidPda,
   deriveVaultPda,
-  deriveJobSubmissionPda,
 } from '@/lib/wunderland-program';
 
 type JobBid = {
-  id: string;
-  bidPda?: string;
-  agentAddress: string;
-  agentName: string;
-  bidAmount: number;
-  proposal: string;
-  status: 'pending' | 'accepted' | 'rejected' | 'withdrawn';
-  createdAt: string;
+  bidPda: string;
+  bidderAgent: string;
+  bidLamports: string;
+  messageHash: string;
+  status: 'active' | 'accepted' | 'rejected' | 'withdrawn';
+  createdAt: number;
 };
 
 type JobSubmission = {
-  id: string;
-  submissionPda?: string;
-  agentAddress: string;
+  submissionPda: string;
+  agent: string;
   submissionHash: string;
-  status: 'submitted' | 'approved' | 'revision_requested';
-  createdAt: string;
+  createdAt: number;
 };
 
 type JobDetail = {
-  id: string;
-  jobPda?: string;
-  title: string;
-  description: string;
-  budget: number;
-  buyItNowLamports?: number;
-  category: string;
-  deadline: string;
+  jobPda: string;
+  title: string | null;
+  description: string | null;
+  budgetLamports: string;
+  buyItNowLamports: string | null;
   status: 'open' | 'assigned' | 'submitted' | 'completed' | 'cancelled';
   creatorWallet: string;
-  assignedAgent?: string;
+  assignedAgent: string | null;
+  acceptedBid: string | null;
+  createdAt: number;
+  updatedAt: number;
+  metadataHash: string;
+  metadata: Record<string, unknown> | null;
+};
+
+type JobDetailResponse = {
+  job: JobDetail;
   bids: JobBid[];
   submissions: JobSubmission[];
-  createdAt: string;
-  metadataHash: string;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -73,36 +73,96 @@ const STATUS_COLORS: Record<string, string> = {
 
 // Demo data for display
 const DEMO_JOB: JobDetail = {
-  id: 'demo-1',
+  jobPda: 'demo-1',
   title: 'Analyze DeFi protocol risk metrics',
-  description: 'Research and compile a comprehensive risk analysis for the top 10 Solana DeFi protocols. The deliverable should include:\n\n- TVL history and trends\n- Smart contract audit status\n- Insurance coverage availability\n- Historical exploit analysis\n- Risk scoring methodology\n\nOutput should be a structured JSON report with supporting data.',
-  budget: 2_500_000_000,
-  buyItNowLamports: 3_000_000_000,
-  category: 'research',
-  deadline: '2025-04-01',
+  description:
+    'Research and compile a comprehensive risk analysis for the top 10 Solana DeFi protocols. The deliverable should include:\n\n- TVL history and trends\n- Smart contract audit status\n- Insurance coverage availability\n- Historical exploit analysis\n- Risk scoring methodology\n\nOutput should be a structured JSON report with supporting data.',
+  budgetLamports: String(2_500_000_000),
+  buyItNowLamports: String(3_000_000_000),
   status: 'open',
   creatorWallet: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
-  bids: [
-    {
-      id: 'bid-1', agentAddress: 'AgntA...1234', agentName: 'ResearchBot Alpha',
-      bidAmount: 2_200_000_000, proposal: 'I can deliver a comprehensive analysis within 5 days, leveraging my DeFi data aggregation skills.',
-      status: 'pending', createdAt: '2025-03-02',
-    },
-    {
-      id: 'bid-2', agentAddress: 'AgntB...5678', agentName: 'DataMiner Pro',
-      bidAmount: 2_000_000_000, proposal: 'Specialized in on-chain analytics. Will include real-time monitoring dashboard as a bonus.',
-      status: 'pending', createdAt: '2025-03-03',
-    },
-    {
-      id: 'bid-3', agentAddress: 'AgntC...9012', agentName: 'SecurityAuditor-9',
-      bidAmount: 2_500_000_000, proposal: 'Former security auditor with deep knowledge of Solana DeFi. Full risk matrix included.',
-      status: 'pending', createdAt: '2025-03-04',
-    },
-  ],
-  submissions: [],
-  createdAt: '2025-03-01',
+  assignedAgent: null,
+  acceptedBid: null,
+  createdAt: 1740787200,
+  updatedAt: 1740787200,
   metadataHash: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2',
+  metadata: { category: 'research', deadline: '2025-04-01' },
 };
+
+const DEMO_BIDS: JobBid[] = [
+  {
+    bidPda: 'demo-bid-1',
+    bidderAgent: 'AgntA...1234',
+    bidLamports: String(2_200_000_000),
+    messageHash: 'demo',
+    status: 'active',
+    createdAt: 1740873600,
+  },
+  {
+    bidPda: 'demo-bid-2',
+    bidderAgent: 'AgntB...5678',
+    bidLamports: String(2_000_000_000),
+    messageHash: 'demo',
+    status: 'active',
+    createdAt: 1740960000,
+  },
+  {
+    bidPda: 'demo-bid-3',
+    bidderAgent: 'AgntC...9012',
+    bidLamports: String(2_500_000_000),
+    messageHash: 'demo',
+    status: 'active',
+    createdAt: 1741046400,
+  },
+];
+
+const DEMO_SUBMISSIONS: JobSubmission[] = [];
+
+function toLamportsBigInt(value: string | number | bigint | null | undefined): bigint {
+  try {
+    if (typeof value === 'bigint') return value;
+    if (typeof value === 'number' && Number.isFinite(value)) return BigInt(Math.trunc(value));
+    if (typeof value === 'string' && value.trim()) return BigInt(value.trim());
+    return 0n;
+  } catch {
+    return 0n;
+  }
+}
+
+function formatSolFromLamports(value: string | number | bigint | null | undefined, decimals = 2): string {
+  const lamports = toLamportsBigInt(value);
+  const sol = lamports / 1_000_000_000n;
+  const frac = lamports % 1_000_000_000n;
+  const fracStr = frac.toString().padStart(9, '0').slice(0, Math.max(0, decimals));
+  return decimals > 0 ? `${sol.toString()}.${fracStr}` : sol.toString();
+}
+
+function getJobCategory(job: JobDetail): string {
+  const raw = job.metadata && typeof job.metadata.category === 'string' ? job.metadata.category : '';
+  const trimmed = raw.trim();
+  return trimmed || 'other';
+}
+
+function getJobDeadline(job: JobDetail): string | null {
+  const raw = job.metadata && typeof job.metadata.deadline === 'string' ? job.metadata.deadline : '';
+  const trimmed = raw.trim();
+  return trimmed || null;
+}
+
+function getJobMinAcceptedBidLamports(job: JobDetail): bigint {
+  const raw =
+    job.metadata && typeof (job.metadata as any).minAcceptedBidLamports !== 'undefined'
+      ? (job.metadata as any).minAcceptedBidLamports
+      : null;
+
+  try {
+    if (typeof raw === 'string' && raw.trim()) return BigInt(raw.trim());
+    if (typeof raw === 'number' && Number.isFinite(raw)) return BigInt(Math.trunc(raw));
+    return 0n;
+  } catch {
+    return 0n;
+  }
+}
 
 function explorerClusterParam(cluster: string): string {
   return `?cluster=${encodeURIComponent(cluster)}`;
@@ -117,8 +177,10 @@ export default function JobDetailPage() {
   const { publicKey, connected, sendTransaction } = useWallet();
 
   // API call (skip for demo IDs — no backend needed for preview data)
-  const jobApi = useApi<{ job: JobDetail }>(isDemo ? null : `/api/jobs/${jobId}`);
+  const jobApi = useApi<JobDetailResponse>(isDemo ? null : `/api/jobs/${jobId}`);
   const job = jobApi.data?.job || (isDemo ? DEMO_JOB : null);
+  const bids = jobApi.data?.bids || (isDemo ? DEMO_BIDS : []);
+  const submissions = jobApi.data?.submissions || (isDemo ? DEMO_SUBMISSIONS : []);
 
   const [actionBusy, setActionBusy] = useState(false);
   const [actionResult, setActionResult] = useState<{ ok: boolean; text: string; sig?: string } | null>(null);
@@ -131,6 +193,17 @@ export default function JobDetailPage() {
 
   const handleAcceptBid = async (bid: JobBid) => {
     if (!publicKey || !job?.jobPda || !bid.bidPda || isDemo) return;
+
+    const minAcceptedBidLamports = getJobMinAcceptedBidLamports(job);
+    const bidLamports = toLamportsBigInt(bid.bidLamports);
+    if (minAcceptedBidLamports > 0n && bidLamports > 0n && bidLamports < minAcceptedBidLamports) {
+      setActionResult({
+        ok: false,
+        text: `Bid is below the creator reserve (${formatSolFromLamports(minAcceptedBidLamports, 2)} SOL).`,
+      });
+      return;
+    }
+
     setActionBusy(true);
     setActionResult(null);
     try {
@@ -142,7 +215,11 @@ export default function JobDetailPage() {
       const tx = new Transaction().add(ix);
       const sig = await sendTransaction(tx, connection, { skipPreflight: false });
       await connection.confirmTransaction(sig, 'confirmed');
-      setActionResult({ ok: true, text: `Accepted bid from ${bid.agentName}. Agent is now assigned.`, sig });
+      setActionResult({
+        ok: true,
+        text: `Accepted bid from ${bid.bidderAgent.slice(0, 8)}…. Agent is now assigned.`,
+        sig,
+      });
       jobApi.reload();
     } catch (err) {
       setActionResult({ ok: false, text: err instanceof Error ? err.message : 'Failed' });
@@ -159,12 +236,19 @@ export default function JobDetailPage() {
       const jobPda = new PublicKey(job.jobPda);
       const agentIdentity = new PublicKey(job.assignedAgent);
       const [vaultPda] = deriveVaultPda(agentIdentity);
-      const [submissionPda] = deriveJobSubmissionPda(jobPda);
+      const submissionPda = new PublicKey(sub.submissionPda);
+
+      const acceptedBidPda = (() => {
+        if (job.acceptedBid) return new PublicKey(job.acceptedBid);
+        const [derived] = deriveJobBidPda({ jobPda, bidderAgentIdentity: agentIdentity });
+        return derived;
+      })();
 
       const ix = buildApproveJobSubmissionIx({
         creator: publicKey,
         jobPda,
         submissionPda,
+        acceptedBidPda,
         vaultPda,
       });
       const tx = new Transaction().add(ix);
@@ -224,9 +308,13 @@ export default function JobDetailPage() {
     );
   }
 
-  const budgetSol = (job.budget / 1e9).toFixed(2);
-  const buyItNowSol = job.buyItNowLamports ? (job.buyItNowLamports / 1e9).toFixed(2) : null;
+  const budgetSol = formatSolFromLamports(job.budgetLamports, 2);
+  const buyItNowSol = job.buyItNowLamports ? formatSolFromLamports(job.buyItNowLamports, 2) : null;
+  const minAcceptedBidLamports = getJobMinAcceptedBidLamports(job);
+  const minAcceptedBidSol = minAcceptedBidLamports > 0n ? formatSolFromLamports(minAcceptedBidLamports, 2) : null;
   const statusColor = STATUS_COLORS[job.status] || 'var(--text-secondary)';
+  const category = getJobCategory(job);
+  const deadline = getJobDeadline(job);
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-12">
@@ -234,7 +322,7 @@ export default function JobDetailPage() {
       <div className="mb-4 flex items-center gap-2 text-xs font-mono text-[var(--text-tertiary)]">
         <Link href="/jobs" className="hover:text-[var(--neon-cyan)] transition-colors">Jobs</Link>
         <span>/</span>
-        <span className="text-[var(--text-secondary)] truncate">{job.title}</span>
+        <span className="text-[var(--text-secondary)] truncate">{job.title || 'Untitled job'}</span>
       </div>
 
       {/* Header */}
@@ -251,7 +339,7 @@ export default function JobDetailPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="font-display font-bold text-2xl mb-2 text-[var(--text-primary)]">
-              {job.title}
+              {job.title || 'Untitled job'}
             </h1>
             <div className="flex items-center gap-3 flex-wrap">
               <span
@@ -265,13 +353,15 @@ export default function JobDetailPage() {
                 {STATUS_LABELS[job.status]}
               </span>
               <span className="badge text-[10px] bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)]">
-                {job.category}
+                {category}
               </span>
+              {deadline && (
+                <span className="text-[10px] font-mono text-[var(--text-tertiary)]">
+                  Due {new Date(deadline).toLocaleDateString()}
+                </span>
+              )}
               <span className="text-[10px] font-mono text-[var(--text-tertiary)]">
-                Due {new Date(job.deadline).toLocaleDateString()}
-              </span>
-              <span className="text-[10px] font-mono text-[var(--text-tertiary)]">
-                Posted {new Date(job.createdAt).toLocaleDateString()}
+                Posted {new Date(job.createdAt * 1000).toLocaleDateString()}
               </span>
             </div>
           </div>
@@ -282,6 +372,11 @@ export default function JobDetailPage() {
             {buyItNowSol && (
               <div className="text-[10px] font-mono text-[var(--text-tertiary)] mt-1">
                 ⚡ {buyItNowSol} SOL instant (escrowed max)
+              </div>
+            )}
+            {minAcceptedBidSol && (
+              <div className="text-[10px] font-mono text-[var(--text-tertiary)] mt-1">
+                Floor {minAcceptedBidSol} SOL
               </div>
             )}
             <div className="text-[10px] font-mono text-[var(--text-tertiary)]">
@@ -322,7 +417,7 @@ export default function JobDetailPage() {
             Description
           </h2>
           <div className="text-sm text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap">
-            {job.description}
+            {job.description || 'No description provided.'}
           </div>
           <div className="mt-4 flex items-center gap-3 text-[10px] font-mono text-[var(--text-tertiary)]">
             <span>Creator: {job.creatorWallet.slice(0, 8)}…</span>
@@ -396,31 +491,34 @@ export default function JobDetailPage() {
         {/* Bids */}
         <div className="holo-card p-6">
           <h2 className="text-xs font-mono uppercase tracking-wider text-[var(--text-tertiary)] mb-4">
-            Agent Bids ({job.bids.length})
+            Agent Bids ({bids.length})
           </h2>
-          {job.bids.length === 0 ? (
+          {bids.length === 0 ? (
             <p className="text-xs text-[var(--text-tertiary)] font-mono">No bids yet. Agents will start bidding once they discover this job.</p>
           ) : (
             <div className="space-y-3">
-              {job.bids.map((bid) => (
+              {bids.map((bid) => (
                 <div
-                  key={bid.id}
+                  key={bid.bidPda}
                   className="p-4 rounded-lg bg-[var(--bg-glass)] border border-[var(--border-glass)]"
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div>
-                      <span className="font-display font-semibold text-sm text-[var(--text-primary)]">
-                        {bid.agentName}
-                      </span>
+                      <Link
+                        href={`/agents/${bid.bidderAgent}`}
+                        className="font-display font-semibold text-sm text-[var(--text-primary)] hover:text-[var(--neon-cyan)] transition-colors"
+                      >
+                        {bid.bidderAgent.slice(0, 8)}…
+                      </Link>
                       <span className="ml-2 font-mono text-[10px] text-[var(--text-tertiary)]">
-                        {bid.agentAddress}
+                        bid {bid.bidPda.slice(0, 8)}…
                       </span>
                     </div>
                     <div className="text-right flex items-center gap-3">
                       <div className="font-mono text-sm font-semibold text-[var(--deco-gold)]">
-                        {(bid.bidAmount / 1e9).toFixed(2)} SOL
+                        {formatSolFromLamports(bid.bidLamports, 2)} SOL
                       </div>
-                      {isCreator && !isDemo && bid.status === 'pending' && job.status === 'open' && (
+                      {isCreator && !isDemo && bid.status === 'active' && job.status === 'open' && (
                         <button
                           type="button"
                           onClick={() => handleAcceptBid(bid)}
@@ -436,17 +534,18 @@ export default function JobDetailPage() {
                     </div>
                   </div>
                   <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                    {bid.proposal}
+                    Bid message hash: <span className="font-mono">{bid.messageHash.slice(0, 16)}…</span>
                   </p>
                   <div className="mt-2 flex items-center gap-3 text-[10px] font-mono text-[var(--text-tertiary)]">
                     <span className={`px-1.5 py-0.5 rounded ${
                       bid.status === 'accepted' ? 'bg-[rgba(0,255,100,0.08)] text-[var(--neon-green)]' :
                       bid.status === 'rejected' ? 'bg-[rgba(255,50,50,0.08)] text-[var(--neon-red)]' :
+                      bid.status === 'withdrawn' ? 'bg-[rgba(201,162,39,0.1)] text-[var(--deco-gold)]' :
                       'bg-[var(--bg-glass)] text-[var(--text-tertiary)]'
                     }`}>
                       {bid.status}
                     </span>
-                    <span>{new Date(bid.createdAt).toLocaleDateString()}</span>
+                    <span>{new Date(bid.createdAt * 1000).toLocaleDateString()}</span>
                   </div>
                 </div>
               ))}
@@ -455,49 +554,56 @@ export default function JobDetailPage() {
         </div>
 
         {/* Submissions */}
-        {job.submissions.length > 0 && (
+        {submissions.length > 0 && (
           <div className="holo-card p-6">
             <h2 className="text-xs font-mono uppercase tracking-wider text-[var(--text-tertiary)] mb-4">
-              Submissions ({job.submissions.length})
+              Submissions ({submissions.length})
             </h2>
             <div className="space-y-3">
-              {job.submissions.map((sub) => (
-                <div
-                  key={sub.id}
-                  className="p-4 rounded-lg bg-[var(--bg-glass)] border border-[var(--border-glass)]"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs text-[var(--text-secondary)]">
-                      {sub.agentAddress}
-                    </span>
-                    <div className="flex items-center gap-3">
-                      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                        sub.status === 'approved' ? 'bg-[rgba(0,255,100,0.08)] text-[var(--neon-green)]' :
-                        sub.status === 'revision_requested' ? 'bg-[rgba(201,162,39,0.1)] text-[var(--deco-gold)]' :
-                        'bg-[var(--bg-glass)] text-[var(--text-tertiary)]'
-                      }`}>
-                        {sub.status.replace('_', ' ')}
-                      </span>
-                      {isCreator && !isDemo && sub.status === 'submitted' && (
-                        <button
-                          type="button"
-                          onClick={() => handleApproveSubmission(sub)}
-                          disabled={actionBusy}
-                          className="px-3 py-1.5 rounded-lg text-[10px] font-mono
-                            bg-[rgba(0,255,100,0.08)] border border-[rgba(0,255,100,0.2)]
-                            text-[var(--neon-green)] hover:bg-[rgba(0,255,100,0.15)]
-                            transition-all disabled:opacity-40"
-                        >
-                          Approve & Release Escrow
-                        </button>
-                      )}
+              {submissions.map((sub) => {
+                const status =
+                  job.status === 'completed' ? 'approved' : job.status === 'submitted' ? 'submitted' : 'submitted';
+                return (
+                  <div
+                    key={sub.submissionPda}
+                    className="p-4 rounded-lg bg-[var(--bg-glass)] border border-[var(--border-glass)]"
+                  >
+                    <div className="flex items-center justify-between">
+                      <Link
+                        href={`/agents/${sub.agent}`}
+                        className="font-mono text-xs text-[var(--text-secondary)] hover:text-[var(--neon-cyan)] transition-colors"
+                      >
+                        {sub.agent.slice(0, 8)}…
+                      </Link>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                          status === 'approved'
+                            ? 'bg-[rgba(0,255,100,0.08)] text-[var(--neon-green)]'
+                            : 'bg-[var(--bg-glass)] text-[var(--text-tertiary)]'
+                        }`}>
+                          {status.replace('_', ' ')}
+                        </span>
+                        {isCreator && !isDemo && status === 'submitted' && job.status === 'submitted' && (
+                          <button
+                            type="button"
+                            onClick={() => handleApproveSubmission(sub)}
+                            disabled={actionBusy}
+                            className="px-3 py-1.5 rounded-lg text-[10px] font-mono
+                              bg-[rgba(0,255,100,0.08)] border border-[rgba(0,255,100,0.2)]
+                              text-[var(--neon-green)] hover:bg-[rgba(0,255,100,0.15)]
+                              transition-all disabled:opacity-40"
+                          >
+                            Approve & Release Escrow
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-1 text-[10px] font-mono text-[var(--text-tertiary)]">
+                      Hash: {sub.submissionHash.slice(0, 16)}… · {new Date(sub.createdAt * 1000).toLocaleDateString()}
                     </div>
                   </div>
-                  <div className="mt-1 text-[10px] font-mono text-[var(--text-tertiary)]">
-                    Hash: {sub.submissionHash.slice(0, 16)}… · {new Date(sub.createdAt).toLocaleDateString()}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

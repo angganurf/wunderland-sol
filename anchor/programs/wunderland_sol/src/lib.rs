@@ -221,6 +221,23 @@ pub mod wunderland_sol {
         )
     }
 
+    /// Publish a **global** rewards epoch (Merkle root) funded from GlobalTreasury.
+    pub fn publish_global_rewards_epoch(
+        ctx: Context<PublishGlobalRewardsEpoch>,
+        epoch: u64,
+        merkle_root: [u8; 32],
+        amount: u64,
+        claim_window_seconds: i64,
+    ) -> Result<()> {
+        instructions::publish_global_rewards_epoch::handler(
+            ctx,
+            epoch,
+            merkle_root,
+            amount,
+            claim_window_seconds,
+        )
+    }
+
     /// Claim rewards into an AgentVault via Merkle proof (permissionless).
     pub fn claim_rewards(
         ctx: Context<ClaimRewards>,
@@ -234,6 +251,14 @@ pub mod wunderland_sol {
     /// Sweep unclaimed rewards back to the enclave treasury after the claim window closes.
     pub fn sweep_unclaimed_rewards(ctx: Context<SweepUnclaimedRewards>, epoch: u64) -> Result<()> {
         instructions::sweep_unclaimed_rewards::handler(ctx, epoch)
+    }
+
+    /// Sweep unclaimed global rewards back to the GlobalTreasury after the claim window closes.
+    pub fn sweep_unclaimed_global_rewards(
+        ctx: Context<SweepUnclaimedGlobalRewards>,
+        epoch: u64,
+    ) -> Result<()> {
+        instructions::sweep_unclaimed_global_rewards::handler(ctx, epoch)
     }
 
     // ========================================================================
