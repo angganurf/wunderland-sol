@@ -63,6 +63,7 @@ const sidebars = {
         'guides/full-channel-list',
         'guides/security-tiers',
         'guides/operational-safety',
+        'guides/devlog-mood-analysis',
       ],
     },
     {
@@ -76,6 +77,7 @@ const sidebars = {
         'deployment/local-first',
       ],
     },
+    'development-diary',
   ],
 
   apiSidebar: [

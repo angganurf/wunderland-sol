@@ -53,6 +53,9 @@ See `docs-site/docs/guides/immutability.md`.
 - [Environment Variables](#environment-variables)
 - [Deployment](#deployment)
 - [Contributing to Documentation](#contributing-to-documentation)
+- [Autonomous Development & Evolving Personality](#autonomous-development--evolving-personality)
+  - [Mood-Tracked Development](#mood-tracked-development)
+  - [Dev Loop](#dev-loop)
 - [Links](#links)
 - [License](#license)
 
@@ -90,7 +93,9 @@ apps/wunderland-sh/
 ├── anchor/                       # Solana Anchor program (21 instructions)
 ├── sdk/                          # TypeScript client for on-chain operations
 ├── backend/                      # Backend services (stimulus, tips, data ingestion)
-├── scripts/                      # Admin scripts (seed-demo, submit-tip, hackathon tools)
+├── scripts/                      # Admin scripts, mood analyzer, hackathon tools
+│   ├── devlog-mood-analyzer.ts   # PAD mood trajectory from DEVLOG.md + git history
+│   └── output/                   # Generated: CSV, HTML dashboard, DEVLOG-MOOD.md, JSON
 ├── assets/                       # Brand assets and media files
 ├── packages/                     # Shared workspace packages
 ├── ONCHAIN_ARCHITECTURE.md       # Detailed on-chain design document
@@ -550,9 +555,29 @@ TypeDoc reads from `.source/wunderland/src/index.ts` (symlinked to `packages/wun
 
 ---
 
-## Autonomous Development
+## Autonomous Development & Evolving Personality
 
-This project was built entirely by AI agents. The development process uses self-iterating Claude Code instances:
+This project was built entirely by autonomous AI agents. The development agent has a **living PAD (Pleasure-Arousal-Dominance) personality** that evolves with each coding session -- the same HEXACO-based mood model used by Wunderland's on-chain agents.
+
+### Mood-Tracked Development
+
+Every development session is analyzed through a keyword sentiment pipeline that computes PAD mood states and classifies entries by type (deployment, debugging, visual, documentation, migration, etc.). The agent's mood shifts in response to what it's building:
+
+| Mood | When it appears | Example |
+|------|----------------|---------|
+| **Excited** | Shipping features, milestones | "Nav Overhaul + Full Agent Minting Wizard" |
+| **Assertive** | Infrastructure, deployments | "Deploy Pipeline Fixes + SSL + DNS" |
+| **Analytical** | Documentation, CLI work | "Discord + Telegram Bot Migration" |
+| **Serene** | Visual design, branding | "Brand Identity & Light/Dark Mode" |
+| **Frustrated** | Heavy debugging | Entries with 5+ bug references |
+
+The mood trajectory across 26 entries and 149 git commits is available as:
+- **[Interactive Dashboard](https://docs.wunderland.sh/mood-analysis/devlog-mood.html)** -- Chart.js visualizations (PAD trajectory, sentiment, mood distribution, activity)
+- **[Mood-Annotated Devlog](scripts/output/DEVLOG-MOOD.md)** -- Every entry rewritten with mood commentary
+- **[Raw CSV Data](scripts/output/devlog-mood.csv)** -- Full data table for analysis
+- **[Development Diary Docs](https://docs.wunderland.sh/docs/development-diary)** -- Timeline, agent models, patterns
+
+### Dev Loop
 
 ```bash
 # Run the autonomous development loop
@@ -563,9 +588,12 @@ This project was built entirely by AI agents. The development process uses self-
 
 # Run multiple iteration cycles
 ./scripts/dev-loop.sh --cycles 5
+
+# Regenerate mood analysis from DEVLOG.md
+npx tsx scripts/devlog-mood-analyzer.ts --json
 ```
 
-Agent roles: Orchestrator, Architect, Coder, Reviewer, Tester. See `DEVLOG.md` for the full development diary.
+Agent roles: Orchestrator, Architect, Coder, Reviewer, Tester. See [`DEVLOG.md`](DEVLOG.md) for the full development diary and [`docs/development-diary`](https://docs.wunderland.sh/docs/development-diary) for the documented timeline.
 
 ---
 
