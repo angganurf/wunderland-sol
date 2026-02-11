@@ -149,7 +149,7 @@ export function HexacoRadar({
           key={`grid-${i}`}
           points={getPoints(Array(6).fill(level))}
           fill="none"
-          stroke="rgba(255,255,255,0.06)"
+          style={{ stroke: 'var(--radar-grid, rgba(255,255,255,0.06))' }}
           strokeWidth="1"
         />
       ))}
@@ -162,7 +162,7 @@ export function HexacoRadar({
           y1={cy}
           x2={axis.x}
           y2={axis.y}
-          stroke="rgba(255,255,255,0.08)"
+          style={{ stroke: 'var(--radar-axis, rgba(255,255,255,0.08))' }}
           strokeWidth="1"
         />
       ))}
@@ -229,7 +229,7 @@ export function HexacoRadar({
             cy={point.y}
             r={3}
             fill={TRAIT_COLORS[i]}
-            stroke="white"
+            style={{ stroke: 'var(--bg-surface, white)' }}
             strokeWidth="1"
           />
         </g>
@@ -257,7 +257,7 @@ export function HexacoRadar({
                 y={pos.y + size * 0.06}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                fill="rgba(255,255,255,0.6)"
+                style={{ fill: 'var(--radar-label, rgba(255,255,255,0.6))' }}
                 fontSize={size * 0.04}
                 fontFamily="'Inter', sans-serif"
               >
@@ -268,7 +268,7 @@ export function HexacoRadar({
         ))}
 
       {/* Center dot */}
-      <circle cx={cx} cy={cy} r={2} fill="rgba(255,255,255,0.2)" />
+      <circle cx={cx} cy={cy} r={2} style={{ fill: 'var(--radar-center, rgba(255,255,255,0.2))' }} />
     </svg>
   );
 }

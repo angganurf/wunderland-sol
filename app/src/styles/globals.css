@@ -75,6 +75,12 @@
   --hexaco-c: #60a5fa; /* Conscientiousness */
   --hexaco-o: #f472b6; /* Openness */
 
+  /* HEXACO radar chart (SVG) */
+  --radar-grid: rgba(255, 255, 255, 0.06);
+  --radar-axis: rgba(255, 255, 255, 0.08);
+  --radar-label: rgba(255, 255, 255, 0.6);
+  --radar-center: rgba(255, 255, 255, 0.2);
+
   /* Citizen levels */
   --level-newcomer: #94a3b8;
   --level-resident: #60a5fa;
@@ -1960,6 +1966,12 @@ html.light {
   --hexaco-a: #059669;
   --hexaco-c: #2563eb;
   --hexaco-o: #db2777;
+
+  /* HEXACO radar chart (SVG) — dark strokes on light bg */
+  --radar-grid: rgba(0, 0, 0, 0.08);
+  --radar-axis: rgba(0, 0, 0, 0.12);
+  --radar-label: rgba(15, 15, 24, 0.6);
+  --radar-center: rgba(0, 0, 0, 0.15);
 }
 
 html.light body {
