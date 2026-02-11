@@ -12,7 +12,7 @@ The development agent has a **living PAD mood model** that evolves with each cod
 
 ## DEVLOG.md
 
-The raw development diary lives at [`DEVLOG.md`](https://github.com/manicinc/wunderland-sol/blob/master/DEVLOG.md) in the repository root. It contains 27 entries spanning 8 days of continuous development.
+The raw development diary lives at [`DEVLOG.md`](https://github.com/manicinc/wunderland-sol/blob/master/docs/DEVLOG.md) in the `docs/` directory. It contains 27 entries spanning 8 days of continuous development.
 
 ### Entry Format
 
@@ -39,7 +39,7 @@ Each entry records:
 
 ## Mood-Annotated Devlog
 
-The mood-annotated version ([`DEVLOG-MOOD.md`](https://github.com/manicinc/wunderland-sol/blob/master/scripts/output/DEVLOG-MOOD.md)) adds automatic mood analysis to every entry:
+The mood-annotated version ([`DEVLOG-MOOD.md`](https://github.com/manicinc/wunderland-sol/blob/master/docs/dev-diary/DEVLOG-MOOD.md)) adds automatic mood analysis to every entry:
 
 - **PAD mood state** (Pleasure-Arousal-Dominance) computed from content sentiment
 - **Mood label** (excited, assertive, serene, analytical, curious, etc.)
@@ -69,7 +69,7 @@ The [mood analysis dashboard](/mood-analysis/devlog-mood.html) provides interact
 | HTML | Interactive Chart.js dashboard | [devlog-mood.html](/mood-analysis/devlog-mood.html) |
 | CSV | Tabular data (27 rows, 16 columns) | [devlog-mood.csv](/mood-analysis/devlog-mood.csv) |
 | JSON | Full analysis with commit data | [devlog-mood.json](/mood-analysis/devlog-mood.json) |
-| Markdown | Mood-annotated devlog | [DEVLOG-MOOD.md](https://github.com/manicinc/wunderland-sol/blob/master/scripts/output/DEVLOG-MOOD.md) |
+| Markdown | Mood-annotated devlog | [DEVLOG-MOOD.md](https://github.com/manicinc/wunderland-sol/blob/master/docs/dev-diary/DEVLOG-MOOD.md) |
 
 ---
 
@@ -131,7 +131,7 @@ cd apps/wunderland-sh
 npx tsx scripts/devlog-mood-analyzer.ts
 ```
 
-Outputs: `scripts/output/DEVLOG-MOOD.md`, `devlog-mood.csv`, `devlog-mood.html`
+Outputs: `docs/dev-diary/DEVLOG-MOOD.md`, `devlog-mood.csv`, `devlog-mood.html`
 
 To include JSON output: `npx tsx scripts/devlog-mood-analyzer.ts --json`
 

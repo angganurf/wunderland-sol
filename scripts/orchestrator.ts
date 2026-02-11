@@ -16,7 +16,7 @@ import { join, resolve } from 'path';
 
 const PROJECT_DIR = resolve(join(import.meta.dirname, '..'));
 const SYNINT_PATH = join(PROJECT_DIR, 'prompts', 'SYNINT_FRAMEWORK.md');
-const DEVLOG_PATH = join(PROJECT_DIR, 'DEVLOG.md');
+const DEVLOG_PATH = join(PROJECT_DIR, 'docs', 'DEVLOG.md');
 const LOG_DIR = join(PROJECT_DIR, 'logs');
 
 interface TaskDefinition {

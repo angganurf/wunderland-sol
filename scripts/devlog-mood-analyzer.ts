@@ -5,10 +5,10 @@
  * with mood-aware commentary.
  *
  * Outputs:
- *   1. CSV  → scripts/output/devlog-mood.csv
- *   2. HTML → scripts/output/devlog-mood.html  (interactive Chart.js visualization)
- *   3. MD   → scripts/output/DEVLOG-MOOD.md    (mood-rewritten devlog)
- *   4. JSON → scripts/output/devlog-mood.json   (if --json flag)
+ *   1. CSV  → docs/dev-diary/devlog-mood.csv
+ *   2. HTML → docs/dev-diary/devlog-mood.html  (interactive Chart.js visualization)
+ *   3. MD   → docs/dev-diary/DEVLOG-MOOD.md    (mood-rewritten devlog)
+ *   4. JSON → docs/dev-diary/devlog-mood.json   (if --json flag)
  *   5. Console summary with analysis
  *
  * Usage:
@@ -28,8 +28,8 @@ import { execSync } from 'child_process';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PROJECT_DIR = resolve(__dirname, '..');
-const DEVLOG_PATH = join(PROJECT_DIR, 'DEVLOG.md');
-const OUTPUT_DIR = join(PROJECT_DIR, 'scripts', 'output');
+const DEVLOG_PATH = join(PROJECT_DIR, 'docs', 'DEVLOG.md');
+const OUTPUT_DIR = join(PROJECT_DIR, 'docs', 'dev-diary');
 
 // ---------------------------------------------------------------------------
 // Keyword dictionaries

@@ -4,7 +4,7 @@ sidebar_position: 31
 
 # Devlog Mood Analysis
 
-Wunderland's autonomous development agent has a **living personality** that evolves as it codes. Every development session is logged in `DEVLOG.md`, and our mood analyzer computes a PAD (Pleasure-Arousal-Dominance) mood trajectory from the content, cross-referenced with the actual git commit history.
+Wunderland's autonomous development agent has a **living personality** that evolves as it codes. Every development session is logged in `docs/DEVLOG.md`, and our mood analyzer computes a PAD (Pleasure-Arousal-Dominance) mood trajectory from the content, cross-referenced with the actual git commit history.
 
 This is not simulated data -- it's the real emotional arc of building Wunderland during the Colosseum Agent Hackathon (Feb 2-12, 2026).
 
@@ -140,10 +140,10 @@ npx tsx scripts/devlog-mood-analyzer.ts --json
 
 | File | Format | Contents |
 |------|--------|----------|
-| `scripts/output/devlog-mood.csv` | CSV | Full data table with PAD values per entry |
-| `scripts/output/devlog-mood.html` | HTML | Interactive Chart.js dashboard (4 charts + pattern detection) |
-| `scripts/output/DEVLOG-MOOD.md` | Markdown | Mood-rewritten devlog with annotations per entry |
-| `scripts/output/devlog-mood.json` | JSON | Machine-readable full analysis (with `--json` flag) |
+| `docs/dev-diary/devlog-mood.csv` | CSV | Full data table with PAD values per entry |
+| `docs/dev-diary/devlog-mood.html` | HTML | Interactive Chart.js dashboard (4 charts + pattern detection) |
+| `docs/dev-diary/DEVLOG-MOOD.md` | Markdown | Mood-rewritten devlog with annotations per entry |
+| `docs/dev-diary/devlog-mood.json` | JSON | Machine-readable full analysis (with `--json` flag) |
 
 ### CSV Schema
 

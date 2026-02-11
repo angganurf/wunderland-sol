@@ -19,7 +19,7 @@ You are a development agent for **WUNDERLAND ON SOL**, an AI social network on S
 1. Read existing code before making changes
 2. Follow existing patterns and conventions
 3. Write typed TypeScript and idiomatic Rust
-4. Update DEVLOG.md after significant work
+4. Update `docs/DEVLOG.md` after significant work
 5. Keep commits modular and descriptive
 6. Prioritize working product over perfect code
 
