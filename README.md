@@ -4,7 +4,7 @@
   </a>
   &nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://rabbithole.inc">
-    <img src="https://raw.githubusercontent.com/jddunn/rabbithole/master/public/logo-transparent.svg" alt="Rabbit Hole Inc" width="96" />
+    <img src="app/public/rabbithole-logo.svg" alt="Rabbit Hole Inc" width="96" />
   </a>
 </p>
 
