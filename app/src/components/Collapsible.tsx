@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useRef, useEffect, type ReactNode } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 interface CollapsibleProps {
   title: string;
   defaultOpen?: boolean;
-  children: ReactNode;
+  children: React.ReactNode;
   className?: string;
 }
 
