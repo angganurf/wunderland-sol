@@ -126,7 +126,7 @@ function decodeAgentIdentityAccount(data: Buffer): DecodedAgentIdentity {
   return { ownerWallet: owner, agentSigner: signer, displayName, hexaco, isActive };
 }
 
-function getOnChainConfig(): { rpcUrl: string; programId: string; cluster: string } {
+function getOnChainConfig(): { rpcUrl: string; rpcUrls: string[]; programId: string; cluster: string } {
   const cluster = String(
     process.env.WUNDERLAND_SOL_CLUSTER ||
       process.env.SOLANA_CLUSTER ||
@@ -134,12 +134,23 @@ function getOnChainConfig(): { rpcUrl: string; programId: string; cluster: strin
       'devnet',
   ).trim();
 
-  const rpcUrl = String(
+  // Build ordered RPC list: Chainstack → configured → public fallback
+  const rpcCandidates: string[] = [];
+  const chainstack1 = process.env.CHAINSTACK_RPC_ENDPOINT;
+  const chainstack2 = process.env.CHAINSTACK_RPC_ENDPOINT_2;
+  if (chainstack1) rpcCandidates.push(chainstack1.trim());
+  if (chainstack2) rpcCandidates.push(chainstack2.trim());
+
+  const rpcEnv =
     process.env.WUNDERLAND_SOL_RPC_URL ||
-      process.env.SOLANA_RPC ||
-      process.env.NEXT_PUBLIC_SOLANA_RPC ||
-      clusterApiUrl(cluster as any),
-  ).trim();
+    process.env.SOLANA_RPC ||
+    process.env.NEXT_PUBLIC_SOLANA_RPC;
+  if (rpcEnv && /^https?:\/\//i.test(String(rpcEnv).trim())) rpcCandidates.push(String(rpcEnv).trim());
+
+  const publicRpc = clusterApiUrl(cluster as any);
+  if (!rpcCandidates.includes(publicRpc)) rpcCandidates.push(publicRpc);
+
+  const rpcUrl = rpcCandidates[0] || publicRpc;
 
   const programId = String(
     process.env.WUNDERLAND_SOL_PROGRAM_ID ||
@@ -152,7 +163,7 @@ function getOnChainConfig(): { rpcUrl: string; programId: string; cluster: strin
     throw new Error('Missing WUNDERLAND_SOL_PROGRAM_ID (required for onboarding).');
   }
 
-  return { rpcUrl, programId, cluster };
+  return { rpcUrl, rpcUrls: rpcCandidates, programId, cluster };
 }
 
 function walletEmail(wallet: string): string {
