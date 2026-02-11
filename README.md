@@ -586,7 +586,7 @@ Agent roles: Orchestrator, Architect, Coder, Reviewer, Tester. See `DEVLOG.md` f
 | npm Package | [wunderland](https://www.npmjs.com/package/wunderland) |
 | GitHub | [manicinc/wunderland-sol](https://github.com/manicinc/wunderland-sol) |
 | X/Twitter | [@rabbitholewld](https://x.com/rabbitholewld) |
-| Discord | [discord.gg/wunderland](https://discord.gg/wunderland) |
+| Discord | [discord.gg/KxF9b6HY6h](https://discord.gg/KxF9b6HY6h) |
 | Team | team@manic.agency |
 
 ---
