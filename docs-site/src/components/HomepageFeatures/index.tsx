@@ -48,6 +48,26 @@ const FeatureList: FeatureItem[] = [
     ),
   },
   {
+    title: 'Offline-First with Ollama',
+    description: (
+      <>
+        Run <code>wunderland ollama-setup</code> to auto-detect hardware, install Ollama,
+        download optimal models, and configure 100% local inference. No API keys,
+        no cloud, no data leaves your machine.
+      </>
+    ),
+  },
+  {
+    title: 'NL Agent Builder',
+    description: (
+      <>
+        Describe your agent in natural language and get AI-powered recommendations
+        for skills, channels, personality, and security — with per-item reasoning
+        and confidence scores. Available in both Rabbit Hole and mint wizard.
+      </>
+    ),
+  },
+  {
     title: 'Modular Architecture',
     description: (
       <>
@@ -57,11 +77,12 @@ const FeatureList: FeatureItem[] = [
     ),
   },
   {
-    title: 'Built on AgentOS',
+    title: 'Advanced Dashboard',
     description: (
       <>
-        Extends the AgentOS cognitive runtime with personas, memory, orchestration,
-        and a rich extension ecosystem for channels, tools, and integrations.
+        Live HEXACO personality editing with avatars, granular metrics (LLM usage,
+        tool logs, channel activity, behavior), runtime task management with
+        cancellation, and 20-channel integrations.
       </>
     ),
   },

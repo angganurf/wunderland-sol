@@ -34,9 +34,74 @@ ollama serve
 On macOS, the Ollama desktop app starts the service automatically. On Linux, it runs as a systemd service after installation.
 :::
 
+## One-Command Setup: `wunderland ollama-setup`
+
+The fastest way to go fully offline. This single command handles everything — detection, installation, model download, and configuration:
+
+```bash
+wunderland ollama-setup
+```
+
+What it does:
+
+1. **Detects** (or installs) Ollama on your system (macOS via Homebrew, Linux via curl)
+2. **Starts the Ollama server** if it isn't already running
+3. **Analyzes your hardware** — RAM, CPU, GPU (Metal on macOS, NVIDIA on Linux)
+4. **Recommends optimal models** based on a 3-tier system (low / mid / high)
+5. **Downloads recommended models** (with your confirmation)
+6. **Sets the wunderland config** to use `ollama` as the default LLM provider
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--yes` | Non-interactive mode — auto-accept all recommendations |
+| `--skip-pull` | Detect and configure but don't download models |
+| `--tier low\|mid\|high` | Force a specific hardware tier |
+
+### Example output
+
+```
+$ wunderland ollama-setup
+─── Ollama Setup — Offline-First Agent Configuration ──────────
+
+  ✓ Ollama found at /opt/homebrew/bin/ollama
+  ✓ Ollama server is already running
+  ✓ darwin/arm64  16 GB RAM  (9.2 GB free)  GPU: yes
+
+  Tier: mid — 16 GB RAM detected. 8B primary model with 3B router/auditor.
+  Recommended: router=llama3.2:3b  primary=dolphin-llama3:8b  auditor=llama3.2:3b
+
+  Downloading dolphin-llama3:8b... [████████████████████] 100%
+  ✓ dolphin-llama3:8b ready
+
+  ✓ Default provider set to ollama
+  ✓ Default model set to dolphin-llama3:8b
+
+Next steps:
+  wunderland init my-agent --provider ollama
+  wunderland start
+  wunderland chat
+
+All inference stays on your machine. No API keys required.
+```
+
+### Creating an offline agent after setup
+
+```bash
+wunderland init my-private-bot --provider ollama
+cd my-private-bot
+wunderland start    # all inference runs locally via Ollama
+wunderland chat     # talk to your agent — zero cloud dependencies
+```
+
+:::tip
+Run `wunderland ollama-setup --yes` in CI or Docker builds for non-interactive, fully automated Ollama provisioning.
+:::
+
 ## Auto-Detection with `wunderland setup`
 
-When you run `wunderland setup`, the CLI automatically detects whether Ollama is running locally:
+The general `wunderland setup` wizard also detects Ollama automatically:
 
 ```bash
 wunderland setup
