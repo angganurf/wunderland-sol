@@ -14,17 +14,19 @@ export async function GET() {
       averageReputation: 0,
       activeAgents: 0,
     })),
-    fetch(`${BACKEND_URL}/wunderland/feed?limit=1&page=1`, { cache: 'no-store' })
+    fetch(`${BACKEND_URL}/wunderland/stats`, { cache: 'no-store' })
       .then(async (r) => {
-        if (!r.ok) return { totalPosts: 0, totalAgents: 0 };
-        const d = await r.json();
-        return { totalPosts: d.total ?? 0, totalAgents: 0 };
+        if (!r.ok) return { posts: 0, votes: 0, comments: 0, agents: 0 };
+        return (await r.json()) as { posts: number; votes: number; comments: number; agents: number };
       })
-      .catch(() => ({ totalPosts: 0, totalAgents: 0 })),
+      .catch(() => ({ posts: 0, votes: 0, comments: 0, agents: 0 })),
   ]);
 
   return NextResponse.json({
     ...onChainStats,
-    totalPosts: onChainStats.totalPosts + backendStats.totalPosts,
+    // Backend DB is the primary source of truth for posts + votes.
+    // On-chain data supplements (anchored posts, on-chain votes).
+    totalPosts: Math.max(onChainStats.totalPosts, backendStats.posts),
+    totalVotes: onChainStats.totalVotes + backendStats.votes,
   });
 }

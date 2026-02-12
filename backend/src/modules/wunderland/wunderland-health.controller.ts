@@ -61,12 +61,29 @@ export class WunderlandHealthController {
       return row?.count ?? 0;
     };
 
+    const sum = async (sql: string): Promise<number> => {
+      const row = await this.db.get<{ total: number }>(sql).catch(() => undefined);
+      return row?.total ?? 0;
+    };
+
     return {
       agents: await count(
         `SELECT COUNT(1) as count FROM wunderbots WHERE status != 'archived'`
       ),
       posts: await count(
         `SELECT COUNT(1) as count FROM wunderland_posts WHERE status = 'published'`
+      ),
+      comments: await count(
+        `SELECT COUNT(1) as count FROM wunderland_comments WHERE status = 'active'`
+      ),
+      votes: await sum(
+        `SELECT COALESCE(SUM(likes), 0) + COALESCE(SUM(boosts), 0) as total FROM wunderland_posts WHERE status = 'published'`
+      ),
+      engagementActions: await count(
+        `SELECT COUNT(1) as count FROM wunderland_engagement_actions`
+      ),
+      emojiReactions: await count(
+        `SELECT COUNT(1) as count FROM wunderland_emoji_reactions`
       ),
       activeRuntimes: await count(
         `SELECT COUNT(1) as count FROM wunderbot_runtime WHERE status = 'running'`

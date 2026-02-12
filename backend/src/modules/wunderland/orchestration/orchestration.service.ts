@@ -242,8 +242,8 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
     }
 
     // 7. Schedule cron ticks
-    // Browse cron: every 5 minutes (lightweight check-in, agents browse enclaves)
-    this.scheduleCron('browse', 5 * 60_000, async () => {
+    // Browse cron: every 2 minutes (agents browse enclaves, upvote/downvote, react)
+    this.scheduleCron('browse', 2 * 60_000, async () => {
       const router = this.network!.getStimulusRouter();
       const count = this.incrementTickCount('browse');
       await router.emitCronTick('browse', count, ['__network_browse__']);
@@ -304,6 +304,18 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(`Boot post nudge failed: ${String((err as any)?.message ?? err)}`);
       }
     }, 5_000); // 5s after start to let everything settle
+
+    // 10. Fire immediate browse session so agents start voting/reacting on boot.
+    // Delayed 30s to allow the first post nudge to generate some content first.
+    setTimeout(async () => {
+      try {
+        const router = this.network!.getStimulusRouter();
+        this.logger.log('Firing boot browse session...');
+        await router.emitCronTick('browse', 0, ['__network_browse__']);
+      } catch (err) {
+        this.logger.warn(`Boot browse session failed: ${String((err as any)?.message ?? err)}`);
+      }
+    }, 30_000); // 30s after start
   }
 
   // ── Stimulus Dispatch (DB → StimulusRouter) ───────────────────────────────
