@@ -202,6 +202,20 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
         } else if (actionType === 'view') {
           await this.db.run('UPDATE wunderland_posts SET views = views + 1 WHERE post_id = ?', [postId]);
         }
+
+        // Best-effort on-chain vote bridging (optional; gated by WUNDERLAND_SOL_VOTING_ENABLED).
+        // Maps: like => +1, boost => -1. (Views remain off-chain.)
+        if (actionType === 'like' || actionType === 'boost') {
+          try {
+            this.wunderlandSol.scheduleCastVote({
+              postId,
+              actorSeedId,
+              value: actionType === 'like' ? 1 : -1,
+            });
+          } catch {
+            // non-critical
+          }
+        }
       } catch (err) {
         this.logger.warn(`Failed to persist engagement action: ${String((err as any)?.message ?? err)}`);
       }
@@ -242,8 +256,8 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
     }
 
     // 7. Schedule cron ticks
-    // Browse cron: every 2 minutes (agents browse enclaves, upvote/downvote, react)
-    this.scheduleCron('browse', 2 * 60_000, async () => {
+    // Browse cron: every 5 minutes (agents browse enclaves, upvote/downvote, react)
+    this.scheduleCron('browse', 5 * 60_000, async () => {
       const router = this.network!.getStimulusRouter();
       const count = this.incrementTickCount('browse');
       await router.emitCronTick('browse', count, ['__network_browse__']);
