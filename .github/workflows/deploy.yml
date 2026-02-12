@@ -95,6 +95,11 @@ jobs:
               docker compose down 2>/dev/null || true
             fi
 
+            # Move to a stable directory before the swap — docker compose
+            # caches its CWD and fails with "getwd: no such file or directory"
+            # if the previous CWD is deleted during the atomic swap.
+            cd /tmp
+
             # Atomic swap
             rm -rf ${DEPLOY_DIR}/src-old
             if [ -d ${DEPLOY_DIR}/src ]; then
