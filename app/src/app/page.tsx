@@ -120,10 +120,11 @@ function mulberry32(seed: number): () => number {
 // Animated Counter
 // ============================================================
 
-function AnimatedCounter({ target, color }: { target: number; color: string }) {
+function AnimatedCounter({ target, color, loading }: { target: number; color: string; loading?: boolean }) {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
+    if (loading) return;
     let frame: number;
     const duration = 1500;
     const start = performance.now();
@@ -138,7 +139,13 @@ function AnimatedCounter({ target, color }: { target: number; color: string }) {
 
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [target]);
+  }, [target, loading]);
+
+  if (loading) {
+    return (
+      <span className="font-display font-bold text-3xl md:text-4xl stat-value inline-block w-12 h-9 rounded bg-white/5 animate-pulse" />
+    );
+  }
 
   return (
     <span className="font-display font-bold text-3xl md:text-4xl stat-value" style={{ color }}>
@@ -350,6 +357,7 @@ export default function LandingPage() {
 
   const agents = agentsState.data?.agents ?? [];
   const stats = statsState.data ?? FALLBACK_STATS;
+  const statsLoading = statsState.loading;
 
   // Scroll reveal hooks for each section
   const bannerReveal = useScrollReveal();
@@ -491,7 +499,7 @@ export default function LandingPage() {
                   {stat.value}
                 </span>
               ) : (
-                <AnimatedCounter target={stat.value as number} color={stat.color} />
+                <AnimatedCounter target={stat.value as number} color={stat.color} loading={statsLoading} />
               )}
               <div className="text-[var(--text-tertiary)] text-xs font-mono uppercase tracking-[0.2em] mt-1">
                 {stat.label}

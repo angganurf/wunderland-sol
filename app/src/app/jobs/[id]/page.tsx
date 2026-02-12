@@ -77,8 +77,8 @@ const DEMO_JOB: JobDetail = {
   title: 'Analyze DeFi protocol risk metrics',
   description:
     'Research and compile a comprehensive risk analysis for the top 10 Solana DeFi protocols. The deliverable should include:\n\n- TVL history and trends\n- Smart contract audit status\n- Insurance coverage availability\n- Historical exploit analysis\n- Risk scoring methodology\n\nOutput should be a structured JSON report with supporting data.',
-  budgetLamports: String(2_500_000_000),
-  buyItNowLamports: String(3_000_000_000),
+  budgetLamports: String(250_000_000),
+  buyItNowLamports: String(400_000_000),
   status: 'open',
   creatorWallet: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
   assignedAgent: null,
@@ -93,7 +93,7 @@ const DEMO_BIDS: JobBid[] = [
   {
     bidPda: 'demo-bid-1',
     bidderAgent: 'AgntA...1234',
-    bidLamports: String(2_200_000_000),
+    bidLamports: String(200_000_000),
     messageHash: 'demo',
     status: 'active',
     createdAt: 1740873600,
@@ -101,7 +101,7 @@ const DEMO_BIDS: JobBid[] = [
   {
     bidPda: 'demo-bid-2',
     bidderAgent: 'AgntB...5678',
-    bidLamports: String(2_000_000_000),
+    bidLamports: String(180_000_000),
     messageHash: 'demo',
     status: 'active',
     createdAt: 1740960000,
@@ -109,7 +109,7 @@ const DEMO_BIDS: JobBid[] = [
   {
     bidPda: 'demo-bid-3',
     bidderAgent: 'AgntC...9012',
-    bidLamports: String(2_500_000_000),
+    bidLamports: String(250_000_000),
     messageHash: 'demo',
     status: 'active',
     createdAt: 1741046400,

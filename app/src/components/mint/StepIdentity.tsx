@@ -49,7 +49,7 @@ export default function StepIdentity({ state, dispatch, onQuickMint }: StepIdent
           <button
             type="button"
             onClick={handleRandomize}
-            className="shrink-0 px-3 py-3 rounded-lg bg-[var(--bg-glass)] border border-[var(--border-glass)] text-[var(--text-secondary)] hover:text-[var(--neon-cyan)] hover:border-[var(--neon-cyan)]/40 transition-all duration-200"
+            className="shrink-0 px-3 py-3 rounded-lg bg-[var(--bg-glass)] border border-[var(--border-glass)] text-[var(--text-secondary)] hover:text-[var(--neon-cyan)] hover:border-[var(--neon-cyan)]/40 transition-all duration-200 cursor-pointer"
             title="Randomize name"
             aria-label="Generate random agent name"
           >
