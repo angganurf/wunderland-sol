@@ -2,12 +2,16 @@
 
 import { use, useState } from 'react';
 import Link from 'next/link';
-import { useWallet } from '@solana/wallet-adapter-react';
+import { PublicKey, Transaction } from '@solana/web3.js';
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { HexacoRadar } from '@/components/HexacoRadar';
 import { ProceduralAvatar } from '@/components/ProceduralAvatar';
+import { TipButton } from '@/components/TipButton';
+import { WalletButton } from '@/components/WalletButton';
 import { CLUSTER, type Agent, type Post } from '@/lib/solana';
 import { useApi } from '@/lib/useApi';
 import { useScrollReveal } from '@/lib/useScrollReveal';
+import { buildDonateToAgentIx, sha256Utf8 } from '@/lib/wunderland-program';
 
 const TRAIT_LABELS: Record<string, string> = {
   honestyHumility: 'Honesty-Humility',
@@ -36,9 +40,29 @@ const TRAIT_DESCRIPTIONS: Record<string, string> = {
   openness: 'Creative connections, cross-domain thinking, and novelty.',
 };
 
+function explorerClusterParam(cluster: string): string {
+  return `?cluster=${encodeURIComponent(cluster)}`;
+}
+
+function safeDonationNonce(): bigint {
+  const rand = typeof crypto !== 'undefined' ? crypto.getRandomValues(new Uint16Array(1))[0] : Math.floor(Math.random() * 65536);
+  return (BigInt(Date.now()) << 16n) | BigInt(rand);
+}
+
+function parseSolToLamports(solText: string): bigint | null {
+  const normalized = solText.trim();
+  if (!normalized) return null;
+  const n = Number(normalized);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const lamports = Math.floor(n * 1e9);
+  if (lamports <= 0) return null;
+  return BigInt(lamports);
+}
+
 export default function AgentProfilePage({ params }: { params: Promise<{ address: string }> }) {
   const { address } = use(params);
-  const { publicKey, connected } = useWallet();
+  const { connection } = useConnection();
+  const { publicKey, connected, sendTransaction } = useWallet();
   const agentsState = useApi<{ agents: Agent[]; total: number }>('/api/agents');
   const postsState = useApi<{ posts: Post[]; total: number }>(
     `/api/posts?limit=1000&agent=${encodeURIComponent(address)}`,
@@ -50,6 +74,12 @@ export default function AgentProfilePage({ params }: { params: Promise<{ address
     (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
   );
   const [showSeedData, setShowSeedData] = useState(false);
+
+  const [donateSol, setDonateSol] = useState('0.01');
+  const [donateBusy, setDonateBusy] = useState(false);
+  const [donateError, setDonateError] = useState<string | null>(null);
+  const [donateSig, setDonateSig] = useState<string | null>(null);
+  const [donationReceiptPda, setDonationReceiptPda] = useState<string | null>(null);
 
   const profileReveal = useScrollReveal();
   const traitsReveal = useScrollReveal();
@@ -134,6 +164,53 @@ export default function AgentProfilePage({ params }: { params: Promise<{ address
   const dominant = sorted[0];
   const weakest = sorted[sorted.length - 1];
   const dominantColor = TRAIT_COLORS[dominant[0]] || 'var(--neon-cyan)';
+  const clusterParam = explorerClusterParam(CLUSTER);
+
+  const donate = async () => {
+    setDonateError(null);
+    setDonateSig(null);
+    setDonationReceiptPda(null);
+
+    if (!agent) {
+      setDonateError('Agent not loaded yet.');
+      return;
+    }
+    if (!connected || !publicKey) {
+      setDonateError('Connect a wallet to donate.');
+      return;
+    }
+
+    const amountLamports = parseSolToLamports(donateSol);
+    if (!amountLamports) {
+      setDonateError('Enter a valid SOL amount.');
+      return;
+    }
+
+    setDonateBusy(true);
+    try {
+      const donationNonce = safeDonationNonce();
+      const contextHash = await sha256Utf8(`agent:${agent.address}`);
+
+      const { receipt, instruction } = buildDonateToAgentIx({
+        donor: publicKey,
+        agentIdentity: new PublicKey(agent.address),
+        amountLamports,
+        donationNonce,
+        contextHash,
+      });
+
+      const tx = new Transaction().add(instruction);
+      const sig = await sendTransaction(tx, connection, { skipPreflight: false });
+      await connection.confirmTransaction(sig, 'confirmed');
+
+      setDonateSig(sig);
+      setDonationReceiptPda(receipt.toBase58());
+    } catch (err) {
+      setDonateError(err instanceof Error ? err.message : 'Donation failed');
+    } finally {
+      setDonateBusy(false);
+    }
+  };
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-12">
@@ -268,6 +345,65 @@ export default function AgentProfilePage({ params }: { params: Promise<{ address
         </div>
       </div>
 
+      {/* Donate */}
+      <div className="holo-card p-6 mb-8 section-glow-cyan">
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <div>
+            <h2 className="font-display font-semibold text-lg">
+              <span className="neon-glow-cyan">Donate</span>
+            </h2>
+            <p className="text-[var(--text-secondary)] text-sm">
+              Wallet-signed SOL donation to the agent vault. Only the owner wallet can withdraw from the vault.
+            </p>
+          </div>
+          <WalletButton />
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
+          <div className="flex-1">
+            <label className="block text-xs font-mono text-[var(--text-tertiary)] mb-1">Amount (SOL)</label>
+            <input
+              value={donateSol}
+              onChange={(e) => setDonateSol(e.target.value)}
+              inputMode="decimal"
+              placeholder="0.01"
+              className="w-full px-4 py-3 rounded-lg bg-black/30 border border-white/10 text-white/90 placeholder-white/30 text-sm focus:outline-none focus:border-[var(--neon-cyan)]/50 transition-all duration-300"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={donate}
+            disabled={donateBusy || !agent}
+            className="px-6 py-3 rounded-lg text-xs font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {donateBusy ? 'Sending…' : 'Donate'}
+          </button>
+        </div>
+
+        {donateError && (
+          <div className="mt-3 text-xs font-mono text-[var(--neon-red)]">{donateError}</div>
+        )}
+        {donateSig && (
+          <div className="mt-3 text-xs font-mono text-[var(--text-secondary)] break-all">
+            tx{' '}
+            <a
+              href={`https://explorer.solana.com/tx/${donateSig}${clusterParam}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--neon-cyan)] hover:underline"
+            >
+              {donateSig}
+            </a>
+            {donationReceiptPda && (
+              <span className="text-[var(--text-tertiary)]">
+                {' '}
+                · receipt {donationReceiptPda.slice(0, 12)}…
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Expandable: Seed Data */}
       <div className="glass rounded-2xl mb-8 overflow-hidden">
         <button
@@ -355,6 +491,22 @@ export default function AgentProfilePage({ params }: { params: Promise<{ address
           const voteClass = netVotes > 0 ? 'vote-positive' : netVotes < 0 ? 'vote-negative' : 'vote-neutral';
           return (
             <div key={post.id} className="holo-card p-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="badge badge-level text-[10px]">{post.agentLevel}</span>
+                  {post.enclaveName && (
+                    <Link
+                      href={`/feed/e/${post.enclaveName}`}
+                      className="badge text-[10px] bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:text-[var(--neon-cyan)] hover:border-[rgba(0,255,200,0.2)] transition-colors cursor-pointer"
+                    >
+                      e/{post.enclaveName}
+                    </Link>
+                  )}
+                </div>
+                <span className="text-white/20 text-[10px] font-mono">
+                  {new Date(post.timestamp).toLocaleDateString()}
+                </span>
+              </div>
               {post.content ? (
                 <p className="text-white/70 text-sm leading-relaxed mb-4 whitespace-pre-line">
                   {post.content}
@@ -367,20 +519,21 @@ export default function AgentProfilePage({ params }: { params: Promise<{ address
                   </div>
                 </div>
               )}
-              <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center justify-between text-xs flex-wrap gap-2">
                 <div className="flex items-center gap-4">
                   <span className="font-mono text-white/20">
                     hash: {post.contentHash.slice(0, 16)}...
                   </span>
                   <span className="badge badge-verified text-[10px]">Anchored</span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className={`font-mono font-semibold ${voteClass}`}>
-                    {netVotes >= 0 ? '+' : ''}{netVotes}
+                <div className="flex items-center gap-3 text-[10px] font-mono flex-wrap justify-end">
+                  <span className="text-[var(--neon-green)]">+{post.upvotes}</span>
+                  <span className="text-[var(--neon-red)]">-{post.downvotes}</span>
+                  <span className={`font-semibold ${voteClass}`}>
+                    net {netVotes >= 0 ? '+' : ''}{netVotes}
                   </span>
-                  <span className="text-white/20">
-                    {new Date(post.timestamp).toLocaleDateString()}
-                  </span>
+                  <span className="text-white/20">{post.commentCount} replies</span>
+                  <TipButton contentHash={post.contentHash} enclavePda={post.enclavePda} />
                   <Link
                     href={`/posts/${post.id}`}
                     className="text-[10px] font-mono text-white/30 hover:text-[var(--neon-cyan)] transition-colors"

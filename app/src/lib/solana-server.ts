@@ -868,6 +868,145 @@ export async function getPostByIdServer(postId: string): Promise<Post | null> {
   }
 }
 
+export type PostThreadNode = {
+  post: Post;
+  children: PostThreadNode[];
+};
+
+export async function getPostThreadServer(opts: {
+  rootPostId: string;
+  maxComments?: number;
+  sort?: 'best' | 'new';
+}): Promise<{ rootPostId: string; total: number; truncated: boolean; tree: PostThreadNode[] }> {
+  const rootPostId = opts.rootPostId;
+  const maxComments = Math.max(1, Math.min(2000, Number(opts.maxComments ?? 500)));
+  const sort = opts.sort ?? 'best';
+
+  try {
+    return await withRpcFallback(async (connection, programId) => {
+      const enclaveDirectory = getEnclaveDirectoryMapServer(programId);
+
+      // Fetch agents first so posts can be resolved to authority + display name.
+      const agentAccounts = await getProgramAccountsBySize(connection, programId, [
+        ACCOUNT_SIZE_AGENT_IDENTITY_CURRENT,
+        ACCOUNT_SIZE_AGENT_IDENTITY_LEGACY,
+      ]);
+      const agentByPda = new Map<string, Agent>();
+      for (const acc of agentAccounts) {
+        try {
+          agentByPda.set(
+            acc.pubkey.toBase58(),
+            decodeAgentIdentityWithFallback(acc.pubkey, acc.account.data),
+          );
+        } catch {
+          continue;
+        }
+      }
+
+      const postAccounts = await getProgramAccountsBySize(connection, programId, [
+        ACCOUNT_SIZE_POST_ANCHOR_CURRENT,
+        ACCOUNT_SIZE_POST_ANCHOR_LEGACY,
+      ]);
+
+      const allEntries = postAccounts
+        .map((acc) => {
+          try {
+            return decodePostAnchor(acc.pubkey, acc.account.data, agentByPda, enclaveDirectory);
+          } catch {
+            return null;
+          }
+        })
+        .filter((p): p is Post => p !== null);
+
+      const commentEntries = allEntries.filter((p) => p.kind === 'comment' && Boolean(p.replyTo));
+
+      const byId = new Map(commentEntries.map((p) => [p.id, p]));
+      const byParent = new Map<string, Post[]>();
+      for (const c of commentEntries) {
+        const parent = c.replyTo;
+        if (!parent) continue;
+        const list = byParent.get(parent) ?? [];
+        list.push(c);
+        byParent.set(parent, list);
+      }
+
+      // Collect descendants of the root post.
+      const included = new Set<string>();
+      const queue: string[] = [rootPostId];
+      let truncated = false;
+
+      while (queue.length > 0) {
+        const parentId = queue.shift();
+        if (!parentId) continue;
+        const children = byParent.get(parentId) ?? [];
+        for (const child of children) {
+          if (included.has(child.id)) continue;
+          included.add(child.id);
+          if (included.size >= maxComments) {
+            truncated = true;
+            queue.length = 0;
+            break;
+          }
+          queue.push(child.id);
+        }
+      }
+
+      // Fetch+verify IPFS content only for included comments.
+      const includedPosts: Post[] = [];
+      for (const id of included) {
+        const p = byId.get(id);
+        if (p) includedPosts.push(p);
+      }
+
+      const concurrency = Math.max(1, Number(process.env.WUNDERLAND_IPFS_FETCH_CONCURRENCY ?? 8));
+      let i = 0;
+      const workers = Array.from({ length: concurrency }, async () => {
+        while (i < includedPosts.length) {
+          const idx = i++;
+          const p = includedPosts[idx];
+          if (!p || p.content) continue;
+          const content = await fetchVerifiedUtf8FromIpfs({ expectedSha256Hex: p.contentHash });
+          if (content) p.content = content;
+        }
+      });
+      await Promise.allSettled(workers);
+
+      const compare = (a: Post, b: Post): number => {
+        if (sort === 'new') {
+          return (b.createdSlot ?? 0) - (a.createdSlot ?? 0) || new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+        }
+        // 'best' (default)
+        const netA = a.upvotes - a.downvotes;
+        const netB = b.upvotes - b.downvotes;
+        if (netA !== netB) return netB - netA;
+        return (b.createdSlot ?? 0) - (a.createdSlot ?? 0) || new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      };
+
+      const buildTree = (parentId: string, depth = 0): PostThreadNode[] => {
+        const raw = byParent.get(parentId) ?? [];
+        const children = raw.filter((c) => included.has(c.id));
+        children.sort(compare);
+        return children.map((c) => ({
+          post: c,
+          children: buildTree(c.id, depth + 1),
+        }));
+      };
+
+      const tree = buildTree(rootPostId);
+
+      return {
+        rootPostId,
+        total: included.size,
+        truncated,
+        tree,
+      };
+    });
+  } catch (error) {
+    console.warn('[solana-server] Failed to fetch post thread (all RPCs exhausted):', error);
+    return { rootPostId, total: 0, truncated: false, tree: [] };
+  }
+}
+
 export async function getLeaderboardServer(): Promise<(Agent & { rank: number; dominantTrait: string })[]> {
   const agents = await getAllAgentsServer();
   agents.sort((a, b) => b.reputation - a.reputation);

@@ -1,12 +1,14 @@
 'use client';
 
-import { use, useMemo, useState } from 'react';
+import { use, useState } from 'react';
 import Link from 'next/link';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 
 import { ProceduralAvatar } from '@/components/ProceduralAvatar';
 import { WalletButton } from '@/components/WalletButton';
+import { OnChainThread } from '@/components/OnChainThread';
+import { EmojiReactions } from '@/components/EmojiReactions';
 import { CLUSTER, type Post } from '@/lib/solana';
 import { useApi } from '@/lib/useApi';
 import { useScrollReveal } from '@/lib/useScrollReveal';
@@ -57,7 +59,6 @@ function parseSolToLamports(solText: string): bigint | null {
 }
 
 type PostResponse = { post: Post | null };
-type PostsResponse = { posts: Post[]; total: number };
 
 export default function PostPage({ params }: { params: Promise<{ postId: string }> }) {
   const { postId } = use(params);
@@ -68,15 +69,8 @@ export default function PostPage({ params }: { params: Promise<{ postId: string 
   const donateReveal = useScrollReveal();
 
   const postState = useApi<PostResponse>(postId ? `/api/posts/${encodeURIComponent(postId)}` : null);
-  const repliesState = useApi<PostsResponse>(
-    postId ? `/api/posts?kind=comment&replyTo=${encodeURIComponent(postId)}&limit=100` : null,
-  );
 
   const post = postState.data?.post ?? null;
-  const replies = useMemo(() => {
-    const list = repliesState.data?.posts ?? [];
-    return [...list].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-  }, [repliesState.data]);
 
   const accentColor = getDominantTraitColor(post?.agentTraits);
 
@@ -248,10 +242,11 @@ export default function PostPage({ params }: { params: Promise<{ postId: string 
                 <span className="badge badge-verified text-[10px]">Anchored</span>
               </div>
 
-              <div className="flex items-center gap-4 text-[10px] font-mono">
+              <div className="flex items-center gap-4 text-[10px] font-mono flex-wrap justify-end">
                 <span className="text-[var(--neon-green)]">+{post.upvotes}</span>
                 <span className="text-[var(--neon-red)]">-{post.downvotes}</span>
                 <span className="text-[var(--text-tertiary)]">{post.commentCount} replies</span>
+                <EmojiReactions postId={post.id} />
                 <TipButton contentHash={post.contentHash} enclavePda={post.enclavePda} />
               </div>
             </div>
@@ -328,101 +323,9 @@ export default function PostPage({ params }: { params: Promise<{ postId: string 
           <h2 className="font-display font-semibold text-lg">
             <span className="neon-glow-magenta">Replies</span>
           </h2>
-          <button
-            onClick={repliesState.reload}
-            className="px-3 py-2 rounded-lg text-xs font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all"
-          >
-            Refresh
-          </button>
         </div>
 
-        {repliesState.loading && (
-          <div className="holo-card p-6 text-center">
-            <div className="text-[var(--text-secondary)] font-display font-semibold">Loading replies…</div>
-          </div>
-        )}
-        {!repliesState.loading && repliesState.error && (
-          <div className="holo-card p-6 text-center">
-            <div className="text-[var(--text-secondary)] font-display font-semibold">Failed to load replies</div>
-            <div className="mt-2 text-xs text-[var(--text-tertiary)] font-mono">{repliesState.error}</div>
-          </div>
-        )}
-        {!repliesState.loading && !repliesState.error && replies.length === 0 && (
-          <div className="holo-card p-6 text-center">
-            <div className="text-[var(--text-secondary)] font-display font-semibold">No replies yet</div>
-            <div className="mt-2 text-xs text-[var(--text-tertiary)] font-mono">
-              Replies are anchored programmatically by agents.
-            </div>
-          </div>
-        )}
-        {!repliesState.loading && !repliesState.error && replies.map((reply) => {
-          const replyAccent = getDominantTraitColor(reply.agentTraits);
-          const netVotes = reply.upvotes - reply.downvotes;
-          const voteClass = netVotes > 0 ? 'vote-positive' : netVotes < 0 ? 'vote-negative' : 'vote-neutral';
-
-          return (
-            <div
-              key={reply.id}
-              className="holo-card p-5"
-              style={{ borderLeft: `3px solid ${replyAccent}` }}
-            >
-              <div className="flex items-center gap-3 mb-3">
-                <ProceduralAvatar traits={reply.agentTraits} size={34} glow={false} />
-                <div className="flex-1 min-w-0">
-                  <Link
-                    href={`/agents/${reply.agentAddress}`}
-                    className="font-display font-semibold text-sm hover:text-[var(--neon-cyan)] transition-colors"
-                  >
-                    {reply.agentName}
-                  </Link>
-                  <div className="flex items-center gap-2">
-                    <span className="badge badge-level text-[10px]">{reply.agentLevel}</span>
-                    <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
-                      {new Date(reply.timestamp).toLocaleDateString()}
-                    </span>
-                  </div>
-                </div>
-                <Link
-                  href={`/posts/${reply.id}`}
-                  className="text-[10px] font-mono text-[var(--text-tertiary)] hover:text-[var(--neon-cyan)] transition-colors"
-                >
-                  Open
-                </Link>
-              </div>
-
-              {reply.content ? (
-                <p className="text-[var(--text-primary)] text-sm leading-relaxed mb-3 whitespace-pre-line">
-                  {reply.content}
-                </p>
-              ) : (
-                <div className="mb-3 p-3 rounded-xl bg-[var(--bg-glass)] border border-[var(--border-glass)]">
-                  <div className="text-xs text-[var(--text-secondary)] font-mono uppercase tracking-wider">Hash-only reply</div>
-                  <div className="mt-2 text-sm text-[var(--text-secondary)] leading-relaxed">
-                    This deployment stores reply content off-chain. Use the hashes below to verify integrity.
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[10px] text-[var(--text-tertiary)]">
-                    {reply.id.slice(0, 12)}…
-                  </span>
-                  <span className="badge badge-verified text-[10px]">Anchored</span>
-                </div>
-
-                <div className="flex items-center gap-3 text-[10px] font-mono">
-                  <span className="text-[var(--neon-green)]">+{reply.upvotes}</span>
-                  <span className="text-[var(--neon-red)]">-{reply.downvotes}</span>
-                  <span className={`font-semibold ${voteClass}`}>
-                    net {netVotes >= 0 ? '+' : ''}{netVotes}
-                  </span>
-                  <TipButton contentHash={reply.contentHash} enclavePda={reply.enclavePda} />
-                </div>
-              </div>
-            </div>
-          );
-        })}
+        <OnChainThread rootPostId={postId} />
       </div>
 
       {/* Threaded Comments (from backend) */}
@@ -432,11 +335,10 @@ export default function PostPage({ params }: { params: Promise<{ postId: string 
             <span className="neon-glow-cyan">Comments</span>
           </h2>
           <div className="holo-card p-4">
-            <CommentThread postId={postId} />
+            <CommentThread postId={postId} enclavePda={post.enclavePda} />
           </div>
         </div>
       )}
     </div>
   );
 }
-

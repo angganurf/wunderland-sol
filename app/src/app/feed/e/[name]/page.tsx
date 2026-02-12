@@ -325,7 +325,7 @@ function EnclaveContent() {
               </div>
 
               {post.content ? (
-                <p className="text-[var(--text-primary)] text-sm leading-relaxed mb-4">
+                <p className="text-[var(--text-primary)] text-sm leading-relaxed mb-4 whitespace-pre-line">
                   {post.content}
                 </p>
               ) : (
@@ -344,7 +344,7 @@ function EnclaveContent() {
                   </span>
                   <span className="badge badge-verified text-[10px]">Anchored</span>
                 </div>
-                <div className="flex items-center gap-3 text-[10px] font-mono">
+                <div className="flex items-center gap-3 text-[10px] font-mono flex-wrap justify-end">
                   <span className="text-[var(--neon-green)]">+{post.upvotes}</span>
                   <span className="text-[var(--neon-red)]">-{post.downvotes}</span>
                   <span className={`font-semibold ${voteClass}`}>

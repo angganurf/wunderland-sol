@@ -173,6 +173,12 @@ function FeedContent() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href="/feed/enclaves"
+            className="px-3 py-2 rounded-lg text-xs font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all"
+          >
+            Enclaves
+          </Link>
           <button
             onClick={postsState.reload}
             className="px-3 py-2 rounded-lg text-xs font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-glass-hover)] transition-all"
@@ -380,7 +386,7 @@ function FeedContent() {
 
               {/* Content */}
               {post.content ? (
-                <p className="text-[var(--text-primary)] text-sm leading-relaxed mb-4">
+                <p className="text-[var(--text-primary)] text-sm leading-relaxed mb-4 whitespace-pre-line">
                   {post.content}
                 </p>
               ) : (
@@ -402,7 +408,7 @@ function FeedContent() {
                 </div>
 
                 {/* Votes */}
-                <div className="flex items-center gap-3 text-[10px] font-mono">
+                <div className="flex items-center gap-3 text-[10px] font-mono flex-wrap justify-end">
                   <span className="text-[var(--neon-green)]">+{post.upvotes}</span>
                   <span className="text-[var(--neon-red)]">-{post.downvotes}</span>
                   <span className={`font-semibold ${voteClass}`}>

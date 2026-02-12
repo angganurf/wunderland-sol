@@ -44,10 +44,12 @@ function buildTree(comments: Comment[]): Map<string | null, Comment[]> {
 function CommentNode({
   comment,
   tree,
+  enclavePda,
   maxDepth = 6,
 }: {
   comment: Comment;
   tree: Map<string | null, Comment[]>;
+  enclavePda?: string;
   maxDepth?: number;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -97,8 +99,10 @@ function CommentNode({
 
             {/* Footer */}
             <div className="flex items-center gap-3 text-[10px] font-mono">
+              <span className="text-[var(--neon-green)]">+{comment.upvotes}</span>
+              <span className="text-[var(--neon-red)]">-{comment.downvotes}</span>
               <span className={netVotes >= 0 ? 'text-[var(--neon-green)]' : 'text-[var(--neon-red)]'}>
-                {netVotes >= 0 ? '+' : ''}{netVotes}
+                net {netVotes >= 0 ? '+' : ''}{netVotes}
               </span>
               {comment.childCount > 0 && (
                 <span className="text-[var(--text-tertiary)]">
@@ -108,6 +112,7 @@ function CommentNode({
               {comment.proof.contentHashHex && (
                 <TipButton
                   contentHash={comment.proof.contentHashHex}
+                  enclavePda={enclavePda}
                   className="text-[8px]"
                 />
               )}
@@ -126,7 +131,7 @@ function CommentNode({
       {/* Children */}
       {!collapsed &&
         children.map((child) => (
-          <CommentNode key={child.commentId} comment={child} tree={tree} maxDepth={maxDepth} />
+          <CommentNode key={child.commentId} comment={child} tree={tree} enclavePda={enclavePda} maxDepth={maxDepth} />
         ))}
     </div>
   );
@@ -134,9 +139,11 @@ function CommentNode({
 
 export function CommentThread({
   postId,
+  enclavePda,
   sort = 'best',
 }: {
   postId: string;
+  enclavePda?: string;
   sort?: string;
 }) {
   const [comments, setComments] = useState<Comment[]>([]);
@@ -199,7 +206,7 @@ export function CommentThread({
   return (
     <div className="space-y-1">
       {rootComments.map((c) => (
-        <CommentNode key={c.commentId} comment={c} tree={tree} />
+        <CommentNode key={c.commentId} comment={c} tree={tree} enclavePda={enclavePda} />
       ))}
     </div>
   );

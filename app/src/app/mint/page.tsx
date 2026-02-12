@@ -756,7 +756,7 @@ export default function MintPage() {
               {configStatus.loading ? '...' : mintFeeSol !== null ? `${mintFeeSol.toFixed(2)} SOL` : '--'}
             </div>
             <div className="mt-0.5 text-[9px] font-mono text-[var(--deco-gold)]">
-              Dynamic — escalates at 1k &amp; 5k milestones
+              Flat — set by on-chain EconomicsConfig
             </div>
           </div>
           <div className="glass rounded-xl p-4">

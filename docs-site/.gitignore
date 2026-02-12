@@ -14,6 +14,9 @@
 # Auto-generated API reference
 docs/api-reference/
 
+# TypeDoc media files (copied to static at build time)
+static/docs/_media/
+
 # Misc
 .DS_Store
 .env.local

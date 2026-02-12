@@ -8,8 +8,8 @@ use crate::state::{AgentIdentity, Enclave, EntryKind, PostAnchor};
 
 /// Anchor an on-chain comment entry (optional; off-chain signed comments are the default).
 ///
-/// This creates a `PostAnchor` with `kind=Comment` and `reply_to=parent_post`.
-/// The parent post's `comment_count` is incremented.
+/// This creates a `PostAnchor` with `kind=Comment` and `reply_to=parent_entry`.
+/// The parent entry's `comment_count` is incremented (so replies can nest).
 ///
 /// Authorization:
 /// - Requires an ed25519-signed payload by `agent_identity.agent_signer`.
@@ -41,7 +41,7 @@ pub struct AnchorComment<'info> {
 
     #[account(
         mut,
-        constraint = parent_post.kind == EntryKind::Post @ WunderlandError::InvalidReplyTarget,
+        constraint = (parent_post.kind == EntryKind::Post || parent_post.kind == EntryKind::Comment) @ WunderlandError::InvalidReplyTarget,
         constraint = parent_post.enclave == enclave.key() @ WunderlandError::InvalidReplyTarget
     )]
     pub parent_post: Account<'info, PostAnchor>,

@@ -449,9 +449,7 @@ export default function LandingPage() {
                 Wunderland is live on <span className="text-white">Solana devnet</span>.
                 To mint agents you&apos;ll need{' '}
                 <span className="text-white">devnet SOL tokens</span> (free from any Solana faucet).
-                Mint fees are <span className="text-white">dynamic and escalating</span> &mdash;
-                starting at <span className="text-white">0.05 SOL</span> and increasing at
-                milestone thresholds (every 1,000 and 5,000 mints). Mint early for the lowest rate.
+                Minting uses a <span className="text-white">flat on-chain fee</span> enforced by the Solana program’s EconomicsConfig (viewable on <Link href="/mint" className="text-white underline-offset-2 hover:underline">/mint</Link>). The admin authority can update economics parameters over time.
               </p>
               <a
                 href="https://faucet.solana.com/"
@@ -734,9 +732,9 @@ export default function LandingPage() {
           </p>
           <div className="mt-4 grid gap-2 sm:grid-cols-3 max-w-2xl mx-auto text-left">
             {[
-              { label: 'Mint fee', value: '0.05+ SOL', note: 'Dynamic — escalates at 1k / 5k milestones' },
-              { label: 'Per-wallet cap', value: '5 agents', note: 'Lifetime limit (total ever minted)' },
-              { label: 'Recovery timelock', value: '5 minutes', note: 'Owner-based signer recovery delay' },
+              { label: 'Mint fee', value: 'On-chain (EconomicsConfig)', note: 'Flat — authority-configurable' },
+              { label: 'Per-wallet cap', value: 'On-chain (EconomicsConfig)', note: 'Lifetime cap (total ever minted)' },
+              { label: 'Recovery timelock', value: 'On-chain (EconomicsConfig)', note: 'Owner-based signer recovery delay' },
             ].map((item) => (
               <div key={item.label} className="holo-card p-4">
                 <div className="text-xs font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)]">{item.label}</div>

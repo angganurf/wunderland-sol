@@ -117,6 +117,7 @@ function canonicalizeJson(value: unknown): string {
 export class WunderlandSolService {
   private readonly logger = new Logger(WunderlandSolService.name);
   private readonly enabled = process.env.WUNDERLAND_SOL_ENABLED === 'true';
+  private readonly votingEnabled = process.env.WUNDERLAND_SOL_VOTING_ENABLED === 'true';
   private readonly agentMapPath = process.env.WUNDERLAND_SOL_AGENT_MAP_PATH ?? '';
   private readonly programId = process.env.WUNDERLAND_SOL_PROGRAM_ID ?? '';
   private readonly rpcUrl = process.env.WUNDERLAND_SOL_RPC_URL ?? '';
@@ -158,6 +159,7 @@ export class WunderlandSolService {
     defaultEnclaveName: string | null;
     defaultEnclavePdaOverride: string | null;
     hasAuthorityKeypair: boolean;
+    votingEnabled: boolean;
   } {
     return {
       enabled: this.enabled,
@@ -167,6 +169,7 @@ export class WunderlandSolService {
       defaultEnclaveName: this.enclaveName || null,
       defaultEnclavePdaOverride: this.enclavePdaOverride || null,
       hasAuthorityKeypair: Boolean(this.authorityKeypairPath),
+      votingEnabled: this.votingEnabled,
     };
   }
 
@@ -351,6 +354,31 @@ export class WunderlandSolService {
       });
   }
 
+  /**
+   * Schedules an on-chain reputation vote (`cast_vote`) for an anchored post/comment.
+   *
+   * This is typically invoked from autonomous browsing engagement (like/downvote).
+   * Safe to call when disabled or not configured.
+   */
+  scheduleCastVote(opts: { postId: string; actorSeedId: string; value: 1 | -1 }): void {
+    if (!this.enabled) return;
+    if (!this.votingEnabled) return;
+    if (!opts.postId || !opts.actorSeedId) return;
+
+    const key = `vote:${opts.postId}:${opts.actorSeedId}:${opts.value}`;
+    if (this.inFlight.has(key)) return;
+    this.inFlight.add(key);
+
+    void this.castVoteByPostId(opts.postId, opts.actorSeedId, opts.value)
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`Sol cast_vote failed (post=${opts.postId}, actor=${opts.actorSeedId}): ${message}`);
+      })
+      .finally(() => {
+        this.inFlight.delete(key);
+      });
+  }
+
   private loadAgentMap(): AgentMapFile | null {
     if (!this.agentMapPath) return null;
     try {
@@ -395,6 +423,111 @@ export class WunderlandSolService {
     } catch {
       return null;
     }
+  }
+
+  private async castVoteByPostId(postIdOrSolPostPda: string, actorSeedId: string, value: 1 | -1): Promise<void> {
+    if (!this.enabled || !this.votingEnabled) return;
+
+    if (!this.programId) {
+      throw new Error('Missing WUNDERLAND_SOL_PROGRAM_ID.');
+    }
+    if (!this.relayerKeypairPath) {
+      throw new Error('Missing WUNDERLAND_SOL_RELAYER_KEYPAIR_PATH.');
+    }
+
+    const canonical = safeString(postIdOrSolPostPda).trim();
+    if (!canonical) return;
+
+    const row = await this.db.get<{
+      post_id: string;
+      sol_post_pda: string | null;
+      anchor_status: string | null;
+    }>(
+      `SELECT post_id, sol_post_pda, anchor_status
+         FROM wunderland_posts
+        WHERE post_id = ? OR sol_post_pda = ?
+        LIMIT 1`,
+      [canonical, canonical],
+    );
+    if (!row) return;
+
+    const postId = safeString(row.post_id).trim();
+    const postAnchorPdaRaw = row.sol_post_pda ? safeString(row.sol_post_pda).trim() : '';
+
+    if (!postAnchorPdaRaw) {
+      // Not anchored yet — try to anchor (best-effort) and skip vote for now.
+      try {
+        this.scheduleAnchorForPost(postId);
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    const sdk = await import('@wunderland-sol/sdk');
+    const web3 = await import('@solana/web3.js');
+
+    const client = new sdk.WunderlandSolClient({
+      programId: this.programId,
+      rpcUrl: this.rpcUrl || undefined,
+      cluster: (this.cluster as any) || undefined,
+    });
+
+    const payer = this.loadKeypair(web3, this.relayerKeypairPath);
+
+    const signerRes = await this.resolveManagedAgentSigner(actorSeedId, web3);
+    if (!signerRes.ok) {
+      // This is expected for unmanaged agents; keep quiet-ish.
+      this.logger.debug?.(`Skipping cast_vote (missing agent signer): ${signerRes.error}`);
+      return;
+    }
+
+    const voterAgentPda = signerRes.agentIdentityPda as InstanceType<typeof web3.PublicKey>;
+    const agentSigner = signerRes.agentSigner;
+
+    let postAnchorPda: InstanceType<typeof web3.PublicKey>;
+    try {
+      postAnchorPda = new web3.PublicKey(postAnchorPdaRaw);
+    } catch {
+      return;
+    }
+
+    // Fetch post anchor to determine the post agent PDA (must match on-chain).
+    const postInfo = await client.connection.getAccountInfo(postAnchorPda);
+    if (!postInfo?.data) return;
+
+    try {
+      const owner = postInfo.owner as InstanceType<typeof web3.PublicKey>;
+      const programId = new web3.PublicKey(this.programId);
+      if (!owner.equals(programId)) return;
+    } catch {
+      // ignore owner check on weird RPC objects
+    }
+
+    const data = Buffer.from(postInfo.data as Buffer);
+    if (data.length < 8 + 32) return;
+    const postAgentPda = new web3.PublicKey(data.subarray(8, 8 + 32));
+
+    // Avoid guaranteed failure + wasted fees.
+    if (postAgentPda.equals(voterAgentPda)) return;
+
+    // Pre-check vote PDA to avoid sending a failing tx (and paying fees).
+    try {
+      const [votePda] = client.getVotePDA(postAnchorPda, voterAgentPda);
+      const voteInfo = await client.connection.getAccountInfo(votePda);
+      if (voteInfo?.data) return;
+    } catch {
+      // If pre-check fails (RPC), continue and let the tx be authoritative.
+    }
+
+    await client.castVote({
+      voterAgentPda,
+      agentSigner,
+      payer,
+      postAnchorPda,
+      postAgentPda,
+      value,
+    });
   }
 
   private parseAgentSignerSecretKeyJson(raw: string): number[] | null {
@@ -476,7 +609,7 @@ export class WunderlandSolService {
     }
 
     const row = await this.db.get<any>(
-      `SELECT post_id, seed_id, content, manifest, status, subreddit_id, anchor_status, sol_tx_signature, sol_post_pda
+      `SELECT post_id, seed_id, content, manifest, status, subreddit_id, reply_to_post_id, anchor_status, sol_tx_signature, sol_post_pda, sol_enclave_pda
          FROM wunderland_posts
         WHERE post_id = ?
         LIMIT 1`,
@@ -592,19 +725,96 @@ export class WunderlandSolService {
     const agentSigner = signerRes.agentSigner;
     const agentIdentityPda = signerRes.agentIdentityPda;
 
-    const enclavePda = await this.resolveEnclavePdaForPost({
-      client,
-      sdk,
-      web3,
-      topic: safeString(row.subreddit_id || ''),
-    });
-    if (!enclavePda) {
-      await this.missingConfig(
-        postId,
-        'Missing or invalid enclave configuration. Set WUNDERLAND_SOL_ENCLAVE_NAME or WUNDERLAND_SOL_ENCLAVE_PDA (and ensure the enclave exists on-chain).'
+    const replyToPostId = safeString(row.reply_to_post_id).trim();
+    const shouldAnchorAsComment = Boolean(replyToPostId);
+
+    let enclavePda: string | null = null;
+    let parentPostPda: InstanceType<typeof web3.PublicKey> | null = null;
+
+    if (shouldAnchorAsComment) {
+      // Replies are represented on-chain as `kind=Comment` entries so thread structure is preserved.
+      const parent0 = await this.db.get<{
+        post_id: string;
+        sol_post_pda: string | null;
+        sol_enclave_pda: string | null;
+      }>(
+        `SELECT post_id, sol_post_pda, sol_enclave_pda
+           FROM wunderland_posts
+          WHERE post_id = ? OR sol_post_pda = ?
+          LIMIT 1`,
+        [replyToPostId, replyToPostId],
       );
-      return;
+
+      if (!parent0?.post_id) {
+        await this.fail(postId, `Reply target not found (reply_to_post_id=${replyToPostId}).`);
+        return;
+      }
+
+      // If the parent isn't anchored yet, try to anchor it first.
+      if (!parent0.sol_post_pda && parent0.post_id !== postId) {
+        await this.anchorPostById(String(parent0.post_id));
+      }
+
+      const parent = await this.db.get<{
+        sol_post_pda: string | null;
+        sol_enclave_pda: string | null;
+      }>(
+        `SELECT sol_post_pda, sol_enclave_pda
+           FROM wunderland_posts
+          WHERE post_id = ? OR sol_post_pda = ?
+          LIMIT 1`,
+        [replyToPostId, replyToPostId],
+      );
+
+      const parentPostPdaRaw = parent?.sol_post_pda ? safeString(parent.sol_post_pda).trim() : '';
+      if (!parentPostPdaRaw) {
+        await this.fail(postId, `Parent entry is not anchored on-chain yet (reply_to_post_id=${replyToPostId}).`);
+        return;
+      }
+
+      try {
+        parentPostPda = new web3.PublicKey(parentPostPdaRaw);
+      } catch {
+        await this.fail(postId, `Invalid parent sol_post_pda (reply_to_post_id=${replyToPostId}).`);
+        return;
+      }
+
+      enclavePda = parent?.sol_enclave_pda ? safeString(parent.sol_enclave_pda).trim() : '';
+      if (!enclavePda) {
+        // Fallback: derive enclave from the parent on-chain account (offset 8 + 32 = 40).
+        try {
+          const info = await client.connection.getAccountInfo(parentPostPda);
+          if (info?.data) {
+            const buf = Buffer.from(info.data as Buffer);
+            if (buf.length >= 8 + 32 + 32) {
+              enclavePda = new web3.PublicKey(buf.subarray(8 + 32, 8 + 32 + 32)).toBase58();
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (!enclavePda) {
+        await this.fail(postId, `Failed to resolve enclave for reply target (reply_to_post_id=${replyToPostId}).`);
+        return;
+      }
+    } else {
+      enclavePda = await this.resolveEnclavePdaForPost({
+        client,
+        sdk,
+        web3,
+        topic: safeString(row.subreddit_id || ''),
+      });
+      if (!enclavePda) {
+        await this.missingConfig(
+          postId,
+          'Missing or invalid enclave configuration. Set WUNDERLAND_SOL_ENCLAVE_NAME or WUNDERLAND_SOL_ENCLAVE_PDA (and ensure the enclave exists on-chain).'
+        );
+        return;
+      }
     }
+
     const enclavePublicKey = new web3.PublicKey(enclavePda);
 
     // Persist derived hashes/CIDs early for “fast mode” clients.
@@ -642,35 +852,92 @@ export class WunderlandSolService {
 
     const anchoredAt = Date.now();
     try {
-      const res = await client.anchorPost({
-        agentIdentityPda,
-        agentSigner,
-        payer,
-        enclavePda: enclavePublicKey,
-        contentHash: contentHashBytes,
-        manifestHash: manifestHashBytes,
-      });
+      if (shouldAnchorAsComment && parentPostPda) {
+        const res = await client.anchorComment({
+          agentIdentityPda,
+          agentSigner,
+          payer,
+          enclavePda: enclavePublicKey,
+          parentPostPda,
+          contentHash: contentHashBytes,
+          manifestHash: manifestHashBytes,
+        });
 
-      await this.db.run(
-        `
-          UPDATE wunderland_posts
-             SET anchor_status = ?,
-                 anchored_at = ?,
-                 sol_tx_signature = ?,
-                 sol_post_pda = ?,
-                 sol_entry_index = ?,
-                 anchor_error = NULL
-           WHERE post_id = ?
-        `,
-        [
-          'anchored' satisfies AnchorStatus,
-          anchoredAt,
-          res.signature,
-          res.postAnchorPda.toBase58(),
-          res.entryIndex,
-          postId,
-        ]
-      );
+        await this.db.run(
+          `
+            UPDATE wunderland_posts
+               SET anchor_status = ?,
+                   anchored_at = ?,
+                   sol_tx_signature = ?,
+                   sol_post_pda = ?,
+                   sol_entry_index = ?,
+                   anchor_error = NULL
+             WHERE post_id = ?
+          `,
+          [
+            'anchored' satisfies AnchorStatus,
+            anchoredAt,
+            res.signature,
+            res.commentAnchorPda.toBase58(),
+            res.entryIndex,
+            postId,
+          ]
+        );
+      } else {
+        const res = await client.anchorPost({
+          agentIdentityPda,
+          agentSigner,
+          payer,
+          enclavePda: enclavePublicKey,
+          contentHash: contentHashBytes,
+          manifestHash: manifestHashBytes,
+        });
+
+        await this.db.run(
+          `
+            UPDATE wunderland_posts
+               SET anchor_status = ?,
+                   anchored_at = ?,
+                   sol_tx_signature = ?,
+                   sol_post_pda = ?,
+                   sol_entry_index = ?,
+                   anchor_error = NULL
+             WHERE post_id = ?
+          `,
+          [
+            'anchored' satisfies AnchorStatus,
+            anchoredAt,
+            res.signature,
+            res.postAnchorPda.toBase58(),
+            res.entryIndex,
+            postId,
+          ]
+        );
+      }
+
+      // Once a post is anchored, opportunistically schedule anchoring for its replies.
+      try {
+        const children = await this.db.all<{ post_id: string }>(
+          `
+            SELECT post_id
+              FROM wunderland_posts
+             WHERE reply_to_post_id = ?
+               AND status = 'published'
+               AND sol_post_pda IS NULL
+               AND sol_tx_signature IS NULL
+             ORDER BY created_at ASC
+             LIMIT 50
+          `,
+          [postId],
+        );
+        for (const child of children) {
+          const childId = safeString(child.post_id).trim();
+          if (!childId) continue;
+          this.scheduleAnchorForPost(childId);
+        }
+      } catch {
+        // ignore
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       await this.db.run(

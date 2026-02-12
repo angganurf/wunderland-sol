@@ -21,6 +21,17 @@ export class SocialFeedService {
     @Optional() @Inject(WunderlandSolService) private readonly sol?: WunderlandSolService,
   ) {}
 
+  private async resolveCanonicalPostId(postIdOrSolPostPda: string): Promise<string | null> {
+    const raw = typeof postIdOrSolPostPda === 'string' ? postIdOrSolPostPda.trim() : '';
+    if (!raw) return null;
+
+    const row = await this.db.get<{ post_id: string }>(
+      `SELECT post_id FROM wunderland_posts WHERE post_id = ? OR sol_post_pda = ? LIMIT 1`,
+      [raw, raw],
+    );
+    return row?.post_id ? String(row.post_id) : null;
+  }
+
   async getFeed(query: FeedQueryDto = {}) {
     return this.getFeedInternal({ ...query });
   }
@@ -289,6 +300,7 @@ export class SocialFeedService {
   // ── Comment CRUD ───────────────────────────────────────────────────────────
 
   async getComments(postId: string, opts?: { sort?: string; limit?: number; offset?: number }) {
+    const canonicalPostId = (await this.resolveCanonicalPostId(postId)) ?? postId;
     const limit = Math.min(opts?.limit ?? 50, 200);
     const offset = opts?.offset ?? 0;
     const sort = opts?.sort ?? 'best';
@@ -305,12 +317,12 @@ export class SocialFeedService {
         WHERE c.post_id = ? AND c.status = 'active'
         ${orderSql}
         LIMIT ? OFFSET ?`,
-      [postId, limit, offset],
+      [canonicalPostId, limit, offset],
     );
 
     const total = await this.db.get<{ cnt: number }>(
       `SELECT COUNT(*) as cnt FROM wunderland_comments WHERE post_id = ? AND status = 'active'`,
-      [postId],
+      [canonicalPostId],
     );
 
     return {
@@ -416,6 +428,7 @@ export class SocialFeedService {
   }
 
   async getCommentTree(postId: string, opts?: { sort?: string; limit?: number }) {
+    const canonicalPostId = (await this.resolveCanonicalPostId(postId)) ?? postId;
     const sort = opts?.sort ?? 'best';
     const limit = Math.min(Math.max(1, opts?.limit ?? 500), 2000);
 
@@ -426,12 +439,12 @@ export class SocialFeedService {
         WHERE c.post_id = ? AND c.status = 'active'
         ORDER BY c.created_at ASC
         LIMIT ?`,
-      [postId, limit],
+      [canonicalPostId, limit],
     );
 
     const total = await this.db.get<{ cnt: number }>(
       `SELECT COUNT(*) as cnt FROM wunderland_comments WHERE post_id = ? AND status = 'active'`,
-      [postId],
+      [canonicalPostId],
     );
     const totalCount = total?.cnt ?? 0;
 
@@ -496,13 +509,14 @@ export class SocialFeedService {
   }
 
   async getReactions(postId: string) {
+    const canonicalPostId = (await this.resolveCanonicalPostId(postId)) ?? postId;
     const rows = await this.db.all<{ emoji: string; count: number }>(
       `SELECT emoji, COUNT(*) as count
        FROM wunderland_emoji_reactions
        WHERE entity_type = 'post' AND entity_id = ?
        GROUP BY emoji
        ORDER BY count DESC`,
-      [postId],
+      [canonicalPostId],
     );
 
     const reactions: Record<string, number> = {};

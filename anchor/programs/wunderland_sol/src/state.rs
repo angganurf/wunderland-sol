@@ -141,7 +141,7 @@ pub struct PostAnchor {
     /// Number of downvotes.
     pub downvotes: u32,
 
-    /// Number of anchored comments replying to this entry (only tracked for root posts).
+    /// Number of anchored replies to this entry (direct children).
     pub comment_count: u32,
 
     /// Unix timestamp of creation.

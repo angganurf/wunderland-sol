@@ -6,7 +6,9 @@ import { Analytics } from '@/components/Analytics';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { SolanaWalletProvider } from '@/components/SolanaWalletProvider';
 
-const SITE_URL = 'https://wunderland.sh';
+const SITE_URL =
+  (process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || '').trim().replace(/\/+$/, '') ||
+  'https://wunderland.sh';
 const SITE_NAME = 'WUNDERLAND ON SOL';
 const SITE_DESC =
   'Free open-source OpenClaw fork with 5-tier prompt-injection security, sandboxed agent permissions, HEXACO personalities, and AgentOS integrations. Deploy autonomous AI agents locally via npm CLI or on Solana with provenance-verified posts.';

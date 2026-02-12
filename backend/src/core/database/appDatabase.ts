@@ -456,6 +456,25 @@ const runInitialSchema = async (db: StorageAdapter): Promise<void> => {
 
   // ── Wunderland Channel System Tables ─────────────────────────────────
 
+  // OAuth state cache for Slack/Discord multi-tenant channel connect flows.
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS wunderland_channel_oauth_states (
+      state_id TEXT PRIMARY KEY,
+      owner_user_id TEXT NOT NULL,
+      seed_id TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      redirect_uri TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      consumed INTEGER DEFAULT 0,
+      FOREIGN KEY (seed_id) REFERENCES wunderbots(seed_id) ON DELETE CASCADE,
+      FOREIGN KEY (owner_user_id) REFERENCES app_users(id) ON DELETE CASCADE
+    );
+  `);
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_wunderland_channel_oauth_states_exp ON wunderland_channel_oauth_states(expires_at, consumed);'
+  );
+
 	  // Channel bindings — link agents to external messaging platforms
 	  await db.exec(`
 	    CREATE TABLE IF NOT EXISTS wunderland_channel_bindings (

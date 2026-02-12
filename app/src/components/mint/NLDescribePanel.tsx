@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import type { WizardAction, TraitsState } from './wizard-types';
+import { ALL_PRESETS } from '@/data/agent-presets';
 
 // ---------------------------------------------------------------------------
 // Client-side rate limiter (mirrors packages/shared/src/clientRateLimit.ts)
@@ -135,10 +136,120 @@ export default function NLDescribePanel({ dispatch }: NLDescribePanelProps) {
   const [error, setError] = useState('');
   const [recommendations, setRecommendations] = useState<NLRecommendation[]>([]);
   const [personalitySuggestion, setPersonalitySuggestion] = useState<NLResponse['personalitySuggestion']>(null);
+  const [identitySuggestion, setIdentitySuggestion] = useState<NLResponse['identitySuggestion']>(null);
+  const [suggestedPreset, setSuggestedPreset] = useState<string | null>(null);
   const [showResults, setShowResults] = useState(false);
 
   const limiterRef = useRef<ClientRateLimiter | null>(null);
   if (!limiterRef.current) limiterRef.current = new ClientRateLimiter();
+
+  // ── Mic input via Web Speech API (SpeechRecognition) ────────────────────
+  const [inputMode, setInputMode] = useState<'text' | 'mic'>('text');
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [interimTranscript, setInterimTranscript] = useState('');
+  const [speechError, setSpeechError] = useState('');
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      setSpeechSupported(false);
+      return;
+    }
+
+    setSpeechSupported(true);
+    const recognition = new SR();
+    recognition.lang = 'en-US';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event: any) => {
+      let finalText = '';
+      let interimText = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const transcript = result?.[0]?.transcript || '';
+        if (!transcript) continue;
+        if (result.isFinal) finalText += transcript;
+        else interimText += transcript;
+      }
+      if (finalText) {
+        setDescription((prev) => {
+          const prefix = prev && !prev.endsWith(' ') && !prev.endsWith('\n') ? ' ' : '';
+          return (prev + prefix + finalText).trimStart();
+        });
+      }
+      setInterimTranscript(interimText);
+    };
+
+    recognition.onerror = (event: any) => {
+      const msg = event?.error ? String(event.error) : 'Speech recognition error';
+      setSpeechError(msg);
+      setListening(false);
+      setInterimTranscript('');
+    };
+
+    recognition.onend = () => {
+      setListening(false);
+      setInterimTranscript('');
+    };
+
+    recognitionRef.current = recognition;
+    return () => {
+      try {
+        recognition.onresult = null;
+        recognition.onerror = null;
+        recognition.onend = null;
+        recognition.stop();
+      } catch {
+        // ignore
+      } finally {
+        recognitionRef.current = null;
+      }
+    };
+  }, []);
+
+  const startListening = useCallback(() => {
+    setSpeechError('');
+    if (!speechSupported || !recognitionRef.current) {
+      setSpeechError('Mic input is not supported in this browser.');
+      return;
+    }
+    if (listening) return;
+    try {
+      recognitionRef.current.start();
+      setListening(true);
+    } catch (err) {
+      // Chrome throws if start() is called while already started.
+      const msg = err instanceof Error ? err.message : 'Failed to start mic input';
+      if (!listening) setSpeechError(msg);
+    }
+  }, [speechSupported, listening]);
+
+  const stopListening = useCallback(() => {
+    if (!recognitionRef.current) return;
+    try {
+      recognitionRef.current.stop();
+    } catch {
+      // ignore
+    } finally {
+      setListening(false);
+      setInterimTranscript('');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!expanded) {
+      if (listening) stopListening();
+      setInputMode('text');
+      return;
+    }
+    if (inputMode === 'text' && listening) stopListening();
+    if (inputMode === 'mic' && !listening) startListening();
+  }, [expanded, inputMode, listening, startListening, stopListening]);
 
   const [cooldown, setCooldown] = useState(0);
   const [remaining, setRemaining] = useState(5);
@@ -176,6 +287,8 @@ export default function NLDescribePanel({ dispatch }: NLDescribePanelProps) {
       const data: NLResponse = await res.json();
       setRecommendations(data.recommendations?.map((r) => ({ ...r, accepted: true })) ?? []);
       setPersonalitySuggestion(data.personalitySuggestion ?? null);
+      setIdentitySuggestion(data.identitySuggestion ?? null);
+      setSuggestedPreset(data.suggestedPreset ?? null);
       setShowResults(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Suggestion failed');
@@ -183,6 +296,11 @@ export default function NLDescribePanel({ dispatch }: NLDescribePanelProps) {
       setLoading(false);
     }
   }, [description]);
+
+  const suggestedPresetObj = useMemo(() => {
+    if (!suggestedPreset) return null;
+    return ALL_PRESETS.find((p) => p.id === suggestedPreset) ?? null;
+  }, [suggestedPreset]);
 
   const handleApply = useCallback(() => {
     const accepted = recommendations.filter((r) => r.accepted);
@@ -195,10 +313,11 @@ export default function NLDescribePanel({ dispatch }: NLDescribePanelProps) {
       traits,
       skills: skills.length > 0 ? skills : undefined,
       channels: channels.length > 0 ? channels : undefined,
+      displayName: identitySuggestion?.displayName ?? undefined,
     });
 
     setExpanded(false);
-  }, [recommendations, personalitySuggestion, dispatch]);
+  }, [recommendations, personalitySuggestion, identitySuggestion, dispatch]);
 
   const toggleRecommendation = (id: string) => {
     setRecommendations((prev) => prev.map((r) => r.id === id ? { ...r, accepted: !r.accepted } : r));
@@ -225,6 +344,64 @@ export default function NLDescribePanel({ dispatch }: NLDescribePanelProps) {
 
       {expanded && (
         <div className="px-4 pb-4 grid gap-3">
+          {/* Input mode toggle */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[9px] font-mono uppercase tracking-[0.15em] text-[var(--text-tertiary)]">
+              Input
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setInputMode('text')}
+                className={`px-2 py-1 rounded-lg text-[10px] font-mono uppercase border transition-all ${
+                  inputMode === 'text'
+                    ? 'bg-[rgba(0,255,200,0.10)] text-[var(--neon-cyan)] border-[rgba(0,255,200,0.18)]'
+                    : 'bg-[var(--bg-glass)] text-[var(--text-tertiary)] border-[var(--border-glass)] hover:text-[var(--text-secondary)]'
+                }`}
+              >
+                Text
+              </button>
+              <button
+                type="button"
+                onClick={() => setInputMode('mic')}
+                disabled={!speechSupported}
+                className={`px-2 py-1 rounded-lg text-[10px] font-mono uppercase border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                  inputMode === 'mic'
+                    ? 'bg-[rgba(201,162,39,0.10)] text-[var(--deco-gold)] border-[rgba(201,162,39,0.22)]'
+                    : 'bg-[var(--bg-glass)] text-[var(--text-tertiary)] border-[var(--border-glass)] hover:text-[var(--text-secondary)]'
+                }`}
+                title={speechSupported ? 'Use mic input' : 'Mic input not supported in this browser'}
+              >
+                Mic
+              </button>
+              {inputMode === 'mic' && speechSupported && (
+                <button
+                  type="button"
+                  onClick={listening ? stopListening : startListening}
+                  className="px-2 py-1 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-tertiary)] border border-[var(--border-glass)] hover:text-[var(--text-secondary)] transition-all"
+                >
+                  {listening ? 'Stop' : 'Start'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {inputMode === 'mic' && !speechSupported && (
+            <div className="text-[11px] font-mono text-[var(--text-tertiary)]">
+              Mic input needs a browser with SpeechRecognition (Chrome works).
+            </div>
+          )}
+
+          {speechError && (
+            <div className="text-[11px] font-mono text-[var(--neon-red)]">{speechError}</div>
+          )}
+
+          {inputMode === 'mic' && listening && interimTranscript && (
+            <div className="text-[11px] font-mono text-[var(--text-tertiary)]">
+              Listening… <span className="opacity-70">{interimTranscript}</span>
+            </div>
+          )}
+
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -255,6 +432,32 @@ export default function NLDescribePanel({ dispatch }: NLDescribePanelProps) {
           {/* Results */}
           {showResults && recommendations.length > 0 && (
             <div className="grid gap-2 mt-1">
+              {/* Suggested identity */}
+              {identitySuggestion?.displayName && (
+                <div className="text-[10px] font-mono text-[var(--text-tertiary)]">
+                  <span className="uppercase tracking-[0.15em]">Suggested name: </span>
+                  <span className="text-[var(--text-secondary)]">{identitySuggestion.displayName}</span>
+                </div>
+              )}
+
+              {/* Suggested preset */}
+              {suggestedPresetObj && (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[10px] font-mono text-[var(--text-tertiary)]">
+                    <span className="uppercase tracking-[0.15em]">Suggested preset: </span>
+                    <span className="text-[var(--text-secondary)]">{suggestedPresetObj.name}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => dispatch({ type: 'SELECT_PRESET', preset: suggestedPresetObj })}
+                    className="px-3 py-1.5 rounded-lg text-[11px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-tertiary)] border border-[var(--border-glass)] hover:text-[var(--text-secondary)] transition-all"
+                    title="Apply preset (overwrites display name, traits, skills, and channels)"
+                  >
+                    Apply Preset
+                  </button>
+                </div>
+              )}
+
               {(['skill', 'tool', 'channel'] as const).map((cat) => {
                 const items = recommendations.filter((r) => r.category === cat);
                 if (items.length === 0) return null;
