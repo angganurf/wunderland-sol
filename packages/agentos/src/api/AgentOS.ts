@@ -55,6 +55,7 @@ import { ToolExecutor } from '../core/tools/ToolExecutor';
 import { IToolPermissionManager, ToolPermissionManagerConfig } from '../core/tools/permissions/IToolPermissionManager';
 import { ToolPermissionManager } from '../core/tools/permissions/ToolPermissionManager';
 import type { IAuthService, ISubscriptionService } from '../services/user_auth/types';
+import type { IHumanInteractionManager } from '../core/hitl/IHumanInteractionManager';
 import { IUtilityAI } from '../core/ai_utilities/IUtilityAI';
 import { LLMUtilityAI } from '../core/ai_utilities/LLMUtilityAI';
 import { ConversationManager, ConversationManagerConfig } from '../core/conversation/ConversationManager';
@@ -374,6 +375,8 @@ export interface AgentOSConfig {
   promptEngineConfig: PromptEngineConfig;
   /** Configuration for the {@link ToolOrchestrator}. */
   toolOrchestratorConfig: ToolOrchestratorConfig;
+  /** Optional human-in-the-loop manager for approvals/clarifications. */
+  hitlManager?: IHumanInteractionManager;
   /** Configuration for the {@link ToolPermissionManager}. */
   toolPermissionManagerConfig: ToolPermissionManagerConfig;
   /** Configuration for the {@link ConversationManager}. */
@@ -401,10 +404,10 @@ export interface AgentOSConfig {
    * ```
    */
   prisma: PrismaClient;
-  /** An instance of the authentication service, conforming to {@link IAuthService}. */
-  authService: IAuthService;
-  /** An instance of the subscription service, conforming to {@link ISubscriptionService}. */
-  subscriptionService: ISubscriptionService;
+  /** Optional authentication service, conforming to {@link IAuthService}. Provide via the auth extension or your own adapter. */
+  authService?: IAuthService;
+  /** Optional subscription service, conforming to {@link ISubscriptionService}. Provide via the auth extension or your own adapter. */
+  subscriptionService?: ISubscriptionService;
   /** Optional guardrail service implementation used for policy enforcement. */
   guardrailService?: IGuardrailService;
   /** Optional map of secretId -> value for extension/tool credentials. */
@@ -422,10 +425,20 @@ export interface AgentOSConfig {
    */
   schemaOnDemandTools?: {
     enabled?: boolean;
-    /** Allow enabling packs by explicit npm package name (source='package'). Default: true. */
+    /**
+     * Allow enabling packs by explicit npm package name (source='package').
+     * Default: true in non-production, false in production.
+     */
     allowPackages?: boolean;
     /** Allow enabling packs by local module specifier/path (source='module'). Default: false. */
     allowModules?: boolean;
+    /**
+     * When true, only allow extension packs present in the official
+     * `@framers/agentos-extensions-registry` catalog (if installed).
+     *
+     * Default: true.
+     */
+    officialRegistryOnly?: boolean;
   };
   /**
    * Optional. An instance of a utility AI service.
@@ -505,7 +518,7 @@ export interface AgentOSConfig {
   storageAdapter?: StorageAdapter;
 
   /**
-   * Optional observability config for tracing and log correlation.
+   * Optional observability config for tracing, metrics, and log correlation.
    * Default: disabled (opt-in).
    */
   observability?: AgentOSObservabilityConfig;
@@ -550,9 +563,9 @@ export class AgentOS implements IAgentOS {
   private ragVectorStoreManager?: IVectorStoreManager;
   private manageRetrievalAugmentorLifecycle: boolean = false;
 
-  private authService!: IAuthService;
+  private authService?: IAuthService;
 
-  private subscriptionService!: ISubscriptionService;
+  private subscriptionService?: ISubscriptionService;
   private prisma!: PrismaClient;
 
   /**
@@ -627,11 +640,17 @@ export class AgentOS implements IAgentOS {
     await this.registerConfigGuardrailService(extensionLifecycleContext);
 
     if (this.config.schemaOnDemandTools?.enabled === true) {
+      const allowPackages =
+        typeof this.config.schemaOnDemandTools.allowPackages === 'boolean'
+          ? this.config.schemaOnDemandTools.allowPackages
+          : process.env.NODE_ENV !== 'production';
+
       const pack = createSchemaOnDemandPack({
         extensionManager: this.extensionManager,
         options: {
-          allowPackages: this.config.schemaOnDemandTools.allowPackages,
+          allowPackages,
           allowModules: this.config.schemaOnDemandTools.allowModules,
+          officialRegistryOnly: this.config.schemaOnDemandTools.officialRegistryOnly,
         },
       });
       await this.extensionManager.loadPackFromFactory(
@@ -698,7 +717,9 @@ export class AgentOS implements IAgentOS {
       await this.toolOrchestrator.initialize(
         this.config.toolOrchestratorConfig,
         this.toolPermissionManager,
-        this.toolExecutor
+        this.toolExecutor,
+        undefined,
+        this.config.hitlManager
       );
       console.log('AgentOS: ToolOrchestrator initialized.');
 
@@ -783,8 +804,7 @@ export class AgentOS implements IAgentOS {
         const requiredConfigs: Array<keyof AgentOSConfig> = [
             'gmiManagerConfig', 'orchestratorConfig', 'promptEngineConfig',
             'toolOrchestratorConfig', 'toolPermissionManagerConfig', 'conversationManagerConfig',
-            'streamingManagerConfig', 'modelProviderManagerConfig', 'defaultPersonaId',
-            'authService', 'subscriptionService'
+            'streamingManagerConfig', 'modelProviderManagerConfig', 'defaultPersonaId'
         ];
         for (const key of requiredConfigs) {
             if (!config[key]) {

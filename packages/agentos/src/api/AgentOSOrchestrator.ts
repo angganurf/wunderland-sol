@@ -67,6 +67,8 @@ import {
 } from '../core/conversation/LongTermMemoryPolicy';
 import {
   getActiveTraceMetadata,
+  recordAgentOSToolResultMetrics,
+  recordAgentOSTurnMetrics,
   recordExceptionOnActiveSpan,
   runWithSpanContext,
   shouldIncludeTraceInAgentOSResponses,
@@ -591,9 +593,18 @@ export class AgentOSOrchestrator {
    * @private
    */
   private async _processTurnInternal(agentOSStreamId: StreamId, input: AgentOSInput): Promise<void> {
-    if (!input.selectedPersonaId) {
-      throw new GMIError('AgentOSOrchestrator requires a selectedPersonaId on AgentOSInput.', GMIErrorCode.VALIDATION_ERROR);
-    }
+    const turnStartedAt = Date.now();
+    let turnMetricsStatus: 'ok' | 'error' = 'ok';
+    let turnMetricsPersonaId: string | undefined = input.selectedPersonaId;
+    let turnMetricsUsage:
+      | {
+          totalTokens?: number;
+          promptTokens?: number;
+          completionTokens?: number;
+          totalCostUSD?: number;
+        }
+      | undefined;
+
     const selectedPersonaId = input.selectedPersonaId;
 
     let gmi: IGMI | undefined;
@@ -602,8 +613,16 @@ export class AgentOSOrchestrator {
     let gmiInstanceIdForChunks = 'gmi_pending_init';
     let organizationIdForMemory: string | undefined;
     let longTermMemoryPolicy: ResolvedLongTermMemoryPolicy | null = null;
+    let didForceTerminate = false;
 
     try {
+      if (!selectedPersonaId) {
+        throw new GMIError(
+          'AgentOSOrchestrator requires a selectedPersonaId on AgentOSInput.',
+          GMIErrorCode.VALIDATION_ERROR,
+        );
+      }
+
       const gmiResult = await withAgentOSSpan('agentos.gmi.get_or_create', async (span) => {
         span?.setAttribute('agentos.user_id', input.userId);
         span?.setAttribute('agentos.session_id', input.sessionId);
@@ -625,6 +644,7 @@ export class AgentOSOrchestrator {
       conversationContext = gmiResult.conversationContext;
       currentPersonaId = gmi.getCurrentPrimaryPersonaId(); // Get actual personaId from GMI
       gmiInstanceIdForChunks = gmi.getGMIId();
+      turnMetricsPersonaId = currentPersonaId;
 
 
       const streamContext: ActiveStreamContext = {
@@ -1148,6 +1168,7 @@ export class AgentOSOrchestrator {
 
       if (currentToolCallIteration >= this.config.maxToolCallIterations && continueProcessing) {
         console.warn(`AgentOSOrchestrator: Max tool call iterations reached for stream ${agentOSStreamId}. Forcing termination.`);
+        didForceTerminate = true;
         await this.pushErrorChunk(
           agentOSStreamId, currentPersonaId, gmiInstanceIdForChunks,
           GMIErrorCode.RATE_LIMIT_EXCEEDED, // Or a more specific code
@@ -1170,6 +1191,19 @@ export class AgentOSOrchestrator {
           isFinal: true,
           responseText: gmi ? 'Processing complete.' : 'Processing ended.',
         };
+
+      const normalizedUsage = normalizeUsage(finalGMIStateForResponse.usage);
+      if (normalizedUsage) {
+        turnMetricsUsage = {
+          totalTokens: normalizedUsage.totalTokens,
+          promptTokens: normalizedUsage.promptTokens,
+          completionTokens: normalizedUsage.completionTokens,
+          totalCostUSD: typeof normalizedUsage.totalCostUSD === 'number' ? normalizedUsage.totalCostUSD : undefined,
+        };
+      }
+      if (didForceTerminate || Boolean(finalGMIStateForResponse.error)) {
+        turnMetricsStatus = 'error';
+      }
 
       // Persist assistant output into ConversationContext for durable memory / prompt reconstruction.
       if (this.config.enableConversationalPersistence && conversationContext) {
@@ -1216,7 +1250,7 @@ export class AgentOSOrchestrator {
           finalUiCommands: finalGMIStateForResponse.uiCommands,
           audioOutput: finalGMIStateForResponse.audioOutput,
           imageOutput: finalGMIStateForResponse.imageOutput,
-          usage: normalizeUsage(finalGMIStateForResponse.usage),
+          usage: normalizedUsage,
           reasoningTrace: finalGMIStateForResponse.reasoningTrace,
           error: finalGMIStateForResponse.error,
           updatedConversationContext: conversationContext ? conversationContext.toJSON() : undefined,
@@ -1226,16 +1260,24 @@ export class AgentOSOrchestrator {
       await this.dependencies.streamingManager.closeStream(agentOSStreamId, "Processing complete.");
 
     } catch (error: any) {
+      turnMetricsStatus = 'error';
       recordExceptionOnActiveSpan(error, `Error in orchestrateTurn for stream ${agentOSStreamId}`);
       const gmiErr = GMIError.wrap?.(error, GMIErrorCode.GMI_PROCESSING_ERROR, `Error in orchestrateTurn for stream ${agentOSStreamId}`) ||
                      new GMIError(`Error in orchestrateTurn for stream ${agentOSStreamId}: ${error.message}`, GMIErrorCode.GMI_PROCESSING_ERROR, error);
       console.error(`AgentOSOrchestrator: Error during _processTurnInternal for stream ${agentOSStreamId}:`, gmiErr);
       await this.pushErrorChunk(
-          agentOSStreamId, currentPersonaId, gmiInstanceIdForChunks,
+          agentOSStreamId, currentPersonaId ?? 'unknown_persona', gmiInstanceIdForChunks,
           gmiErr.code, gmiErr.message, gmiErr.details
       );
       await this.dependencies.streamingManager.closeStream(agentOSStreamId, "Error during turn processing.");
     } finally {
+      recordAgentOSTurnMetrics({
+        durationMs: Date.now() - turnStartedAt,
+        status: turnMetricsStatus,
+        personaId: turnMetricsPersonaId,
+        usage: turnMetricsUsage,
+      });
+
       // Stream is closed explicitly in the success/error paths; this finally block always
       // clears internal state to avoid leaks.
       this.activeStreamContexts.delete(agentOSStreamId);
@@ -1270,6 +1312,7 @@ export class AgentOSOrchestrator {
   ): Promise<void> {
     this.ensureInitialized();
 
+    const startedAt = Date.now();
     const streamContext = this.activeStreamContexts.get(agentOSStreamId);
     if (!streamContext) {
       const errMsg = `Orchestrator: Received tool result for unknown or inactive streamId: ${agentOSStreamId}. Tool: ${toolName}, CallID: ${toolCallId}`;
@@ -1287,175 +1330,192 @@ export class AgentOSOrchestrator {
 
     console.log(`AgentOSOrchestrator: Feeding tool result for stream ${agentOSStreamId}, GMI ${gmiInstanceIdForChunks}, tool call ${toolCallId} (${toolName}) back to GMI.`);
 
-    await withAgentOSSpan('agentos.tool_result', async (span) => {
-      span?.setAttribute('agentos.stream_id', agentOSStreamId);
-      span?.setAttribute('agentos.gmi_id', gmiInstanceIdForChunks);
-      span?.setAttribute('agentos.tool_call_id', toolCallId);
-      span?.setAttribute('agentos.tool_name', toolName);
-      span?.setAttribute('agentos.tool_success', isSuccess);
+    try {
+      await withAgentOSSpan('agentos.tool_result', async (span) => {
+        span?.setAttribute('agentos.stream_id', agentOSStreamId);
+        span?.setAttribute('agentos.gmi_id', gmiInstanceIdForChunks);
+        span?.setAttribute('agentos.tool_call_id', toolCallId);
+        span?.setAttribute('agentos.tool_name', toolName);
+        span?.setAttribute('agentos.tool_success', isSuccess);
 
-      try {
-        // Emit the tool result itself as a chunk
-        await this.pushChunkToStream(
-          agentOSStreamId,
-          AgentOSResponseChunkType.TOOL_RESULT_EMISSION,
-          gmiInstanceIdForChunks,
-          personaId,
-          false,
-          { toolCallId, toolName, toolResult: toolOutput, isSuccess, errorMessage },
-        );
-
-        // Persist tool result into ConversationContext for durable memory / prompt reconstruction.
-        if (this.config.enableConversationalPersistence && conversationContext) {
-          try {
-            conversationContext.addMessage({
-              role: MessageRole.TOOL,
-              content: typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput),
-              tool_call_id: toolCallId,
-              name: toolName,
-              metadata: { agentPersonaId: personaId, source: 'agentos_tool_result', isSuccess },
-            });
-            await withAgentOSSpan('agentos.conversation.save', async (child) => {
-              child?.setAttribute('agentos.stage', 'tool_result');
-              child?.setAttribute('agentos.stream_id', agentOSStreamId);
-              await this.dependencies.conversationManager.saveConversation(conversationContext);
-            });
-          } catch (persistError: any) {
-            console.warn(
-              `AgentOSOrchestrator: Failed to persist tool result to ConversationContext for stream ${agentOSStreamId}.`,
-              persistError,
-            );
-          }
-        }
-
-        // GMI processes the tool result and gives a *final output for that step*
-        const gmiOutputAfterTool: GMIOutput = await withAgentOSSpan(
-          'agentos.gmi.handle_tool_result',
-          async (child) => {
-            child?.setAttribute('agentos.stream_id', agentOSStreamId);
-            child?.setAttribute('agentos.tool_call_id', toolCallId);
-            child?.setAttribute('agentos.tool_name', toolName);
-            child?.setAttribute('agentos.tool_success', isSuccess);
-            return gmi.handleToolResult(
-              toolCallId,
-              toolName,
-              toolResultPayload,
-              userId,
-              userApiKeys || {},
-            );
-          },
-        );
-
-        // Process the GMIOutput (which is not a stream of chunks)
-        await this.processGMIOutput(agentOSStreamId, streamContext, gmiOutputAfterTool, false);
-
-        // If GMIOutput indicates further tool calls are needed by the GMI
-        if (gmiOutputAfterTool.toolCalls && gmiOutputAfterTool.toolCalls.length > 0) {
+        try {
+          // Emit the tool result itself as a chunk
           await this.pushChunkToStream(
             agentOSStreamId,
-            AgentOSResponseChunkType.TOOL_CALL_REQUEST,
+            AgentOSResponseChunkType.TOOL_RESULT_EMISSION,
             gmiInstanceIdForChunks,
             personaId,
-            false, // Not final, more interaction expected
-            {
-              toolCalls: gmiOutputAfterTool.toolCalls,
-              rationale: gmiOutputAfterTool.responseText || 'Agent requires further tool execution.',
-            },
+            false,
+            { toolCallId, toolName, toolResult: toolOutput, isSuccess, errorMessage },
           );
-          // The orchestrator now waits for another external call to `orchestrateToolResult` for these new calls.
-        } else if (gmiOutputAfterTool.isFinal) {
+
+          // Persist tool result into ConversationContext for durable memory / prompt reconstruction.
           if (this.config.enableConversationalPersistence && conversationContext) {
             try {
-              if (
-                typeof gmiOutputAfterTool.responseText === 'string' &&
-                gmiOutputAfterTool.responseText.trim()
-              ) {
-                conversationContext.addMessage({
-                  role: MessageRole.ASSISTANT,
-                  content: gmiOutputAfterTool.responseText,
-                  metadata: { agentPersonaId: personaId, source: 'agentos_output' },
-                });
-              } else if (gmiOutputAfterTool.toolCalls && gmiOutputAfterTool.toolCalls.length > 0) {
-                conversationContext.addMessage({
-                  role: MessageRole.ASSISTANT,
-                  content: null,
-                  tool_calls: gmiOutputAfterTool.toolCalls as any,
-                  metadata: { agentPersonaId: personaId, source: 'agentos_output_tool_calls' },
-                });
-              }
+              conversationContext.addMessage({
+                role: MessageRole.TOOL,
+                content: typeof toolOutput === 'string' ? toolOutput : JSON.stringify(toolOutput),
+                tool_call_id: toolCallId,
+                name: toolName,
+                metadata: { agentPersonaId: personaId, source: 'agentos_tool_result', isSuccess },
+              });
               await withAgentOSSpan('agentos.conversation.save', async (child) => {
-                child?.setAttribute('agentos.stage', 'assistant_output_after_tool');
+                child?.setAttribute('agentos.stage', 'tool_result');
                 child?.setAttribute('agentos.stream_id', agentOSStreamId);
                 await this.dependencies.conversationManager.saveConversation(conversationContext);
               });
             } catch (persistError: any) {
               console.warn(
-                `AgentOSOrchestrator: Failed to persist assistant output after tool result for stream ${agentOSStreamId}.`,
+                `AgentOSOrchestrator: Failed to persist tool result to ConversationContext for stream ${agentOSStreamId}.`,
                 persistError,
               );
             }
           }
-          // If it's final and no more tool calls, the interaction for this GMI processing cycle might be done.
-          // Push a final response marker or the already pushed final data from processGMIOutput takes precedence.
-          await this.pushChunkToStream(
-            agentOSStreamId,
-            AgentOSResponseChunkType.FINAL_RESPONSE,
-            gmiInstanceIdForChunks,
-            personaId,
-            true,
-            {
-              finalResponseText: gmiOutputAfterTool.responseText,
-              finalToolCalls: gmiOutputAfterTool.toolCalls,
-              finalUiCommands: gmiOutputAfterTool.uiCommands,
-              audioOutput: gmiOutputAfterTool.audioOutput,
-              imageOutput: gmiOutputAfterTool.imageOutput,
-              usage: normalizeUsage(gmiOutputAfterTool.usage),
-              reasoningTrace: gmiOutputAfterTool.reasoningTrace,
-              error: gmiOutputAfterTool.error,
-              updatedConversationContext: conversationContext.toJSON(),
-              activePersonaDetails: snapshotPersonaDetails(gmi.getPersona?.()),
+
+          // GMI processes the tool result and gives a *final output for that step*
+          const gmiOutputAfterTool: GMIOutput = await withAgentOSSpan(
+            'agentos.gmi.handle_tool_result',
+            async (child) => {
+              child?.setAttribute('agentos.stream_id', agentOSStreamId);
+              child?.setAttribute('agentos.tool_call_id', toolCallId);
+              child?.setAttribute('agentos.tool_name', toolName);
+              child?.setAttribute('agentos.tool_success', isSuccess);
+              return gmi.handleToolResult(
+                toolCallId,
+                toolName,
+                toolResultPayload,
+                userId,
+                userApiKeys || {},
+              );
             },
           );
-          this.activeStreamContexts.delete(agentOSStreamId); // Clean up context for this completed flow
+
+          // Process the GMIOutput (which is not a stream of chunks)
+          await this.processGMIOutput(agentOSStreamId, streamContext, gmiOutputAfterTool, false);
+
+          // If GMIOutput indicates further tool calls are needed by the GMI
+          if (gmiOutputAfterTool.toolCalls && gmiOutputAfterTool.toolCalls.length > 0) {
+            await this.pushChunkToStream(
+              agentOSStreamId,
+              AgentOSResponseChunkType.TOOL_CALL_REQUEST,
+              gmiInstanceIdForChunks,
+              personaId,
+              false, // Not final, more interaction expected
+              {
+                toolCalls: gmiOutputAfterTool.toolCalls,
+                rationale: gmiOutputAfterTool.responseText || 'Agent requires further tool execution.',
+              },
+            );
+            // The orchestrator now waits for another external call to `orchestrateToolResult` for these new calls.
+          } else if (gmiOutputAfterTool.isFinal) {
+            if (this.config.enableConversationalPersistence && conversationContext) {
+              try {
+                if (
+                  typeof gmiOutputAfterTool.responseText === 'string' &&
+                  gmiOutputAfterTool.responseText.trim()
+                ) {
+                  conversationContext.addMessage({
+                    role: MessageRole.ASSISTANT,
+                    content: gmiOutputAfterTool.responseText,
+                    metadata: { agentPersonaId: personaId, source: 'agentos_output' },
+                  });
+                } else if (gmiOutputAfterTool.toolCalls && gmiOutputAfterTool.toolCalls.length > 0) {
+                  conversationContext.addMessage({
+                    role: MessageRole.ASSISTANT,
+                    content: null,
+                    tool_calls: gmiOutputAfterTool.toolCalls as any,
+                    metadata: { agentPersonaId: personaId, source: 'agentos_output_tool_calls' },
+                  });
+                }
+                await withAgentOSSpan('agentos.conversation.save', async (child) => {
+                  child?.setAttribute('agentos.stage', 'assistant_output_after_tool');
+                  child?.setAttribute('agentos.stream_id', agentOSStreamId);
+                  await this.dependencies.conversationManager.saveConversation(conversationContext);
+                });
+              } catch (persistError: any) {
+                console.warn(
+                  `AgentOSOrchestrator: Failed to persist assistant output after tool result for stream ${agentOSStreamId}.`,
+                  persistError,
+                );
+              }
+            }
+            // If it's final and no more tool calls, the interaction for this GMI processing cycle might be done.
+            // Push a final response marker or the already pushed final data from processGMIOutput takes precedence.
+            await this.pushChunkToStream(
+              agentOSStreamId,
+              AgentOSResponseChunkType.FINAL_RESPONSE,
+              gmiInstanceIdForChunks,
+              personaId,
+              true,
+              {
+                finalResponseText: gmiOutputAfterTool.responseText,
+                finalToolCalls: gmiOutputAfterTool.toolCalls,
+                finalUiCommands: gmiOutputAfterTool.uiCommands,
+                audioOutput: gmiOutputAfterTool.audioOutput,
+                imageOutput: gmiOutputAfterTool.imageOutput,
+                usage: normalizeUsage(gmiOutputAfterTool.usage),
+                reasoningTrace: gmiOutputAfterTool.reasoningTrace,
+                error: gmiOutputAfterTool.error,
+                updatedConversationContext: conversationContext.toJSON(),
+                activePersonaDetails: snapshotPersonaDetails(gmi.getPersona?.()),
+              },
+            );
+            this.activeStreamContexts.delete(agentOSStreamId); // Clean up context for this completed flow
+            await this.dependencies.streamingManager.closeStream(
+              agentOSStreamId,
+              'Tool processing complete and final response generated.',
+            );
+          }
+          // If not final and no tool calls, the GMI might have provided intermediate text.
+          // The stream remains open for further GMI internal processing or new user input.
+        } catch (error: any) {
+          const gmiErr =
+            GMIError.wrap?.(
+              error,
+              GMIErrorCode.TOOL_ERROR,
+              `Error in orchestrateToolResult for stream ${agentOSStreamId}`,
+            ) ||
+            new GMIError(
+              `Error in orchestrateToolResult for stream ${agentOSStreamId}: ${error.message}`,
+              GMIErrorCode.TOOL_ERROR,
+              error,
+            );
+          console.error(
+            `AgentOSOrchestrator: Critical error processing tool result for stream ${agentOSStreamId}:`,
+            gmiErr,
+          );
+          await this.pushErrorChunk(
+            agentOSStreamId,
+            personaId,
+            gmiInstanceIdForChunks,
+            gmiErr.code,
+            gmiErr.message,
+            gmiErr.details,
+          );
+          this.activeStreamContexts.delete(agentOSStreamId);
           await this.dependencies.streamingManager.closeStream(
             agentOSStreamId,
-            'Tool processing complete and final response generated.',
+            'Critical error during tool result processing.',
           );
+          throw gmiErr; // Re-throw to signal failure to caller if necessary
         }
-        // If not final and no tool calls, the GMI might have provided intermediate text.
-        // The stream remains open for further GMI internal processing or new user input.
-      } catch (error: any) {
-        const gmiErr =
-          GMIError.wrap?.(
-            error,
-            GMIErrorCode.TOOL_ERROR,
-            `Error in orchestrateToolResult for stream ${agentOSStreamId}`,
-          ) ||
-          new GMIError(
-            `Error in orchestrateToolResult for stream ${agentOSStreamId}: ${error.message}`,
-            GMIErrorCode.TOOL_ERROR,
-            error,
-          );
-        console.error(
-          `AgentOSOrchestrator: Critical error processing tool result for stream ${agentOSStreamId}:`,
-          gmiErr,
-        );
-        await this.pushErrorChunk(
-          agentOSStreamId,
-          personaId,
-          gmiInstanceIdForChunks,
-          gmiErr.code,
-          gmiErr.message,
-          gmiErr.details,
-        );
-        this.activeStreamContexts.delete(agentOSStreamId);
-        await this.dependencies.streamingManager.closeStream(
-          agentOSStreamId,
-          'Critical error during tool result processing.',
-        );
-        throw gmiErr; // Re-throw to signal failure to caller if necessary
-      }
-    });
+      });
+
+      recordAgentOSToolResultMetrics({
+        durationMs: Date.now() - startedAt,
+        status: 'ok',
+        toolName,
+        toolSuccess: isSuccess,
+      });
+    } catch (error) {
+      recordAgentOSToolResultMetrics({
+        durationMs: Date.now() - startedAt,
+        status: 'error',
+        toolName,
+        toolSuccess: isSuccess,
+      });
+      throw error;
+    }
   }
   
   /**

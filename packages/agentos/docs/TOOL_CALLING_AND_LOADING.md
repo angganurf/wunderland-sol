@@ -133,8 +133,14 @@ In `AgentOSConfig`, set:
 ```ts
 schemaOnDemandTools: {
   enabled: true,
-  allowPackages: true,  // default
-  allowModules: false,  // default
+  // Recommended for production: allow curated names only (no arbitrary package imports).
+  // Default: true in non-production, false in production.
+  allowPackages: false,
+  // Default: false (prefer curated packages).
+  allowModules: false,
+  // Default: true. When enabled, `extensions_enable` only loads packs present in
+  // the installed @framers/agentos-extensions-registry catalog.
+  officialRegistryOnly: true,
 }
 ```
 

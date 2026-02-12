@@ -5,7 +5,14 @@ import {
   SimpleSpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
-import { context, trace } from '@opentelemetry/api';
+import { context, metrics, trace } from '@opentelemetry/api';
+import {
+  AggregationTemporality,
+  DataPointType,
+  InMemoryMetricExporter,
+  MeterProvider,
+  PeriodicExportingMetricReader,
+} from '@opentelemetry/sdk-metrics';
 
 import { AgentOSOrchestrator } from '../../src/api/AgentOSOrchestrator';
 import { configureAgentOSObservability } from '../../src/core/observability/otel';
@@ -40,6 +47,8 @@ class FakeStreamingManager {
 
 describe('AgentOS OpenTelemetry integration', () => {
   let exporter: InMemorySpanExporter;
+  let metricExporter: InMemoryMetricExporter;
+  let meterProvider: MeterProvider;
 
   beforeAll(() => {
     exporter = new InMemorySpanExporter();
@@ -48,10 +57,16 @@ describe('AgentOS OpenTelemetry integration', () => {
     });
     context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
     trace.setGlobalTracerProvider(provider);
+
+    metricExporter = new InMemoryMetricExporter(AggregationTemporality.DELTA);
+    const reader = new PeriodicExportingMetricReader({ exporter: metricExporter, exportIntervalMillis: 60_000 });
+    meterProvider = new MeterProvider({ readers: [reader] });
+    metrics.setGlobalMeterProvider(meterProvider);
   });
 
   beforeEach(() => {
     exporter.reset();
+    metricExporter.reset();
     configureAgentOSObservability({ enabled: false });
   });
 
@@ -187,5 +202,87 @@ describe('AgentOS OpenTelemetry integration', () => {
 
     const metaChunk = streamingManager.chunks.find((c) => c.type === 'metadata_update');
     expect(metaChunk?.metadata?.trace).toBeUndefined();
+  });
+
+  it('records metrics when enabled', async () => {
+    configureAgentOSObservability({
+      metrics: { enabled: true, meterName: 'test-agentos-metrics' },
+      tracing: { enabled: false },
+      logging: { includeTraceIds: false },
+    });
+
+    const streamingManager = new FakeStreamingManager();
+
+    const fakeGmi = {
+      getCurrentPrimaryPersonaId: () => 'persona_test',
+      getGMIId: () => 'gmi_test',
+      processTurnStream: async function* () {
+        yield {
+          type: GMIOutputChunkType.TEXT_DELTA,
+          content: 'hello',
+          interactionId: 'turn_1',
+          timestamp: new Date(),
+          isFinal: false,
+        };
+        yield {
+          type: GMIOutputChunkType.FINAL_RESPONSE_MARKER,
+          content: null,
+          interactionId: 'turn_1',
+          timestamp: new Date(),
+          isFinal: true,
+        };
+        return {
+          isFinal: true,
+          responseText: 'hello',
+          usage: { totalTokens: 10, promptTokens: 4, completionTokens: 6, totalCostUSD: 0.001 },
+        };
+      },
+    };
+
+    const fakeGmiManager = {
+      getOrCreateGMIForSession: async () => ({
+        gmi: fakeGmi,
+        conversationContext: new ConversationContext('conv_test'),
+      }),
+    };
+
+    const orchestrator = new AgentOSOrchestrator();
+    await orchestrator.initialize(
+      { maxToolCallIterations: 1, enableConversationalPersistence: false },
+      {
+        gmiManager: fakeGmiManager as any,
+        toolOrchestrator: {} as any,
+        conversationManager: { saveConversation: async () => {} } as any,
+        streamingManager: streamingManager as any,
+        modelProviderManager: {} as any,
+      } as any,
+    );
+
+    const streamId = await orchestrator.orchestrateTurn({
+      userId: 'user_1',
+      sessionId: 'session_1',
+      conversationId: 'conversation_1',
+      textInput: 'hello',
+      selectedPersonaId: 'persona_test',
+    });
+
+    await streamingManager.waitClosed(streamId);
+    await new Promise((r) => setTimeout(r, 0));
+    await meterProvider.forceFlush();
+
+    const resourceMetrics = metricExporter.getMetrics();
+    const allMetrics = resourceMetrics.flatMap((rm) =>
+      rm.scopeMetrics.flatMap((sm) => sm.metrics),
+    );
+    const metricNames = allMetrics.map((m) => m.descriptor.name);
+
+    expect(metricNames).toContain('agentos.turns');
+    expect(metricNames).toContain('agentos.turn.duration_ms');
+    expect(metricNames).toContain('agentos.turn.tokens.total');
+    expect(metricNames).toContain('agentos.turn.cost.usd');
+
+    const turns = allMetrics.find((m) => m.descriptor.name === 'agentos.turns');
+    expect(turns?.dataPointType).toBe(DataPointType.SUM);
+    expect((turns as any)?.dataPoints?.[0]?.value).toBeGreaterThan(0);
   });
 });

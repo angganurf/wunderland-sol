@@ -5,7 +5,13 @@ import {
   SimpleSpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
-import { context, trace } from '@opentelemetry/api';
+import { context, metrics, trace } from '@opentelemetry/api';
+import {
+  AggregationTemporality,
+  InMemoryMetricExporter,
+  MeterProvider,
+  PeriodicExportingMetricReader,
+} from '@opentelemetry/sdk-metrics';
 
 import { AgentOSOrchestrator } from '../../src/api/AgentOSOrchestrator';
 import { configureAgentOSObservability } from '../../src/core/observability/otel';
@@ -40,6 +46,8 @@ class FakeStreamingManager {
 
 describe('AgentOS OTEL e2e (env opt-in)', () => {
   let exporter: InMemorySpanExporter;
+  let metricExporter: InMemoryMetricExporter;
+  let meterProvider: MeterProvider;
 
   beforeAll(() => {
     exporter = new InMemorySpanExporter();
@@ -48,12 +56,19 @@ describe('AgentOS OTEL e2e (env opt-in)', () => {
     });
     context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
     trace.setGlobalTracerProvider(provider);
+
+    metricExporter = new InMemoryMetricExporter(AggregationTemporality.DELTA);
+    const reader = new PeriodicExportingMetricReader({ exporter: metricExporter, exportIntervalMillis: 60_000 });
+    meterProvider = new MeterProvider({ readers: [reader] });
+    metrics.setGlobalMeterProvider(meterProvider);
   });
 
   beforeEach(() => {
     exporter.reset();
+    metricExporter.reset();
     process.env.AGENTOS_OBSERVABILITY_ENABLED = 'true';
     process.env.AGENTOS_TRACE_IDS_IN_RESPONSES = 'true';
+    process.env.AGENTOS_METRICS_ENABLED = 'true';
     configureAgentOSObservability(undefined);
   });
 
@@ -104,11 +119,18 @@ describe('AgentOS OTEL e2e (env opt-in)', () => {
 
     await streamingManager.waitClosed(streamId);
     await new Promise((r) => setTimeout(r, 0));
+    await meterProvider.forceFlush();
 
     const spans = exporter.getFinishedSpans();
     expect(spans.map((s) => s.name)).toContain('agentos.turn');
 
     const metaChunk = streamingManager.chunks.find((c) => c.type === 'metadata_update');
     expect(metaChunk?.metadata?.trace?.traceId).toMatch(/^[0-9a-f]{32}$/);
+
+    const resourceMetrics = metricExporter.getMetrics();
+    const metricNames = resourceMetrics.flatMap((rm) =>
+      rm.scopeMetrics.flatMap((sm) => sm.metrics.map((m) => m.descriptor.name)),
+    );
+    expect(metricNames).toContain('agentos.turns');
   });
 });

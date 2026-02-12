@@ -13,168 +13,61 @@ import type { ExtensionManifest, ExtensionPackManifestEntry } from '@framers/age
 import type { RegistryOptions, ExtensionInfo, RegistryLogger } from './types.js';
 import { CHANNEL_CATALOG, getChannelEntries } from './channel-registry.js';
 import { PROVIDER_CATALOG, getProviderEntries } from './provider-registry.js';
+import { TOOL_CATALOG } from './tool-registry.js';
+import { existsSync } from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-/**
- * Known tool extension packages and their metadata.
- * Matches existing extensions in `agentos-extensions/registry/curated/`.
- */
-const TOOL_CATALOG: ExtensionInfo[] = [
-  {
-    packageName: '@framers/agentos-ext-auth',
-    name: 'auth',
-    category: 'tool',
-    displayName: 'Authentication',
-    description: 'User authentication and session management tools.',
-    requiredSecrets: [],
-    defaultPriority: 10,
-    available: false,
-  },
-  {
-    packageName: '@framers/agentos-ext-web-search',
-    name: 'web-search',
-    category: 'tool',
-    displayName: 'Web Search',
-    description: 'Web search via Serper.dev or similar providers.',
-    requiredSecrets: ['serper.apiKey'],
-    defaultPriority: 20,
-    available: false,
-  },
-  {
-    packageName: '@framers/agentos-ext-web-browser',
-    name: 'web-browser',
-    category: 'tool',
-    displayName: 'Web Browser',
-    description: 'Headless browser for page fetching and scraping.',
-    requiredSecrets: [],
-    defaultPriority: 20,
-    available: false,
-  },
-  {
-    packageName: '@framers/agentos-ext-telegram',
-    name: 'telegram',
-    category: 'integration',
-    displayName: 'Telegram (Legacy)',
-    description: 'Legacy Telegram bot integration (tool-based, pre-channel system).',
-    requiredSecrets: ['telegram.botToken'],
-    defaultPriority: 50,
-    available: false,
-  },
-  {
-    packageName: '@framers/agentos-ext-cli-executor',
-    name: 'cli-executor',
-    category: 'tool',
-    displayName: 'CLI Executor',
-    description: 'Execute shell commands in a sandboxed environment.',
-    requiredSecrets: [],
-    defaultPriority: 20,
-    available: false,
-  },
-  {
-    packageName: '@framers/agentos-ext-giphy',
-    name: 'giphy',
-    category: 'tool',
-    displayName: 'Giphy',
-    description: 'Search and share GIFs via the Giphy API.',
-    requiredSecrets: [],
-    defaultPriority: 30,
-    available: false,
-  },
-  {
-    packageName: '@framers/agentos-ext-image-search',
-    name: 'image-search',
-    category: 'tool',
-    displayName: 'Image Search',
-    description: 'Search for images via web APIs.',
-    requiredSecrets: [],
-    defaultPriority: 30,
-    available: false,
-  },
-  {
-    packageName: '@framers/agentos-ext-voice-synthesis',
-    name: 'voice-synthesis',
-    category: 'tool',
-    displayName: 'Voice Synthesis',
-    description: 'Text-to-speech synthesis via ElevenLabs or similar.',
-    requiredSecrets: [],
-    defaultPriority: 30,
-    available: false,
-  },
-  {
-    packageName: '@framers/agentos-ext-news-search',
-    name: 'news-search',
-    category: 'tool',
-    displayName: 'News Search',
-    description: 'Search recent news articles.',
-    requiredSecrets: [],
-    defaultPriority: 30,
-    available: false,
-  },
-  {
-    packageName: '@framers/agentos-ext-skills',
-    name: 'skills',
-    category: 'tool',
-    displayName: 'Skills Registry',
-    description: 'Discover and enable curated SKILL.md prompt modules.',
-    requiredSecrets: [],
-    defaultPriority: 15,
-    available: false,
-  },
+function canResolveSpecifier(): boolean {
+  return typeof (import.meta as any).resolve === 'function';
+}
 
-  // ── Voice Providers ──
-  {
-    packageName: '@framers/agentos-ext-voice-twilio',
-    name: 'voice-twilio',
-    category: 'voice',
-    displayName: 'Twilio Voice',
-    description:
-      'Phone call integration via Twilio — outbound/inbound calls, TwiML, media streams.',
-    requiredSecrets: ['twilio.accountSid', 'twilio.authToken'],
-    defaultPriority: 50,
-    available: false,
-  },
-  {
-    packageName: '@framers/agentos-ext-voice-telnyx',
-    name: 'voice-telnyx',
-    category: 'voice',
-    displayName: 'Telnyx Voice',
-    description: 'Phone call integration via Telnyx Call Control v2 — SIP, FQDN routing.',
-    requiredSecrets: ['telnyx.apiKey', 'telnyx.connectionId'],
-    defaultPriority: 50,
-    available: false,
-  },
-  {
-    packageName: '@framers/agentos-ext-voice-plivo',
-    name: 'voice-plivo',
-    category: 'voice',
-    displayName: 'Plivo Voice',
-    description: 'Phone call integration via Plivo Voice API — outbound calls, XML responses.',
-    requiredSecrets: ['plivo.authId', 'plivo.authToken'],
-    defaultPriority: 50,
-    available: false,
-  },
+function findNodeModulesDirs(startDir: string): string[] {
+  const out: string[] = [];
 
-  // ── Productivity ──
-  {
-    packageName: '@framers/agentos-ext-calendar-google',
-    name: 'calendar-google',
-    category: 'productivity',
-    displayName: 'Google Calendar',
-    description: 'Google Calendar API — event CRUD, free/busy queries, multi-calendar support.',
-    requiredSecrets: ['google.clientId', 'google.clientSecret', 'google.refreshToken'],
-    defaultPriority: 40,
-    available: false,
-  },
-  {
-    packageName: '@framers/agentos-ext-email-gmail',
-    name: 'email-gmail',
-    category: 'productivity',
-    displayName: 'Gmail',
-    description: 'Gmail API — send, read, search, reply to emails, manage labels.',
-    requiredSecrets: ['google.clientId', 'google.clientSecret', 'google.refreshToken'],
-    defaultPriority: 40,
-    available: false,
-  },
-];
+  let current = startDir;
+  for (let i = 0; i < 25; i++) {
+    const nm = path.join(current, 'node_modules');
+    if (existsSync(nm)) out.push(nm);
+
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+
+  // `process.cwd()` is a good extra hint for monorepos.
+  const cwdNm = path.join(process.cwd(), 'node_modules');
+  if (!out.includes(cwdNm) && existsSync(cwdNm)) out.unshift(cwdNm);
+
+  return out;
+}
+
+const NODE_MODULES_DIRS = findNodeModulesDirs(path.dirname(fileURLToPath(import.meta.url)));
+
+function isPackageInstalled(packageName: string): boolean {
+  if (!packageName) return false;
+
+  // Fast path for node_modules installs (covers npm/pnpm/yarn classic).
+  if (NODE_MODULES_DIRS.length > 0) {
+    const parts = packageName.split('/');
+    for (const nm of NODE_MODULES_DIRS) {
+      if (existsSync(path.join(nm, ...parts))) return true;
+    }
+    return false;
+  }
+
+  // Fallback: resolution-only checks (avoids module side effects).
+  if (canResolveSpecifier()) {
+    try {
+      (import.meta as any).resolve(packageName);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
 
 /**
  * Attempt to dynamically import a package. Returns the module if available,
@@ -194,26 +87,16 @@ async function tryImport(packageName: string): Promise<any | null> {
  */
 export async function getAvailableExtensions(): Promise<ExtensionInfo[]> {
   const allEntries: ExtensionInfo[] = [...TOOL_CATALOG, ...CHANNEL_CATALOG, ...PROVIDER_CATALOG];
-  const results: ExtensionInfo[] = [];
-
-  for (const entry of allEntries) {
-    const mod = await tryImport(entry.packageName);
-    results.push({ ...entry, available: mod !== null });
-  }
-
-  return results;
+  // Prefer pure resolution checks. Dynamic-importing every optional dependency
+  // can be very slow in bundler/test runtimes that shim `import.meta`.
+  return allEntries.map((entry) => ({ ...entry, available: isPackageInstalled(entry.packageName) }));
 }
 
 /**
  * Get available channel extensions.
  */
 export async function getAvailableChannels(): Promise<ExtensionInfo[]> {
-  const results: ExtensionInfo[] = [];
-  for (const entry of CHANNEL_CATALOG) {
-    const mod = await tryImport(entry.packageName);
-    results.push({ ...entry, available: mod !== null });
-  }
-  return results;
+  return CHANNEL_CATALOG.map((entry) => ({ ...entry, available: isPackageInstalled(entry.packageName) }));
 }
 
 /**

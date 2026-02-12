@@ -1,3 +1,56 @@
+## <small>0.1.22 (2026-02-10)</small>
+
+* feat: expand README, fix schema-on-demand pack, update ecosystem docs ([d2d6b26](https://github.com/framersai/agentos/commit/d2d6b26))
+* docs: add folder-level permissions & safe guardrails to docs ([97ec2f0](https://github.com/framersai/agentos/commit/97ec2f0))
+* docs(releasing): align docs with conservative 0.x rules ([ebeb8e6](https://github.com/framersai/agentos/commit/ebeb8e6))
+
+## <small>0.1.21 (2026-02-09)</small>
+
+* feat(rag): add HNSW persistence + multimodal guide ([9a45d84](https://github.com/framersai/agentos/commit/9a45d84))
+* docs: document GraphRAG updates + deletions ([a9b7f56](https://github.com/framersai/agentos/commit/a9b7f56))
+* docs: update skills references to consolidated registry package ([7d344f3](https://github.com/framersai/agentos/commit/7d344f3))
+* test: relax fetch mock typing ([b8647a2](https://github.com/framersai/agentos/commit/b8647a2))
+
+## <small>0.1.20 (2026-02-08)</small>
+
+* fix: add explicit exports for rag/reranking, rag/graphrag, core/hitl ([d90340d](https://github.com/framersai/agentos/commit/d90340d))
+* feat(graphrag): support document removal ([cca2f52](https://github.com/framersai/agentos/commit/cca2f52))
+
+## <small>0.1.19 (2026-02-08)</small>
+
+* fix: add ./rag and ./config/* exports to package.json ([27dba19](https://github.com/framersai/agentos/commit/27dba19))
+
+## <small>0.1.18 (2026-02-08)</small>
+
+* feat(graphrag): re-ingest updates ([13700b8](https://github.com/framersai/agentos/commit/13700b8))
+* docs: update README with safety primitives details ([496b172](https://github.com/framersai/agentos/commit/496b172))
+* agentos: tool calling + safety + observability ([00b9187](https://github.com/framersai/agentos/commit/00b9187))
+
+## <small>0.1.17 (2026-02-08)</small>
+
+* feat: safety primitives — GuardedToolResult rename, tests & docs ([3ca722d](https://github.com/framersai/agentos/commit/3ca722d))
+
+## <small>0.1.16 (2026-02-08)</small>
+
+* fix: remove all 47 stale .d.ts files from src/ that duplicate .ts sources ([bdf3a56](https://github.com/framersai/agentos/commit/bdf3a56))
+* fix: remove stale .d.ts files from src/core/tools/ ([6c9e307](https://github.com/framersai/agentos/commit/6c9e307))
+* fix: use explicit type exports for ITool to avoid TS2308 ambiguity ([e506d79](https://github.com/framersai/agentos/commit/e506d79))
+* docs: rewrite README with accurate API examples and streamlined structure ([d7e5157](https://github.com/framersai/agentos/commit/d7e5157))
+* feat: Qdrant vector store, content safety service, otel improvements ([dbd7cb2](https://github.com/framersai/agentos/commit/dbd7cb2))
+
+## <small>0.1.15 (2026-02-08)</small>
+
+* fix: update skills count from 16+ to 18 ([a50185e](https://github.com/framersai/agentos/commit/a50185e))
+
+## <small>0.1.14 (2026-02-08)</small>
+
+* fix: provide fallback for optional personaId in pushErrorChunk call ([d779a7e](https://github.com/framersai/agentos/commit/d779a7e))
+* feat: enhanced RAG pipeline, observability, schema-on-demand extension ([b6e98e4](https://github.com/framersai/agentos/commit/b6e98e4))
+
+## <small>0.1.13 (2026-02-07)</small>
+
+* feat: add AutonomyGuard + PolicyProfiles tests, skills ecosystem improvements ([36a99eb](https://github.com/framersai/agentos/commit/36a99eb))
+
 ## <small>0.1.12 (2026-02-07)</small>
 
 * feat: add 7 P3 channel platforms for OpenClaw parity ([5a988ce](https://github.com/framersai/agentos/commit/5a988ce))

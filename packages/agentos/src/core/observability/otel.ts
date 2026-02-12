@@ -1,5 +1,5 @@
 import type { Attributes, Span, SpanContext, SpanKind } from '@opentelemetry/api';
-import { context, trace, SpanStatusCode } from '@opentelemetry/api';
+import { context, metrics, trace, SpanStatusCode } from '@opentelemetry/api';
 
 export interface AgentOSObservabilityConfig {
   /**
@@ -40,6 +40,39 @@ export interface AgentOSObservabilityConfig {
      * Default: false.
      */
     includeTraceIds?: boolean;
+
+    /**
+     * When enabled, AgentOS will emit OpenTelemetry LogRecords using `@opentelemetry/api-logs`.
+     *
+     * This is still opt-in because it can increase CPU/network usage and may result in double-ingestion
+     * if you already ship stdout logs separately.
+     *
+     * Note: This does not start OpenTelemetry. Your host app must install/start an OTEL SDK and
+     * configure a logs exporter (e.g. `OTEL_LOGS_EXPORTER=otlp` in NodeSDK).
+     *
+     * Default: false.
+     */
+    exportToOtel?: boolean;
+
+    /**
+     * OpenTelemetry logger name used for AgentOS LogRecords.
+     * Default: "@framers/agentos".
+     */
+    otelLoggerName?: string;
+  };
+
+  metrics?: {
+    /**
+     * Enables AgentOS metrics (counters/histograms).
+     * Default: false.
+     */
+    enabled?: boolean;
+
+    /**
+     * OpenTelemetry meter name used for AgentOS metrics.
+     * Default: "@framers/agentos".
+     */
+    meterName?: string;
   };
 }
 
@@ -48,6 +81,10 @@ export type AgentOSObservabilityState = Readonly<{
   tracerName: string;
   includeTraceInResponses: boolean;
   includeTraceIdsInLogs: boolean;
+  metricsEnabled: boolean;
+  meterName: string;
+  exportOtelLogs: boolean;
+  otelLoggerName: string;
 }>;
 
 function readEnv(name: string): string | undefined {
@@ -75,10 +112,22 @@ function resolveState(config?: AgentOSObservabilityConfig): AgentOSObservability
   const envTracingEnabled = parseEnvBoolean(readEnv('AGENTOS_TRACING_ENABLED'));
   const envTraceInResponses = parseEnvBoolean(readEnv('AGENTOS_TRACE_IDS_IN_RESPONSES'));
   const envIncludeTraceIdsInLogs = parseEnvBoolean(readEnv('AGENTOS_LOG_TRACE_IDS'));
+  const envMetricsEnabled = parseEnvBoolean(readEnv('AGENTOS_METRICS_ENABLED'));
+  const envExportOtelLogs = parseEnvBoolean(readEnv('AGENTOS_OTEL_LOGS_ENABLED'));
 
   const tracerNameRaw = config?.tracing?.tracerName ?? readEnv('AGENTOS_OTEL_TRACER_NAME');
   const tracerName =
     typeof tracerNameRaw === 'string' && tracerNameRaw.trim() ? tracerNameRaw.trim() : '@framers/agentos';
+
+  const meterNameRaw = config?.metrics?.meterName ?? readEnv('AGENTOS_OTEL_METER_NAME');
+  const meterName =
+    typeof meterNameRaw === 'string' && meterNameRaw.trim() ? meterNameRaw.trim() : '@framers/agentos';
+
+  const otelLoggerNameRaw = config?.logging?.otelLoggerName ?? readEnv('AGENTOS_OTEL_LOGGER_NAME');
+  const otelLoggerName =
+    typeof otelLoggerNameRaw === 'string' && otelLoggerNameRaw.trim()
+      ? otelLoggerNameRaw.trim()
+      : '@framers/agentos';
 
   // Config wins over env. If config.enabled is explicitly false, hard-disable all.
   if (config?.enabled === false) {
@@ -87,6 +136,10 @@ function resolveState(config?: AgentOSObservabilityConfig): AgentOSObservability
       tracerName,
       includeTraceInResponses: false,
       includeTraceIdsInLogs: false,
+      metricsEnabled: false,
+      meterName,
+      exportOtelLogs: false,
+      otelLoggerName,
     };
   }
 
@@ -119,11 +172,33 @@ function resolveState(config?: AgentOSObservabilityConfig): AgentOSObservability
         ? envTraceInResponses
         : false;
 
+  const metricsEnabled =
+    typeof config?.metrics?.enabled === 'boolean'
+      ? config.metrics.enabled
+      : typeof config?.enabled === 'boolean'
+        ? config.enabled
+        : typeof envMetricsEnabled === 'boolean'
+          ? envMetricsEnabled
+          : typeof envEnabled === 'boolean'
+            ? envEnabled
+            : false;
+
+  const exportOtelLogs =
+    typeof config?.logging?.exportToOtel === 'boolean'
+      ? config.logging.exportToOtel
+      : typeof envExportOtelLogs === 'boolean'
+        ? envExportOtelLogs
+        : false;
+
   return {
     tracingEnabled,
     tracerName,
     includeTraceInResponses,
     includeTraceIdsInLogs,
+    metricsEnabled,
+    meterName,
+    exportOtelLogs,
+    otelLoggerName,
   };
 }
 
@@ -142,8 +217,20 @@ export function isAgentOSTracingEnabled(): boolean {
   return state.tracingEnabled;
 }
 
+export function isAgentOSMetricsEnabled(): boolean {
+  return state.metricsEnabled;
+}
+
 export function shouldIncludeTraceIdsInAgentOSLogs(): boolean {
   return state.includeTraceIdsInLogs;
+}
+
+export function shouldExportAgentOSLogsToOtel(): boolean {
+  return state.exportOtelLogs;
+}
+
+export function getAgentOSOtelLoggerName(): string {
+  return state.otelLoggerName;
 }
 
 export function shouldIncludeTraceInAgentOSResponses(): boolean {
@@ -167,6 +254,156 @@ function sanitizeAttributes(attributes?: Attributes): Attributes | undefined {
     }
   }
   return out as Attributes;
+}
+
+type AgentOSMetricsInstruments = Readonly<{
+  turns: ReturnType<ReturnType<typeof metrics.getMeter>['createCounter']>;
+  turnDurationMs: ReturnType<ReturnType<typeof metrics.getMeter>['createHistogram']>;
+  turnTokensTotal: ReturnType<ReturnType<typeof metrics.getMeter>['createHistogram']>;
+  turnTokensPrompt: ReturnType<ReturnType<typeof metrics.getMeter>['createHistogram']>;
+  turnTokensCompletion: ReturnType<ReturnType<typeof metrics.getMeter>['createHistogram']>;
+  turnCostUsd: ReturnType<ReturnType<typeof metrics.getMeter>['createHistogram']>;
+  toolResults: ReturnType<ReturnType<typeof metrics.getMeter>['createCounter']>;
+  toolResultDurationMs: ReturnType<ReturnType<typeof metrics.getMeter>['createHistogram']>;
+}>;
+
+let instruments: AgentOSMetricsInstruments | null = null;
+let instrumentsMeterName: string | null = null;
+
+function getMetricInstruments(): AgentOSMetricsInstruments | null {
+  if (!state.metricsEnabled) return null;
+
+  if (instruments && instrumentsMeterName === state.meterName) return instruments;
+
+  const meter = metrics.getMeter(state.meterName);
+  instruments = {
+    turns: meter.createCounter('agentos.turns', {
+      description: 'Number of AgentOS turns completed.',
+      unit: '1',
+    }),
+    turnDurationMs: meter.createHistogram('agentos.turn.duration_ms', {
+      description: 'AgentOS turn duration.',
+      unit: 'ms',
+    }),
+    turnTokensTotal: meter.createHistogram('agentos.turn.tokens.total', {
+      description: 'Total tokens used per turn.',
+      unit: '1',
+    }),
+    turnTokensPrompt: meter.createHistogram('agentos.turn.tokens.prompt', {
+      description: 'Prompt/input tokens used per turn.',
+      unit: '1',
+    }),
+    turnTokensCompletion: meter.createHistogram('agentos.turn.tokens.completion', {
+      description: 'Completion/output tokens used per turn.',
+      unit: '1',
+    }),
+    turnCostUsd: meter.createHistogram('agentos.turn.cost.usd', {
+      description: 'Total cost (USD) per turn (when available).',
+      unit: 'USD',
+    }),
+    toolResults: meter.createCounter('agentos.tool_results', {
+      description: 'Number of tool-result handoffs processed by AgentOS.',
+      unit: '1',
+    }),
+    toolResultDurationMs: meter.createHistogram('agentos.tool_result.duration_ms', {
+      description: 'AgentOS tool-result processing duration.',
+      unit: 'ms',
+    }),
+  };
+  instrumentsMeterName = state.meterName;
+  return instruments;
+}
+
+export type AgentOSTurnMetricInput = Readonly<{
+  durationMs: number;
+  status: 'ok' | 'error';
+  personaId?: string;
+  usage?: {
+    totalTokens?: number;
+    promptTokens?: number;
+    completionTokens?: number;
+    totalCostUSD?: number;
+  };
+}>;
+
+export function recordAgentOSTurnMetrics(input: AgentOSTurnMetricInput): void {
+  const inst = getMetricInstruments();
+  if (!inst) return;
+
+  const baseAttributes = sanitizeAttributes({
+    status: input.status,
+    persona_id: input.personaId ?? '',
+  });
+
+  try {
+    inst.turns.add(1, baseAttributes);
+  } catch {
+    // ignore
+  }
+  try {
+    inst.turnDurationMs.record(Math.max(0, input.durationMs), baseAttributes);
+  } catch {
+    // ignore
+  }
+
+  const usage = input.usage;
+  if (!usage) return;
+
+  const totalTokens = typeof usage.totalTokens === 'number' ? usage.totalTokens : undefined;
+  const promptTokens = typeof usage.promptTokens === 'number' ? usage.promptTokens : undefined;
+  const completionTokens = typeof usage.completionTokens === 'number' ? usage.completionTokens : undefined;
+  const totalCostUSD = typeof usage.totalCostUSD === 'number' ? usage.totalCostUSD : undefined;
+
+  try {
+    if (typeof totalTokens === 'number') inst.turnTokensTotal.record(Math.max(0, totalTokens), baseAttributes);
+  } catch {
+    // ignore
+  }
+  try {
+    if (typeof promptTokens === 'number') inst.turnTokensPrompt.record(Math.max(0, promptTokens), baseAttributes);
+  } catch {
+    // ignore
+  }
+  try {
+    if (typeof completionTokens === 'number')
+      inst.turnTokensCompletion.record(Math.max(0, completionTokens), baseAttributes);
+  } catch {
+    // ignore
+  }
+  try {
+    if (typeof totalCostUSD === 'number') inst.turnCostUsd.record(Math.max(0, totalCostUSD), baseAttributes);
+  } catch {
+    // ignore
+  }
+}
+
+export type AgentOSToolResultMetricInput = Readonly<{
+  durationMs: number;
+  status: 'ok' | 'error';
+  toolName?: string;
+  toolSuccess?: boolean;
+}>;
+
+export function recordAgentOSToolResultMetrics(input: AgentOSToolResultMetricInput): void {
+  const inst = getMetricInstruments();
+  if (!inst) return;
+
+  const attrs = sanitizeAttributes({
+    status: input.status,
+    tool_name: input.toolName ?? '',
+    tool_success: typeof input.toolSuccess === 'boolean' ? input.toolSuccess : undefined,
+  });
+
+  try {
+    inst.toolResults.add(1, attrs);
+  } catch {
+    // ignore
+  }
+  try {
+    inst.toolResultDurationMs.record(Math.max(0, input.durationMs), attrs);
+  } catch {
+    // ignore
+  }
 }
 
 export function startAgentOSSpan(

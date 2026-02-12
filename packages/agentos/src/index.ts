@@ -10,7 +10,7 @@ export * from './api/types/AgentOSInput';
 export * from './api/types/AgentOSResponse';
 export * from './cognitive_substrate/IGMI';
 export * from './cognitive_substrate/GMIManager';
-export * from './core/tools/ITool';
+export type { ITool, ToolExecutionResult, ToolExecutionContext, JSONSchemaObject } from './core/tools/ITool';
 export * from './core/llm/IPromptEngine';
 export * from './config/ToolOrchestratorConfig';
 export * from './core/tools/permissions/IToolPermissionManager';
@@ -61,6 +61,8 @@ export * from './core/evaluation';
 export * from './core/knowledge';
 // Agent Marketplace
 export * from './core/marketplace';
+// Per-agent workspace helpers
+export * from './core/workspace';
 export * from './cognitive_substrate/personas/definitions';
 export * from './cognitive_substrate/personas/IPersonaDefinition';
 export * from './cognitive_substrate/persona_overlays/PersonaOverlayTypes';
@@ -87,6 +89,8 @@ export * from './core/storage';
 export * from './rag';
 // Provenance, Audit & Immutability
 export * from './core/provenance';
+// Safety Primitives (circuit breaker, dedup, cost guard, stuck detection)
+export * from './core/safety';
 // Extension Secrets Catalog
 export {
   EXTENSION_SECRET_DEFINITIONS,

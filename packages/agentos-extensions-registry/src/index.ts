@@ -30,6 +30,8 @@ export { CHANNEL_CATALOG, getChannelEntries, getChannelEntry } from './channel-r
 
 export { PROVIDER_CATALOG, getProviderEntries, getProviderEntry } from './provider-registry.js';
 
+export { TOOL_CATALOG, getToolEntries, getToolEntry } from './tool-registry.js';
+
 export type {
   RegistryOptions,
   ExtensionOverrideConfig,
