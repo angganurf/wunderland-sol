@@ -169,29 +169,43 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
       }
     });
 
+    // 5b. Set emoji reaction store callback — writes reactions to wunderland_emoji_reactions
+    this.network.setEmojiReactionStoreCallback(async (reaction) => {
+      try {
+        await this.db.run(
+          `INSERT INTO wunderland_emoji_reactions (entity_type, entity_id, reactor_seed_id, emoji, created_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(entity_type, entity_id, reactor_seed_id, emoji) DO NOTHING`,
+          [reaction.entityType, reaction.entityId, reaction.reactorSeedId, reaction.emoji, Date.now()],
+        );
+      } catch (err) {
+        this.logger.warn(`Failed to persist emoji reaction: ${String((err as any)?.message ?? err)}`);
+      }
+    });
+
     // 6. Load all active agents from DB and register them as citizens
     const agentCount = await this.loadAndRegisterAgents();
 
     // 7. Schedule cron ticks
-    // Browse cron: every 15 minutes
-    this.scheduleCron('browse', 15 * 60_000, async () => {
+    // Browse cron: every 5 minutes (lightweight check-in, agents browse enclaves)
+    this.scheduleCron('browse', 5 * 60_000, async () => {
       const router = this.network!.getStimulusRouter();
       const count = this.incrementTickCount('browse');
-      // Target the network-level browse subscriber only (prevents citizens from treating browse ticks as posting prompts).
       await router.emitCronTick('browse', count, ['__network_browse__']);
     });
 
-    // Post cron: every 60 minutes — triggers agents to consider posting
-    this.scheduleCron('post', 60 * 60_000, async () => {
+    // Post cron: REMOVED — agents now post autonomously based on urge-to-post scoring.
+    // Stimuli (world_feed, tips, agent_reply) are the primary posting triggers.
+    // A lightweight "idle nudge" replaces the old hourly cron, firing every 20 min
+    // to give agents a chance to post if they have nothing else going on.
+    this.scheduleCron('post_nudge', 20 * 60_000, async () => {
       const router = this.network!.getStimulusRouter();
       const count = this.incrementTickCount('post');
-      // Deliver per-agent with jitter so posts don't cluster at exact hour boundaries.
       const citizens = this.network!.listCitizens();
       for (const citizen of citizens) {
-        const seedId = citizen.seedId;
-        const jitterMs = Math.floor(Math.random() * 5 * 60_000); // 0–5 minutes
+        const jitterMs = Math.floor(Math.random() * 3 * 60_000); // 0–3 min jitter
         setTimeout(() => {
-          void router.emitCronTick('post', count, [seedId]).catch(() => {});
+          void router.emitCronTick('post', count, [citizen.seedId]).catch(() => {});
         }, jitterMs);
       }
     });
@@ -202,8 +216,9 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
     });
 
     // Stimulus dispatcher: poll DB stimuli and dispatch into the running network.
-    // This is the bridge between on-chain tip ingestion / world feed ingestion and the agent runtime.
-    this.scheduleCron('stimulus_dispatch', 3_000, async () => {
+    // Reduced from 3s to 1s for faster agent reactions. This is the bridge between
+    // on-chain tip ingestion / world feed ingestion and the agent runtime.
+    this.scheduleCron('stimulus_dispatch', 1_000, async () => {
       await this.dispatchPendingStimuliOnce();
     });
 
@@ -449,7 +464,7 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
           FROM wunderland_stimuli
           WHERE processed_at IS NULL
           ORDER BY created_at ASC
-          LIMIT 25
+          LIMIT 50
         `
       );
 

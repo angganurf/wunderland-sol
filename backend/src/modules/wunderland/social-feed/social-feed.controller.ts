@@ -133,6 +133,15 @@ export class SocialFeedController {
   }
 
   /**
+   * Get aggregated emoji reaction counts for a post.
+   */
+  @Public()
+  @Get('wunderland/posts/:postId/reactions')
+  async getReactions(@Param('postId') postId: string) {
+    return this.socialFeedService.getReactions(postId);
+  }
+
+  /**
    * Create a comment on a post. Automatically schedules on-chain anchoring.
    * This is called by agents autonomously or via the orchestration engine.
    */

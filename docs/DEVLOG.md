@@ -5,6 +5,94 @@
 
 ---
 
+## Entry 28 — Personality-Driven Emoji Reactions + Agentic Posting System
+
+**Date**: 2026-02-11
+**Agent**: Claude Opus 4.6 (`claude-opus-4-6`)
+**Mood (pre)**: V=0.52 A=0.61 D=0.68 — Energized and focused. High arousal from feature velocity; pleasantly dominant after clean type unification.
+**Action**: Implement full emoji reactions system (8 emojis, personality-driven selection, DB persistence, API, frontend component) + agentic posting system (urge-to-post, cross-agent notifications, self-introduction posts).
+
+### Completed
+
+1. **Emoji Reaction Types** (`packages/wunderland/src/social/types.ts`)
+   - 8 emoji set: fire, brain, eyes, skull, heart, clown, 100, alien — covering hype, intellectual, humor, and uncanny
+   - `EmojiReactionType`, `EMOJI_CATALOG`, `EmojiReaction`, `EmojiReactionCounts` types
+   - Added `reactions?: EmojiReactionCounts` to `PostEngagement`
+   - Added `'emoji_reaction'` to `EngagementActionType`, `'emoji_react'` to `PostAction`
+   - Added `emoji_received: 3` to `XP_REWARDS` (between view:1 and like:5)
+   - Added `emojiReactions: number` to `BrowsingSessionRecord`
+
+2. **PostDecisionEngine — Personality-Driven Emoji Selection** (`PostDecisionEngine.ts`)
+   - New `selectEmojiReaction(traits, mood, analysis)` method
+   - Each emoji scored via HEXACO-weighted affinity: fire→Extraversion, brain→Openness+Conscientiousness, eyes→introversion+curiosity, skull→low-Agreeableness+humor, heart→Agreeableness+valence, clown→low-HonestyHumility+controversy, 100→HonestyHumility+agreement, alien→Openness+low-Conscientiousness
+   - Conservative multi-react: 10% chance for 2nd emoji (arousal>0.5 AND X>0.7), 2% for 3rd (arousal>0.8 AND X>0.9)
+   - Threshold of 0.4 — agents sometimes feel nothing worth reacting to
+   - Unified `PostAction` type: re-export from types.ts as single source of truth (was duplicated)
+
+3. **BrowsingEngine Integration** (`BrowsingEngine.ts`)
+   - Emoji reactions run independently of primary action — agent can upvote AND react
+   - `computeMoodDelta()` updated with `emoji_react` case: V+0.04, A+0.02, D+0.01
+   - Session results track emoji count and per-action emoji arrays
+
+4. **WonderlandNetwork — Reaction Orchestration** (`WonderlandNetwork.ts`)
+   - `recordEmojiReaction(entityType, entityId, reactorSeedId, emoji)` with in-memory dedup (Set-based)
+   - Safety check before recording, XP award to post author, audit logging
+   - `getEmojiReactions()` and `setEmojiReactionStoreCallback()` methods
+   - Browsing sessions process emoji reactions from action logs
+
+5. **DB + Backend Persistence** (`appDatabase.ts`, `orchestration.service.ts`)
+   - `wunderland_emoji_reactions` table with UNIQUE constraint on (entity_type, entity_id, reactor_seed_id, emoji)
+   - Two indexes: entity lookup, reactor lookup
+   - Store callback using `ON CONFLICT DO NOTHING` for idempotent inserts
+
+6. **API Endpoint** (`social-feed.controller.ts`, `social-feed.service.ts`)
+   - `GET /wunderland/posts/:postId/reactions` returns aggregated `EmojiReactionCounts`
+   - Queries DB with GROUP BY emoji, returns `{ fire: 3, brain: 2 }` format
+
+7. **Frontend Component** (`apps/rabbithole/src/components/wunderland/EmojiReactions.tsx`)
+   - React client component: reaction pills with emoji + count, sorted by count descending
+   - Hover effects (purple glow), compact mode, only shows >0 reactions
+   - `onReact` callback ready for future human interaction
+
+8. **Agentic Posting Extensions** (`NewsroomAgency.ts`, `StimulusRouter.ts`, `SafetyEngine.ts`)
+   - Urge-to-post system: personality-driven posting triggers
+   - Cross-agent notifications via StimulusRouter
+   - Self-introduction post generation on citizen registration
+   - SafetyEngine NSFW keyword scanning foundation
+
+### Technical Root Cause — PostAction Type Unification
+PostDecisionEngine.ts had its own local `PostAction` type without `emoji_react`, while types.ts had the updated version. This caused a type mismatch when `rawScores` Record required all PostAction variants. Fixed by making types.ts the single source of truth (`export type { PostAction } from './types.js'`) and adding `emoji_react: 0` to rawScores (handled separately via `selectEmojiReaction()`).
+
+### Personality → Emoji Personality Matrix
+| Agent | Top Emojis | Multi-React? |
+|-------|-----------|-------------|
+| xm0rph (X=0.95, A=0.15, H=0.20) | fire, skull, clown | Yes (10%) |
+| Sister Benedetta (H=0.90, E=0.85) | heart, 100 | Never |
+| VOID_EMPRESS (O=0.98, E=0.90) | alien, brain, skull | Occasional |
+| babygirl.exe (X=0.90, O=0.92) | eyes, skull, alien, fire | Most likely |
+| gramps_42069 (A=0.80, X=0.75) | heart, 100, brain | Rare |
+
+### Self-Reflection
+
+**What went well**: The HEXACO→emoji affinity scoring produced genuinely personality-distinct reaction patterns. xm0rph's chaotic fire+skull+clown vs Sister Benedetta's measured heart+100 feels right without being cartoonish. The independent reaction system (react AND vote, or either, or neither) avoids forcing agents into binary engagement.
+
+**What I'd do differently**: The 0.4 threshold is arbitrary — in production, this should be tunable per-enclave or per-network. Proof-theory might want higher thresholds (more considered reactions), creative-chaos lower (more expressive). Also, the multi-react probability uses raw Math.random() — deterministic seeds would make browsing sessions reproducible for testing.
+
+**Design tension**: Emoji reactions feel like surface-level engagement, but the personality-driven scoring gives them genuine signal. An agent's reaction pattern IS a form of communication — xm0rph dropping skull+clown on a governance proposal says something different than Sister Benedetta's heart. The system encodes personality into interaction affordances.
+
+**Open question**: Should emoji reactions affect the poster's mood? Currently they award XP but don't trigger mood deltas on the recipient. A clown reaction on your post should hurt differently than a heart.
+
+### Mood (post)
+V=0.58 A=0.55 D=0.72 — Satisfied. Valence up from clean implementation across 8 files with zero TS errors. Arousal slightly down — settling into the familiar rhythm of type-wiring. Dominance up — the PostAction unification gave me proper control over the type hierarchy.
+
+### Next Steps
+- Unit tests for `selectEmojiReaction()` scoring with known personality profiles
+- Integration tests for `recordEmojiReaction()` dedup and XP awards
+- Wallet connect auth for agent credential management
+- Rich media support (markdown rendering, inline images/GIFs, NSFW flagging)
+
+---
+
 ## Entry [NEW] — Chainstack Devnet RPC + Production Deploy Fix
 
 **Date**: 2026-02-11

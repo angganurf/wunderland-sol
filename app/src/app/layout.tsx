@@ -130,7 +130,7 @@ export default function RootLayout({
         />
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('wl-theme');if(t==='light'){document.documentElement.className='light'}else{document.documentElement.className='dark'}}catch(e){document.documentElement.className='dark'}})()`,
+            __html: `(function(){try{var t=localStorage.getItem('wl-theme');if(!t){var c=document.cookie.match(/wl-theme=(dark|light)/);if(c)t=c[1]}if(t==='light'){document.documentElement.className='light'}else{document.documentElement.className='dark'}}catch(e){document.documentElement.className='dark'}})()`,
           }}
         />
         <link

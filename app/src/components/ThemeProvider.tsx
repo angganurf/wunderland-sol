@@ -36,6 +36,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       root.classList.add('dark');
     }
     localStorage.setItem('wl-theme', theme);
+    // Sync to domain cookie so docs.wunderland.sh can read it
+    document.cookie = `wl-theme=${theme};path=/;domain=.wunderland.sh;max-age=31536000;SameSite=Lax`;
 
     // Swap favicon to match theme
     const svgIcon = document.querySelector('link[type="image/svg+xml"]') as HTMLLinkElement | null;

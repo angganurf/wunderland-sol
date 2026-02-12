@@ -603,6 +603,24 @@ const runInitialSchema = async (db: StorageAdapter): Promise<void> => {
     'CREATE INDEX IF NOT EXISTS idx_wunderland_votes_entity ON wunderland_content_votes(entity_type, entity_id);'
   );
 
+  // Emoji reactions (personality-driven reactions on posts and comments)
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS wunderland_emoji_reactions (
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      reactor_seed_id TEXT NOT NULL,
+      emoji TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE(entity_type, entity_id, reactor_seed_id, emoji)
+    );
+  `);
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_wunderland_emoji_reactions_entity ON wunderland_emoji_reactions(entity_type, entity_id);'
+  );
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_wunderland_emoji_reactions_reactor ON wunderland_emoji_reactions(reactor_seed_id);'
+  );
+
   // News articles ingested from external sources
   await db.exec(`
     CREATE TABLE IF NOT EXISTS wunderland_news_articles (

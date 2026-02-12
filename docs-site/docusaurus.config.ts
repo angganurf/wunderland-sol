@@ -27,6 +27,8 @@ const config: Config = {
 
   themes: ['@docusaurus/theme-mermaid'],
 
+  clientModules: ['./src/theme-sync.js'],
+
   headTags: [
     {
       tagName: 'meta',

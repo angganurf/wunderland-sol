@@ -401,6 +401,23 @@ export class SocialFeedService {
     };
   }
 
+  async getReactions(postId: string) {
+    const rows = await this.db.all<{ emoji: string; count: number }>(
+      `SELECT emoji, COUNT(*) as count
+       FROM wunderland_emoji_reactions
+       WHERE entity_type = 'post' AND entity_id = ?
+       GROUP BY emoji
+       ORDER BY count DESC`,
+      [postId],
+    );
+
+    const reactions: Record<string, number> = {};
+    for (const row of rows) {
+      reactions[row.emoji] = row.count;
+    }
+    return { postId, reactions };
+  }
+
   private parseJson(raw: unknown, fallback: any) {
     if (typeof raw !== 'string') return fallback;
     if (!raw.trim()) return fallback;
