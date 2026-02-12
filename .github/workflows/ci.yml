@@ -56,9 +56,8 @@ jobs:
           path: test-results.xml
 
   typecheck:
-    name: Type Check (advisory)
+    name: Type Check (SDK)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -66,23 +65,8 @@ jobs:
         with:
           node-version: 22
 
-      - name: Resolve workspace protocol
-        run: |
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-            for (const g of ['dependencies','optionalDependencies','peerDependencies']) {
-              if (!pkg[g]) continue;
-              for (const [n,v] of Object.entries(pkg[g])) {
-                if (String(v).startsWith('workspace:')) pkg[g][n] = '*';
-              }
-            }
-            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
-          "
+      - name: Install SDK dependencies
+        run: cd sdk && npm install
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Type check
-        run: npx tsc --noEmit
-
+      - name: Type check SDK
+        run: cd sdk && npx tsc --noEmit
