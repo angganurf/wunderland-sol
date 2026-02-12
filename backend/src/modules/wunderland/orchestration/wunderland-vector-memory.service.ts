@@ -375,7 +375,7 @@ export class WunderlandVectorMemoryService implements OnModuleDestroy {
     await this.retrievalAugmentor.initialize(retrievalConfig, this.embeddingManager, this.vectorStoreManager);
   }
 
-  private getDefaultQueryOptions(): Pick<RagRetrievalOptions, 'strategy' | 'strategyParams' | 'rerankerConfig'> {
+  private getDefaultQueryOptions(): Partial<Pick<RagRetrievalOptions, 'strategy' | 'strategyParams' | 'rerankerConfig'>> {
     const preset = coercePreset(process.env.WUNDERLAND_MEMORY_PRESET) ?? 'balanced';
 
     const hybridAlphaEnv = Number(process.env.WUNDERLAND_MEMORY_HYBRID_ALPHA);
