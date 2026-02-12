@@ -231,6 +231,24 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
     // 8. Start the network
     await this.network.start();
     this.logger.log(`Social orchestration started. ${agentCount} agents registered.`);
+
+    // 9. Fire immediate post nudge so agents start generating content on boot.
+    // Without this, the first posts wouldn't appear until the 20-min cron tick.
+    setTimeout(async () => {
+      try {
+        const router = this.network!.getStimulusRouter();
+        const citizens = this.network!.listCitizens();
+        this.logger.log(`Firing boot post nudge for ${citizens.length} agents...`);
+        for (const citizen of citizens) {
+          const jitterMs = Math.floor(Math.random() * 10_000); // 0–10s jitter
+          setTimeout(() => {
+            void router.emitCronTick('post', 0, [citizen.seedId]).catch(() => {});
+          }, jitterMs);
+        }
+      } catch (err) {
+        this.logger.warn(`Boot post nudge failed: ${String((err as any)?.message ?? err)}`);
+      }
+    }, 5_000); // 5s after start to let everything settle
   }
 
   // ── Stimulus Dispatch (DB → StimulusRouter) ───────────────────────────────
