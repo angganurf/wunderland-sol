@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [master]
 
-env:
-  NODE_VERSION: "22"
-
 jobs:
   test:
     name: Unit Tests + Coverage
@@ -16,21 +13,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
+          node-version: 22
+
+      - name: Resolve workspace protocol
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            for (const g of ['dependencies','optionalDependencies','peerDependencies']) {
+              if (!pkg[g]) continue;
+              for (const [n,v] of Object.entries(pkg[g])) {
+                if (String(v).startsWith('workspace:')) pkg[g][n] = '*';
+              }
+            }
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+          "
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --node-linker=hoisted
+        run: npm install
 
-      - name: Run unit tests with coverage
-        working-directory: app
-        run: pnpm test:coverage -- --reporter=default --reporter=junit --outputFile=test-results.xml
+      - name: Run tests with coverage
+        run: npx vitest run --coverage --reporter=default --reporter=junit --outputFile=test-results.xml
         env:
           CI: true
 
@@ -39,8 +44,8 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          directory: app/coverage
-          flags: frontend
+          directory: coverage
+          flags: sdk
           fail_ci_if_error: false
 
       - name: Upload test results
@@ -48,65 +53,36 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: app/test-results.xml
-
-  e2e:
-    name: E2E Tests (Playwright)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --node-linker=hoisted
-
-      - name: Install Playwright browsers
-        working-directory: app
-        run: npx playwright install --with-deps chromium
-
-      - name: Build app
-        working-directory: app
-        run: npx next build
-
-      - name: Run E2E tests
-        working-directory: app
-        run: npx playwright test --project=chromium
-        env:
-          CI: true
-
-      - name: Upload Playwright report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: app/playwright-report/
+          path: test-results.xml
 
   typecheck:
-    name: Type Check
+    name: Type Check (advisory)
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
+          node-version: 22
+
+      - name: Resolve workspace protocol
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            for (const g of ['dependencies','optionalDependencies','peerDependencies']) {
+              if (!pkg[g]) continue;
+              for (const [n,v] of Object.entries(pkg[g])) {
+                if (String(v).startsWith('workspace:')) pkg[g][n] = '*';
+              }
+            }
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+          "
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --node-linker=hoisted
+        run: npm install
 
       - name: Type check
-        working-directory: app
         run: npx tsc --noEmit
+

@@ -1,60 +1,8 @@
-# Dependencies
-node_modules/
-.pnpm-store/
-package-lock.json
-
-# Private/internal (never commit)
-.internal/
-.claude/
-
-# Build outputs
 dist/
-.next/
-target/
-anchor/target/
-*.tsbuildinfo
+node_modules/
 
-# Environment & secrets
-.env
-.env.*
-!.env.example
-!.env.deploy.example
-.env.hackathon
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Anchor
-anchor/target/
-test-ledger/
-
-# Solana
-*.so
-
-# Local keypairs (never commit)
-anchor/**/*keypair*.json
-
-# Logs
-*.log
-npm-debug.log*
-
-# Coverage reports
-coverage/
-
-# Playwright
-app/playwright-report/
-app/test-results/
-
-# SQLite WAL files (ephemeral sidecars)
-*.sqlite-wal
-*.sqlite-shm
-*.sqlite
-*.sqlite3
+# Build artifacts (outDir is dist/)
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
+src/**/*.d.ts.map
