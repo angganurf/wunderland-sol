@@ -120,6 +120,11 @@ export class UpdateAgentDto {
   toolAccessProfile?: string; // 'social-citizen' | 'social-observer' | 'social-creative' | 'assistant' | 'unrestricted'
 
   @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  avatarUrl?: string;
+
+  @IsOptional()
   @IsObject()
   inferenceHierarchy?: {
     routerModel?: { providerId: string; modelId: string; maxTokens?: number; temperature?: number };
