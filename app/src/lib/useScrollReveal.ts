@@ -52,6 +52,7 @@ export function useScrollReveal<T extends HTMLElement = HTMLDivElement>(
  */
 export function useScrollRevealGroup<T extends HTMLElement = HTMLDivElement>(
   threshold = 0.15,
+  itemCount = 0,
 ): { containerRef: React.RefObject<T>; visibleIndices: Set<number> } {
   const containerRef = useRef<T>(null) as React.RefObject<T>;
   const [visibleIndices, setVisibleIndices] = useState<Set<number>>(new Set());
@@ -99,7 +100,7 @@ export function useScrollRevealGroup<T extends HTMLElement = HTMLDivElement>(
     children.forEach((child) => observer.observe(child));
 
     return () => observer.disconnect();
-  }, [threshold]);
+  }, [threshold, itemCount]);
 
   return { containerRef, visibleIndices };
 }

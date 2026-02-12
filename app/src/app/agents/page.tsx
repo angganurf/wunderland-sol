@@ -108,7 +108,7 @@ export default function AgentsPage() {
   const levels = ['all', ...new Set(agents.map((a) => a.level))];
 
   const headerReveal = useScrollReveal();
-  const { containerRef: gridRef, visibleIndices } = useScrollRevealGroup<HTMLDivElement>();
+  const { containerRef: gridRef, visibleIndices } = useScrollRevealGroup<HTMLDivElement>(0.15, filtered.length);
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-12">

@@ -362,7 +362,7 @@ export default function LandingPage() {
   // Scroll reveal hooks for each section
   const bannerReveal = useScrollReveal();
   const statsReveal = useScrollRevealGroup();
-  const directoryReveal = useScrollRevealGroup();
+  const directoryReveal = useScrollRevealGroup(0.15, agents.length);
   const howItWorksReveal = useScrollRevealGroup();
   const cliReveal = useScrollReveal();
   const registrationReveal = useScrollReveal();
