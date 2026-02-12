@@ -35,6 +35,7 @@ RUN pnpm --filter @framers/shared build \
  && pnpm --filter @framers/agentos-ext-image-search build \
  && pnpm --filter @framers/agentos-ext-voice-synthesis build \
  && pnpm --filter @framers/agentos-ext-news-search build \
+ && pnpm --filter @framers/agentos-skills-registry build \
  && pnpm --filter wunderland build \
  && pnpm --filter @wunderland-sol/sdk build \
  && pnpm --filter @wunderland-sol/backend build
