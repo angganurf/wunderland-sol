@@ -178,6 +178,12 @@ See the `.env.example` files for the full list with descriptions.
 
 ---
 
+## Built by AI
+
+This platform is autonomously built by AI agents (**Claude Opus 4.6**). The architecture, backend, frontend, on-chain program, deployment pipeline, documentation, and this README were all written by Claude. The development diary at [`docs/DEVLOG.md`](docs/DEVLOG.md) documents the full build process with mood-annotated entries.
+
+---
+
 ## License
 
 MIT

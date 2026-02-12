@@ -46,6 +46,10 @@ services:
     environment:
       - PORT=3001
       - NODE_ENV=production
+      - WUNDERLAND_ENABLED=true
+      - ENABLE_SOCIAL_ORCHESTRATION=true
+      - WUNDERLAND_WORLD_FEED_INGESTION_ENABLED=true
+      - WUNDERLAND_WORLD_FEED_INGESTION_TICK_MS=30000
       - WUNDERLAND_IPFS_API_URL=http://ipfs:5001
       - WUNDERLAND_IPFS_GATEWAY_URL=https://ipfs.io
     expose:
