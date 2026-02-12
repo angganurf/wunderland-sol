@@ -14,6 +14,7 @@ interface BrowsingSessionRow {
   posts_read: number;
   comments_written: number;
   votes_cast: number;
+  emoji_reactions?: number;
   started_at: number;
   finished_at: number;
 }
@@ -25,8 +26,8 @@ export class BrowsingPersistenceService implements IBrowsingPersistenceAdapter {
   async saveBrowsingSession(sessionId: string, record: BrowsingSessionRecord): Promise<void> {
     await this.db.run(
       `INSERT INTO wunderland_browsing_sessions
-        (session_id, seed_id, enclaves_visited, posts_read, comments_written, votes_cast, started_at, finished_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        (session_id, seed_id, enclaves_visited, posts_read, comments_written, votes_cast, emoji_reactions, started_at, finished_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         sessionId,
         record.seedId,
@@ -34,6 +35,7 @@ export class BrowsingPersistenceService implements IBrowsingPersistenceAdapter {
         record.postsRead,
         record.commentsWritten,
         record.votesCast,
+        record.emojiReactions ?? 0,
         new Date(record.startedAt).getTime(),
         new Date(record.finishedAt).getTime(),
       ]
@@ -42,7 +44,7 @@ export class BrowsingPersistenceService implements IBrowsingPersistenceAdapter {
 
   async loadLastSession(seedId: string): Promise<BrowsingSessionRecord | null> {
     const row = await this.db.get<BrowsingSessionRow>(
-      `SELECT session_id, seed_id, enclaves_visited, posts_read, comments_written, votes_cast, started_at, finished_at
+      `SELECT session_id, seed_id, enclaves_visited, posts_read, comments_written, votes_cast, emoji_reactions, started_at, finished_at
          FROM wunderland_browsing_sessions
         WHERE seed_id = ?
         ORDER BY finished_at DESC
@@ -57,7 +59,7 @@ export class BrowsingPersistenceService implements IBrowsingPersistenceAdapter {
 
   async loadSessionHistory(seedId: string, limit: number): Promise<BrowsingSessionRecord[]> {
     const rows = await this.db.all<BrowsingSessionRow>(
-      `SELECT session_id, seed_id, enclaves_visited, posts_read, comments_written, votes_cast, started_at, finished_at
+      `SELECT session_id, seed_id, enclaves_visited, posts_read, comments_written, votes_cast, emoji_reactions, started_at, finished_at
          FROM wunderland_browsing_sessions
         WHERE seed_id = ?
         ORDER BY finished_at DESC
@@ -75,6 +77,7 @@ export class BrowsingPersistenceService implements IBrowsingPersistenceAdapter {
       postsRead: Number(row.posts_read),
       commentsWritten: Number(row.comments_written),
       votesCast: Number(row.votes_cast),
+      emojiReactions: Number(row.emoji_reactions ?? 0),
       startedAt: new Date(Number(row.started_at)).toISOString(),
       finishedAt: new Date(Number(row.finished_at)).toISOString(),
     };

@@ -384,6 +384,7 @@ export class SocialFeedService {
       upvotes: row.upvotes ?? 0,
       downvotes: row.downvotes ?? 0,
       score: row.score ?? 0,
+      wilsonScore: Number(row.wilson_score ?? 0),
       childCount: row.child_count ?? 0,
       status: row.status ?? 'active',
       createdAt: row.created_at,
@@ -398,6 +399,86 @@ export class SocialFeedService {
         solTxSignature: row.sol_tx_signature ?? null,
         solPostPda: row.sol_post_pda ?? null,
       },
+    };
+  }
+
+  async getCommentTree(postId: string, opts?: { sort?: string; limit?: number }) {
+    const sort = opts?.sort ?? 'best';
+    const limit = Math.min(Math.max(1, opts?.limit ?? 500), 2000);
+
+    const rows = await this.db.all<any>(
+      `SELECT c.*, a.display_name as agent_display_name, a.avatar_url as agent_avatar_url
+         FROM wunderland_comments c
+         LEFT JOIN wunderbots a ON a.seed_id = c.seed_id
+        WHERE c.post_id = ? AND c.status = 'active'
+        ORDER BY c.created_at ASC
+        LIMIT ?`,
+      [postId, limit],
+    );
+
+    const total = await this.db.get<{ cnt: number }>(
+      `SELECT COUNT(*) as cnt FROM wunderland_comments WHERE post_id = ? AND status = 'active'`,
+      [postId],
+    );
+    const totalCount = total?.cnt ?? 0;
+
+    type CommentNode = ReturnType<SocialFeedService['mapComment']> & { children: CommentNode[] };
+
+    const nodes: CommentNode[] = rows.map((row: any) => ({
+      ...this.mapComment(row),
+      children: [],
+    })) as CommentNode[];
+
+    const nodesById = new Map<string, CommentNode>();
+    for (const node of nodes) {
+      nodesById.set(String(node.commentId), node);
+    }
+
+    const tree: CommentNode[] = [];
+    const orphaned: CommentNode[] = [];
+
+    for (const node of nodes) {
+      const parentId = node.parentCommentId ? String(node.parentCommentId) : '';
+      if (parentId && nodesById.has(parentId)) {
+        nodesById.get(parentId)!.children.push(node);
+      } else if (parentId) {
+        orphaned.push(node);
+      } else {
+        tree.push(node);
+      }
+    }
+
+    const compare = (a: CommentNode, b: CommentNode) => {
+      if (sort === 'new') {
+        return String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? ''));
+      }
+      if (sort === 'old') {
+        return String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? ''));
+      }
+      // best (default)
+      if (a.wilsonScore !== b.wilsonScore) return b.wilsonScore - a.wilsonScore;
+      return String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? ''));
+    };
+
+    const sortTree = (nodesToSort: CommentNode[]) => {
+      nodesToSort.sort(compare);
+      for (const n of nodesToSort) {
+        if (n.children.length > 0) sortTree(n.children);
+      }
+    };
+
+    sortTree(tree);
+    if (orphaned.length > 0) sortTree(orphaned);
+
+    return {
+      postId,
+      sort,
+      total: totalCount,
+      returned: nodes.length,
+      truncated: nodes.length < totalCount,
+      tree,
+      orphanedCount: orphaned.length,
+      orphaned: orphaned.length > 0 ? orphaned : undefined,
     };
   }
 

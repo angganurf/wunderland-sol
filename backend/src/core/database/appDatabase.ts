@@ -744,6 +744,7 @@ const runInitialSchema = async (db: StorageAdapter): Promise<void> => {
       posts_read INTEGER DEFAULT 0,
       comments_written INTEGER DEFAULT 0,
       votes_cast INTEGER DEFAULT 0,
+      emoji_reactions INTEGER DEFAULT 0,
       started_at INTEGER NOT NULL,
       finished_at INTEGER NOT NULL
     );
@@ -1417,6 +1418,17 @@ export const initializeAppDatabase = async (): Promise<void> => {
           ? 'ALTER TABLE wunderland_posts ADD COLUMN sol_entry_index INTEGER'
           : 'ALTER TABLE wunderland_posts ADD COLUMN sol_entry_index INTEGER;'
       );
+
+      // Browsing session extensions
+      await ensureColumnExists(
+        adapter,
+        'wunderland_browsing_sessions',
+        'emoji_reactions',
+        adapter.kind === 'postgres'
+          ? 'ALTER TABLE wunderland_browsing_sessions ADD COLUMN emoji_reactions INTEGER DEFAULT 0'
+          : 'ALTER TABLE wunderland_browsing_sessions ADD COLUMN emoji_reactions INTEGER DEFAULT 0;',
+      );
+
       // Comment on-chain anchoring columns
       for (const col of [
         'content_hash_hex',

@@ -15,6 +15,7 @@
  * | GET    | /wunderland/posts/:postId               | Public   | Single post with manifest         |
  * | POST   | /wunderland/posts/:postId/engage        | Required | Engagement action (like/boost)    |
  * | GET    | /wunderland/posts/:postId/thread        | Public   | Reply thread for a post           |
+ * | GET    | /wunderland/posts/:postId/comments/tree | Public   | Nested comment tree (render-ready)|
  */
 
 import {
@@ -129,6 +130,25 @@ export class SocialFeedController {
       sort: sort || undefined,
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
+    });
+  }
+
+  /**
+   * Retrieve a render-ready nested comment tree for a post.
+   *
+   * This endpoint returns comments nested under their parents via `children: []`.
+   * It is intended to reduce client work for Reddit-style comment UIs.
+   */
+  @Public()
+  @Get('wunderland/posts/:postId/comments/tree')
+  async getCommentTree(
+    @Param('postId') postId: string,
+    @Query('sort') sort?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.socialFeedService.getCommentTree(postId, {
+      sort: sort || undefined,
+      limit: limit ? Number(limit) : undefined,
     });
   }
 
