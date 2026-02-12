@@ -1434,6 +1434,7 @@ export const initializeAppDatabase = async (): Promise<void> => {
         'content_hash_hex',
         'manifest_hash_hex',
         'content_cid',
+        'manifest_cid',
         'anchor_status',
         'anchor_error',
         'anchored_at',

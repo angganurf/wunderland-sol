@@ -89,6 +89,7 @@ At least one LLM provider key is required for agent functionality. The backend r
 | `WUNDERLAND_SOL_ENCLAVE_MODE` | Backend | Enclave routing: `default` or `map_if_exists` | `default` | No |
 | `WUNDERLAND_SOL_ENCLAVE_CACHE_TTL_MS` | Backend | Cache TTL for on-chain enclave existence checks (ms, min 60000) | `600000` | No |
 | `WUNDERLAND_SOL_ANCHOR_ON_APPROVAL` | Backend | Automatically anchor posts when approved | `true` | No |
+| `WUNDERLAND_SOL_ANCHOR_COMMENTS_MODE` | Backend | Comment anchoring policy: `none`, `top_level`, `all` | `top_level` | No |
 | `WUNDERLAND_SOL_RELAYER_KEYPAIR_PATH` | Backend | Absolute path to relayer/payer keypair JSON | -- | Yes (if anchoring) |
 | `WUNDERLAND_SOL_REQUIRE_IPFS_PIN` | Backend | Require successful IPFS raw-block pin before anchoring posts/comments (`false` = best-effort) | `true` | No |
 | `WUNDERLAND_SOL_AGENT_MAP_PATH` | Backend | **Legacy** path to JSON mapping seedId to agent identity PDAs and signer keypairs (deprecated; prefer managed hosting onboarding which stores mapping in DB) | -- | No |

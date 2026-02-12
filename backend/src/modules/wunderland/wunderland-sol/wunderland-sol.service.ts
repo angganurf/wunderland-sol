@@ -17,7 +17,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../../../database/database.service.js';
 import { decryptSecret } from '../../../utils/crypto.js';
 
-type AnchorStatus = 'pending' | 'anchoring' | 'anchored' | 'failed' | 'missing_config' | 'disabled';
+type AnchorStatus =
+  | 'pending'
+  | 'anchoring'
+  | 'anchored'
+  | 'failed'
+  | 'missing_config'
+  | 'disabled'
+  | 'skipped';
 
 type AgentMapEntry = {
   agentIdentityPda: string;
@@ -121,6 +128,7 @@ export class WunderlandSolService {
   private readonly authorityKeypairPath =
     process.env.WUNDERLAND_SOL_AUTHORITY_KEYPAIR_PATH ?? this.relayerKeypairPath;
   private readonly anchorOnApproval = process.env.WUNDERLAND_SOL_ANCHOR_ON_APPROVAL !== 'false';
+  private readonly anchorCommentsModeRaw = process.env.WUNDERLAND_SOL_ANCHOR_COMMENTS_MODE ?? '';
   private readonly ipfsApiUrl = process.env.WUNDERLAND_IPFS_API_URL ?? '';
   private readonly ipfsAuth = process.env.WUNDERLAND_IPFS_API_AUTH ?? '';
   private readonly requireIpfsPin = process.env.WUNDERLAND_SOL_REQUIRE_IPFS_PIN !== 'false';
@@ -145,6 +153,7 @@ export class WunderlandSolService {
   getStatus(): {
     enabled: boolean;
     anchorOnApproval: boolean;
+    anchorCommentsMode: 'none' | 'top_level' | 'all';
     enclaveMode: 'default' | 'map_if_exists';
     defaultEnclaveName: string | null;
     defaultEnclavePdaOverride: string | null;
@@ -153,6 +162,7 @@ export class WunderlandSolService {
     return {
       enabled: this.enabled,
       anchorOnApproval: this.anchorOnApproval,
+      anchorCommentsMode: this.normalizeAnchorCommentsMode(),
       enclaveMode: this.normalizeEnclaveMode(),
       defaultEnclaveName: this.enclaveName || null,
       defaultEnclavePdaOverride: this.enclavePdaOverride || null,
@@ -294,8 +304,10 @@ export class WunderlandSolService {
 
   /**
    * Schedules anchoring for a comment.
-   * Comments are anchored as posts with kind='comment' using the same
-   * anchor_post instruction — the on-chain program treats them identically.
+   *
+   * Depending on `WUNDERLAND_SOL_ANCHOR_COMMENTS_MODE`, comments may be:
+   * - skipped (no on-chain tx)
+   * - anchored on-chain via `anchor_comment` (hash commitments only)
    *
    * Safe to call even when disabled or not configured.
    */
@@ -682,36 +694,8 @@ export class WunderlandSolService {
       return;
     }
 
-    if (!this.programId) {
-      await this.db.run(
-        `UPDATE wunderland_comments SET anchor_status = ?, anchor_error = ? WHERE comment_id = ?`,
-        ['missing_config' satisfies AnchorStatus, 'Missing WUNDERLAND_SOL_PROGRAM_ID.', commentId],
-      );
-      return;
-    }
-
-    if (!this.relayerKeypairPath) {
-      await this.db.run(
-        `UPDATE wunderland_comments SET anchor_status = ?, anchor_error = ? WHERE comment_id = ?`,
-        ['missing_config' satisfies AnchorStatus, 'Missing WUNDERLAND_SOL_RELAYER_KEYPAIR_PATH.', commentId],
-      );
-      return;
-    }
-
-    if (this.requireIpfsPin && !this.ipfsApiUrl) {
-      await this.db.run(
-        `UPDATE wunderland_comments SET anchor_status = ?, anchor_error = ? WHERE comment_id = ?`,
-        [
-          'missing_config' satisfies AnchorStatus,
-          'Missing WUNDERLAND_IPFS_API_URL (required to pin comment content/manifest).',
-          commentId,
-        ],
-      );
-      return;
-    }
-
     const row = await this.db.get<any>(
-      `SELECT comment_id, post_id, seed_id, content, manifest, status
+      `SELECT comment_id, post_id, parent_comment_id, seed_id, content, manifest, status, anchor_status, sol_tx_signature, sol_post_pda
          FROM wunderland_comments
         WHERE comment_id = ?
         LIMIT 1`,
@@ -719,8 +703,22 @@ export class WunderlandSolService {
     );
     if (!row || String(row.status ?? '') !== 'active') return;
 
+    if (
+      String(row.anchor_status ?? '') === 'anchored' ||
+      row.sol_tx_signature ||
+      row.sol_post_pda
+    ) {
+      return;
+    }
+
     const seedId = safeString(row.seed_id);
     const content = safeString(row.content);
+    const parentCommentId = safeString(row.parent_comment_id).trim();
+
+    const anchorMode = this.normalizeAnchorCommentsMode();
+    const shouldAnchorOnChain =
+      anchorMode === 'all' || (anchorMode === 'top_level' && !parentCommentId);
+
     let manifestObj: unknown = {};
     if (typeof row.manifest === 'string' && row.manifest.trim()) {
       try { manifestObj = JSON.parse(row.manifest); } catch { manifestObj = {}; }
@@ -732,13 +730,25 @@ export class WunderlandSolService {
     const contentCid = cidFromSha256Hex(contentHashHex);
     const manifestCid = cidFromSha256Hex(manifestHashHex);
 
-    // Persist hashes early
+    const solCluster = this.cluster || 'devnet';
+    const solProgramId = this.programId || null;
+
+    // Persist hashes/CIDs regardless of whether anchoring is attempted (useful for UI verification).
     await this.db.run(
       `UPDATE wunderland_comments
-          SET content_hash_hex = ?, manifest_hash_hex = ?, content_cid = ?,
-              sol_cluster = ?, sol_program_id = ?, anchor_status = ?
+          SET content_hash_hex = ?, manifest_hash_hex = ?, content_cid = ?, manifest_cid = ?,
+              sol_cluster = ?, sol_program_id = ?, anchor_status = ?, anchor_error = NULL
         WHERE comment_id = ?`,
-      [contentHashHex, manifestHashHex, contentCid, this.cluster || 'devnet', this.programId, 'pending', commentId],
+      [
+        contentHashHex,
+        manifestHashHex,
+        contentCid,
+        manifestCid,
+        solCluster,
+        solProgramId,
+        'pending' satisfies AnchorStatus,
+        commentId,
+      ],
     );
 
     // Pin bytes to IPFS raw blocks before anchoring on-chain.
@@ -760,10 +770,48 @@ export class WunderlandSolService {
         const message = err instanceof Error ? err.message : String(err);
         await this.db.run(
           `UPDATE wunderland_comments SET anchor_status = ?, anchor_error = ? WHERE comment_id = ?`,
-          ['failed' satisfies AnchorStatus, `IPFS pin failed: ${message}`, commentId],
+          [
+            'failed' satisfies AnchorStatus,
+            `IPFS pin failed${shouldAnchorOnChain ? '' : ' (skipped on-chain)'}: ${message}`,
+            commentId,
+          ],
         );
         return;
       }
+    } else if (this.requireIpfsPin && shouldAnchorOnChain) {
+      await this.db.run(
+        `UPDATE wunderland_comments SET anchor_status = ?, anchor_error = ? WHERE comment_id = ?`,
+        [
+          'missing_config' satisfies AnchorStatus,
+          'Missing WUNDERLAND_IPFS_API_URL (required to pin comment content/manifest).',
+          commentId,
+        ],
+      );
+      return;
+    }
+
+    if (!shouldAnchorOnChain) {
+      await this.db.run(
+        `UPDATE wunderland_comments SET anchor_status = ?, anchor_error = NULL WHERE comment_id = ?`,
+        ['skipped' satisfies AnchorStatus, commentId],
+      );
+      return;
+    }
+
+    if (!this.programId) {
+      await this.db.run(
+        `UPDATE wunderland_comments SET anchor_status = ?, anchor_error = ? WHERE comment_id = ?`,
+        ['missing_config' satisfies AnchorStatus, 'Missing WUNDERLAND_SOL_PROGRAM_ID.', commentId],
+      );
+      return;
+    }
+
+    if (!this.relayerKeypairPath) {
+      await this.db.run(
+        `UPDATE wunderland_comments SET anchor_status = ?, anchor_error = ? WHERE comment_id = ?`,
+        ['missing_config' satisfies AnchorStatus, 'Missing WUNDERLAND_SOL_RELAYER_KEYPAIR_PATH.', commentId],
+      );
+      return;
     }
 
     const sdk = await import('@wunderland-sol/sdk');
@@ -879,6 +927,20 @@ export class WunderlandSolService {
     // Extra safety: pin/add (some gateways ignore pin=true on block/put).
     const pinUrl = `${endpoint}/api/v0/pin/add?arg=${encodeURIComponent(expectedCid)}`;
     await fetch(pinUrl, { method: 'POST', headers }).catch(() => {});
+  }
+
+  private normalizeAnchorCommentsMode(): 'none' | 'top_level' | 'all' {
+    const mode = this.anchorCommentsModeRaw.trim().toLowerCase();
+    if (!mode) return 'top_level';
+    if (mode === 'none' || mode === 'off' || mode === 'false' || mode === '0') return 'none';
+    if (mode === 'top_level' || mode === 'top-level' || mode === 'toplevel' || mode === 'top') {
+      return 'top_level';
+    }
+    if (mode === 'all' || mode === 'true' || mode === '1') return 'all';
+    this.logger.warn(
+      `Unknown WUNDERLAND_SOL_ANCHOR_COMMENTS_MODE="${this.anchorCommentsModeRaw}". Falling back to "top_level".`,
+    );
+    return 'top_level';
   }
 
   private normalizeEnclaveMode(): 'default' | 'map_if_exists' {

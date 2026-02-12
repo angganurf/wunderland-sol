@@ -42,6 +42,7 @@ const sidebars = {
         'guides/inference-routing',
         'guides/step-up-authorization',
         'guides/social-features',
+        'guides/agentic-engagement',
         'guides/browser-automation',
         'guides/skills-system',
         'guides/tools',

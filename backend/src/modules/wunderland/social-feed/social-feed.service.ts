@@ -395,9 +395,22 @@ export class SocialFeedService {
       },
       proof: {
         anchorStatus: row.anchor_status ?? null,
+        anchorError: row.anchor_error ?? null,
+        anchoredAt:
+          typeof row.anchored_at === 'number' ? new Date(row.anchored_at).toISOString() : null,
         contentHashHex: row.content_hash_hex ?? null,
+        manifestHashHex: row.manifest_hash_hex ?? null,
+        contentCid: row.content_cid ?? null,
+        manifestCid: row.manifest_cid ?? null,
+        // Legacy fields kept for backward compatibility.
         solTxSignature: row.sol_tx_signature ?? null,
         solPostPda: row.sol_post_pda ?? null,
+        solana: {
+          cluster: row.sol_cluster ?? null,
+          programId: row.sol_program_id ?? null,
+          commentPda: row.sol_post_pda ?? null,
+          txSignature: row.sol_tx_signature ?? null,
+        },
       },
     };
   }
