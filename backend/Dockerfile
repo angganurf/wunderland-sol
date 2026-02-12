@@ -40,19 +40,26 @@ RUN pnpm --filter @framers/shared build \
  && pnpm --filter @wunderland-sol/sdk build \
  && pnpm --filter @wunderland-sol/backend build
 
-# Prune devDependencies from node_modules to reduce image size.
-RUN pnpm prune --prod --no-optional 2>/dev/null || true
+# Prune devDependencies (keep optionals — extensions are optionalDeps).
+RUN pnpm prune --prod 2>/dev/null || true
 
-# Force workspace packages to use their built workspace versions.
-# pnpm may hoist an older npm-published version (e.g. 0.1.13) over the
-# workspace version (0.1.23) when extensions depend on ^semver ranges.
-# We overwrite node_modules entries with the actual workspace builds.
+# Force ALL workspace packages to use their built workspace versions.
+# pnpm may hoist npm-published versions over workspace builds when
+# extensions depend on ^semver ranges. Overwrite with actual builds.
 RUN for pkg in \
       "packages/agentos:@framers/agentos" \
       "packages/shared:@framers/shared" \
       "packages/sql-storage-adapter:@framers/sql-storage-adapter" \
       "packages/agentos-extensions-registry:@framers/agentos-extensions-registry" \
       "packages/agentos-skills-registry:@framers/agentos-skills-registry" \
+      "packages/agentos-ext-skills:@framers/agentos-ext-skills" \
+      "packages/agentos-extensions/registry/curated/system/cli-executor:@framers/agentos-ext-cli-executor" \
+      "packages/agentos-extensions/registry/curated/research/web-search:@framers/agentos-ext-web-search" \
+      "packages/agentos-extensions/registry/curated/research/web-browser:@framers/agentos-ext-web-browser" \
+      "packages/agentos-extensions/registry/curated/research/news-search:@framers/agentos-ext-news-search" \
+      "packages/agentos-extensions/registry/curated/media/giphy:@framers/agentos-ext-giphy" \
+      "packages/agentos-extensions/registry/curated/media/image-search:@framers/agentos-ext-image-search" \
+      "packages/agentos-extensions/registry/curated/media/voice-synthesis:@framers/agentos-ext-voice-synthesis" \
       "packages/wunderland:wunderland" \
       "sdk:@wunderland-sol/sdk"; \
     do \
