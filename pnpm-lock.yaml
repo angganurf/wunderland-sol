@@ -1114,6 +1114,9 @@ importers:
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.9.0
+      '@opentelemetry/api-logs':
+        specifier: ^0.201.1
+        version: 0.201.1
       ajv:
         specifier: ^8.17.1
         version: 8.17.1
@@ -1157,6 +1160,9 @@ importers:
       '@opentelemetry/context-async-hooks':
         specifier: ^2.0.1
         version: 2.5.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/sdk-metrics':
+        specifier: ^2.0.1
+        version: 2.0.1(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-trace-base':
         specifier: ^2.0.1
         version: 2.5.0(@opentelemetry/api@1.9.0)
@@ -1245,6 +1251,24 @@ importers:
         specifier: ^1.6.0
         version: 1.6.1(@types/node@20.19.32)(lightningcss@1.30.2)(terser@5.46.0)
 
+  packages/agentos-extensions:
+    devDependencies:
+      '@changesets/changelog-github':
+        specifier: ^0.5.2
+        version: 0.5.2
+      '@changesets/cli':
+        specifier: ^2.29.8
+        version: 2.29.8(@types/node@22.19.8)
+      typedoc:
+        specifier: ^0.25.13
+        version: 0.25.13(typescript@5.9.3)
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.1(@types/node@22.19.8)(lightningcss@1.30.2)(terser@5.46.0)
+
   packages/agentos-extensions-registry:
     devDependencies:
       '@framers/agentos':
@@ -1272,9 +1296,6 @@ importers:
       '@framers/agentos-ext-news-search':
         specifier: ^1.0.0
         version: 1.0.0(@framers/agentos@0.1.13(@framers/sql-storage-adapter@0.5.2(@aws-sdk/client-s3@3.985.0)(@capacitor-community/sqlite@6.0.2(@capacitor/core@6.2.1))(better-sqlite3@12.6.2)(electron@33.4.11)(pg@8.18.0))(graphology-communities-louvain@2.0.2(graphology-types@0.24.8))(graphology-types@0.24.8)(graphology@0.26.0(graphology-types@0.24.8))(hnswlib-node@3.0.0)(typescript@5.9.3))
-      '@framers/agentos-ext-skills':
-        specifier: workspace:*
-        version: link:../../../../packages/agentos-ext-skills
       '@framers/agentos-ext-telegram':
         specifier: ^1.0.0
         version: 1.1.0(@framers/agentos@0.1.13(@framers/sql-storage-adapter@0.5.2(@aws-sdk/client-s3@3.985.0)(@capacitor-community/sqlite@6.0.2(@capacitor/core@6.2.1))(better-sqlite3@12.6.2)(electron@33.4.11)(pg@8.18.0))(graphology-communities-louvain@2.0.2(graphology-types@0.24.8))(graphology-types@0.24.8)(graphology@0.26.0(graphology-types@0.24.8))(hnswlib-node@3.0.0)(typescript@5.9.3))(request@2.88.2)
@@ -1446,6 +1467,21 @@ importers:
         specifier: ^1.6.0
         version: 1.6.1(@types/node@20.19.32)(lightningcss@1.30.2)(terser@5.46.0)
 
+  packages/agentos-skills-registry:
+    devDependencies:
+      '@framers/agentos':
+        specifier: workspace:*
+        version: link:../../../../packages/agentos
+      '@types/node':
+        specifier: ^20.12.12
+        version: 20.19.32
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.3
+      vitest:
+        specifier: ^1.0.0
+        version: 1.6.1(@types/node@20.19.32)(lightningcss@1.30.2)(terser@5.46.0)
+
   packages/shared:
     devDependencies:
       rimraf:
@@ -1578,6 +1614,9 @@ importers:
       '@framers/agentos-extensions-registry':
         specifier: workspace:*
         version: link:../../../../packages/agentos-extensions-registry
+      '@framers/sql-storage-adapter':
+        specifier: workspace:*
+        version: link:../../../../packages/sql-storage-adapter
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.9.0
@@ -1602,6 +1641,9 @@ importers:
       gradient-string:
         specifier: ^3.0.0
         version: 3.0.0
+      minimatch:
+        specifier: ^9.0.3
+        version: 9.0.5
       nanospinner:
         specifier: ^1.2.2
         version: 1.2.2
@@ -1618,6 +1660,21 @@ importers:
       '@types/uuid':
         specifier: ^9.0.0
         version: 9.0.8
+      '@vitest/coverage-v8':
+        specifier: ^1.3.0
+        version: 1.6.1(vitest@1.6.1(@types/node@20.19.32)(lightningcss@1.30.2)(terser@5.46.0))
+      graphology:
+        specifier: ^0.26.0
+        version: 0.26.0(graphology-types@0.24.8)
+      graphology-communities-louvain:
+        specifier: ^2.0.2
+        version: 2.0.2(graphology-types@0.24.8)
+      graphology-types:
+        specifier: ^0.24.8
+        version: 0.24.8
+      hnswlib-node:
+        specifier: ^3.0.0
+        version: 3.0.0
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
@@ -1628,6 +1685,9 @@ importers:
       '@framers/agentos-ext-skills':
         specifier: workspace:*
         version: link:../../../../packages/agentos-ext-skills
+      '@framers/agentos-skills-registry':
+        specifier: workspace:*
+        version: link:../../../../packages/agentos-skills-registry
 
   sdk:
     dependencies:
