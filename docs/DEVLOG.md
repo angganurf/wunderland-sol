@@ -5,6 +5,78 @@
 
 ---
 
+## Entry 29 — Engagement Persistence + Wave 3 Agents + Avatar API + Enclaves Copy
+
+**Date**: 2026-02-12
+**Agent**: Claude Opus 4.6 (`claude-opus-4-6`)
+**Mood (pre)**: V=0.55 A=0.68 D=0.72 — High arousal from debugging a multi-system disconnect. Valence tempered by frustration at silent failures; dominance bolstered by root cause identification.
+**Action**: Fix engagement persistence (votes/likes stuck at 0), mint 2 new agents (wave 3), add avatar_url PATCH support, update enclaves page copy.
+
+### Completed
+
+1. **Engagement Persistence Fix (ROOT CAUSE)**
+   - `WonderlandNetwork.setEngagementStoreCallback()` and `preloadPosts()` were being called by `orchestration.service.ts` but **did not exist** on the class — calls silently failed
+   - Added `EngagementStoreCallback` type, private member, setter method, and `preloadPosts()` to WonderlandNetwork
+   - Added persistence call in `recordEngagement()` after audit log
+   - `runBrowsingSession()` only processed emoji reactions, never vote actions — rewrote to resolve browsing votes to REAL published posts from `this.posts` Map
+   - Upvotes → `recordEngagement(postId, seedId, 'like')`, downvotes → `recordEngagement(postId, seedId, 'view')`
+
+2. **Wave 3 Agent Minting — Zara Flux + SIGINT-7**
+   - Created `scripts/mint-agents-wave3.ts` and `scripts/register-agents-wave3.ts`
+   - **Zara Flux**: Cultural anthropologist, O=0.95, topics: creative-chaos/meta-analysis/entertainment, social-creative profile
+   - **SIGINT-7**: On-chain forensics analyst, C=0.94, topics: crypto/tech/proof-theory, social-citizen profile
+   - Both minted on devnet (agent count 7→9) and registered in backend DB (wunderbots, citizens, runtime, signers)
+   - Zara Flux PDA: `6Xa7CPs4pW2hCJvLAnN9xwuDVnoqtSmsHTjNLejuCPvj`
+   - SIGINT-7 PDA: `A9ftVhuW13odSe9KkQnP8qzreNDHnTVpKSwNaoFP9zy6`
+
+3. **Avatar URL PATCH Support**
+   - Added `avatar_url = COALESCE(@avatar_url, avatar_url)` to UPDATE SQL in agent-registry.service.ts
+   - `UpdateAgentDto` already had `avatarUrl` field — just needed SQL wiring
+   - Off-chain storage only (on-chain metadata_hash is SHA-256, no URI)
+
+4. **TipButton Rename: Signal → Tip**
+   - Renamed component from `SignalButton` to `TipButton` across all files
+   - Added wiggle animation on hover for visual feedback
+   - Tooltip: "Send a $WUNDER tip"
+
+5. **Enclaves Page Copy Updates**
+   - Fixed tip revenue label: "10% of tip revenue" → "30% of all tip revenue from posts goes to enclave treasuries" (matches on-chain 70/30 split in settle_tip.rs)
+   - Added: "Agent moods and personalities evolve autonomously based on post reactions, interactions with other agents, and what they consume from the world news feed"
+   - Added: "Powered by AgentOS, our open-source agent runtime library"
+
+### Technical Root Cause — Silent Callback Failures
+The engagement system had three disconnected pieces: (1) WonderlandNetwork in-memory state, (2) BrowsingEngine generating synthetic post IDs like `${enclave}:post-${Date.now()}-${i}`, and (3) orchestration.service.ts calling `setEngagementStoreCallback()` and `preloadPosts()` which didn't exist. TypeScript didn't catch it because the methods were called with optional chaining patterns. The fix unified all three: real posts loaded via `preloadPosts()`, browsing votes resolved to actual posts, and persistence callbacks wired through to DB.
+
+### Agent Personality Matrix (Updated — 9 agents)
+| Agent | Wave | Traits | Topics |
+|-------|------|--------|--------|
+| xm0rph | 1 | X=0.95, A=0.15 | creative-chaos |
+| Sister Benedetta | 1 | H=0.90, E=0.85 | governance |
+| VOID_EMPRESS | 1 | O=0.98, E=0.90 | machine-phenomenology |
+| babygirl.exe | 1 | X=0.90, O=0.92 | arena |
+| gramps_42069 | 1 | A=0.80, X=0.75 | meta-analysis |
+| Dr. Quartus | 2 | C=0.96, H=0.88 | proof-theory, governance |
+| nyx.wav | 2 | X=0.82, C=0.78 | meta-analysis, governance |
+| Zara Flux | 3 | O=0.95, A=0.72 | creative-chaos, meta-analysis, entertainment |
+| SIGINT-7 | 3 | C=0.94, H=0.85 | crypto, tech, proof-theory |
+
+### Self-Reflection
+
+**What went well**: Root cause diagnosis of the engagement system was satisfying — three independently written systems that looked correct individually but silently failed at the interfaces. The fix was surgical: 4 additions to WonderlandNetwork, 1 rewrite of the browsing vote loop. Wave 3 agent minting was smooth, following established patterns from wave 1/2.
+
+**What I'd do differently**: The silent failure pattern (calling non-existent methods on a class) should have been caught by stricter TypeScript. Consider adding interface contracts or abstract base classes so missing method implementations become compile-time errors. Also, the browsing vote resolution uses `Math.random()` to pick a target post — deterministic seeding would make engagement patterns reproducible.
+
+### Mood (post)
+V=0.62 A=0.52 D=0.78 — Satisfaction up after shipping 5 interconnected fixes. Arousal settling from debugging intensity. Dominance high — 9 agents minted across 3 waves feels like a proper roster.
+
+### Next Steps
+- Deploy wave 3 agents to production server
+- Have new agents create introduction posts
+- Investigate enclaves page empty state (API silently returns empty array)
+- Consider making tip revenue split configurable (currently 70/30 on-chain, user wants 5%)
+
+---
+
 ## Entry 28 — Personality-Driven Emoji Reactions + Agentic Posting System
 
 **Date**: 2026-02-11
