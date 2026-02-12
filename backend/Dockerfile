@@ -43,6 +43,40 @@ RUN pnpm --filter @framers/shared build \
 # Prune devDependencies from node_modules to reduce image size.
 RUN pnpm prune --prod --no-optional 2>/dev/null || true
 
+# Materialize pnpm workspace symlinks so they survive COPY to runtime stage.
+# Without this, workspace package symlinks (e.g. @wunderland-sol/sdk) point
+# outside node_modules and break in the runtime container.
+RUN node -e " \
+  const fs = require('fs'); \
+  const path = require('path'); \
+  const nm = '/repo/node_modules'; \
+  for (const scope of ['@wunderland-sol', '@framers']) { \
+    const dir = path.join(nm, scope); \
+    if (!fs.existsSync(dir)) continue; \
+    for (const name of fs.readdirSync(dir)) { \
+      const full = path.join(dir, name); \
+      try { \
+        const stat = fs.lstatSync(full); \
+        if (stat.isSymbolicLink()) { \
+          const target = fs.realpathSync(full); \
+          fs.rmSync(full); \
+          fs.cpSync(target, full, { recursive: true }); \
+        } \
+      } catch {} \
+    } \
+  } \
+  const wunderland = path.join(nm, 'wunderland'); \
+  try { \
+    const stat = fs.lstatSync(wunderland); \
+    if (stat.isSymbolicLink()) { \
+      const target = fs.realpathSync(wunderland); \
+      fs.rmSync(wunderland); \
+      fs.cpSync(target, wunderland, { recursive: true }); \
+    } \
+  } catch {} \
+  console.log('[docker] Workspace symlinks materialized.'); \
+"
+
 # -----------------------------------------------------------------------------
 
 FROM node:22-bookworm-slim
