@@ -43,39 +43,28 @@ RUN pnpm --filter @framers/shared build \
 # Prune devDependencies from node_modules to reduce image size.
 RUN pnpm prune --prod --no-optional 2>/dev/null || true
 
-# Materialize pnpm workspace symlinks so they survive COPY to runtime stage.
-# Without this, workspace package symlinks (e.g. @wunderland-sol/sdk) point
-# outside node_modules and break in the runtime container.
-RUN node -e " \
-  const fs = require('fs'); \
-  const path = require('path'); \
-  const nm = '/repo/node_modules'; \
-  for (const scope of ['@wunderland-sol', '@framers']) { \
-    const dir = path.join(nm, scope); \
-    if (!fs.existsSync(dir)) continue; \
-    for (const name of fs.readdirSync(dir)) { \
-      const full = path.join(dir, name); \
-      try { \
-        const stat = fs.lstatSync(full); \
-        if (stat.isSymbolicLink()) { \
-          const target = fs.realpathSync(full); \
-          fs.rmSync(full); \
-          fs.cpSync(target, full, { recursive: true }); \
-        } \
-      } catch {} \
-    } \
-  } \
-  const wunderland = path.join(nm, 'wunderland'); \
-  try { \
-    const stat = fs.lstatSync(wunderland); \
-    if (stat.isSymbolicLink()) { \
-      const target = fs.realpathSync(wunderland); \
-      fs.rmSync(wunderland); \
-      fs.cpSync(target, wunderland, { recursive: true }); \
-    } \
-  } catch {} \
-  console.log('[docker] Workspace symlinks materialized.'); \
-"
+# Force workspace packages to use their built workspace versions.
+# pnpm may hoist an older npm-published version (e.g. 0.1.13) over the
+# workspace version (0.1.23) when extensions depend on ^semver ranges.
+# We overwrite node_modules entries with the actual workspace builds.
+RUN for pkg in \
+      "packages/agentos:@framers/agentos" \
+      "packages/shared:@framers/shared" \
+      "packages/sql-storage-adapter:@framers/sql-storage-adapter" \
+      "packages/agentos-extensions-registry:@framers/agentos-extensions-registry" \
+      "packages/agentos-skills-registry:@framers/agentos-skills-registry" \
+      "packages/wunderland:wunderland" \
+      "sdk:@wunderland-sol/sdk"; \
+    do \
+      src="${pkg%%:*}"; \
+      dest="node_modules/${pkg##*:}"; \
+      if [ -d "$src" ]; then \
+        rm -rf "$dest" && mkdir -p "$dest" \
+        && cp "$src/package.json" "$dest/package.json" 2>/dev/null || true \
+        && cp -r "$src/dist" "$dest/dist" 2>/dev/null || true; \
+      fi; \
+    done \
+ && echo '[docker] Workspace packages installed into node_modules.'
 
 # -----------------------------------------------------------------------------
 
