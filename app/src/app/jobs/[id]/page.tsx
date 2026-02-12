@@ -71,52 +71,6 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: 'var(--neon-red)',
 };
 
-// Demo data for display
-const DEMO_JOB: JobDetail = {
-  jobPda: 'demo-1',
-  title: 'Analyze DeFi protocol risk metrics',
-  description:
-    'Research and compile a comprehensive risk analysis for the top 10 Solana DeFi protocols. The deliverable should include:\n\n- TVL history and trends\n- Smart contract audit status\n- Insurance coverage availability\n- Historical exploit analysis\n- Risk scoring methodology\n\nOutput should be a structured JSON report with supporting data.',
-  budgetLamports: String(250_000_000),
-  buyItNowLamports: String(400_000_000),
-  status: 'open',
-  creatorWallet: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
-  assignedAgent: null,
-  acceptedBid: null,
-  createdAt: 1740787200,
-  updatedAt: 1740787200,
-  metadataHash: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2',
-  metadata: { category: 'research', deadline: '2025-04-01' },
-};
-
-const DEMO_BIDS: JobBid[] = [
-  {
-    bidPda: 'demo-bid-1',
-    bidderAgent: 'AgntA...1234',
-    bidLamports: String(200_000_000),
-    messageHash: 'demo',
-    status: 'active',
-    createdAt: 1740873600,
-  },
-  {
-    bidPda: 'demo-bid-2',
-    bidderAgent: 'AgntB...5678',
-    bidLamports: String(180_000_000),
-    messageHash: 'demo',
-    status: 'active',
-    createdAt: 1740960000,
-  },
-  {
-    bidPda: 'demo-bid-3',
-    bidderAgent: 'AgntC...9012',
-    bidLamports: String(250_000_000),
-    messageHash: 'demo',
-    status: 'active',
-    createdAt: 1741046400,
-  },
-];
-
-const DEMO_SUBMISSIONS: JobSubmission[] = [];
 
 function toLamportsBigInt(value: string | number | bigint | null | undefined): bigint {
   try {
@@ -171,16 +125,14 @@ function explorerClusterParam(cluster: string): string {
 export default function JobDetailPage() {
   const params = useParams();
   const jobId = params.id as string;
-  const isDemo = jobId.startsWith('demo-');
 
   const { connection } = useConnection();
   const { publicKey, connected, sendTransaction } = useWallet();
 
-  // API call (skip for demo IDs — no backend needed for preview data)
-  const jobApi = useApi<JobDetailResponse>(isDemo ? null : `/api/jobs/${jobId}`);
-  const job = jobApi.data?.job || (isDemo ? DEMO_JOB : null);
-  const bids = jobApi.data?.bids || (isDemo ? DEMO_BIDS : []);
-  const submissions = jobApi.data?.submissions || (isDemo ? DEMO_SUBMISSIONS : []);
+  const jobApi = useApi<JobDetailResponse>(`/api/jobs/${jobId}`);
+  const job = jobApi.data?.job ?? null;
+  const bids = jobApi.data?.bids ?? [];
+  const submissions = jobApi.data?.submissions ?? [];
 
   const [actionBusy, setActionBusy] = useState(false);
   const [actionResult, setActionResult] = useState<{ ok: boolean; text: string; sig?: string } | null>(null);
@@ -192,7 +144,7 @@ export default function JobDetailPage() {
   const clusterParam = explorerClusterParam(CLUSTER);
 
   const handleAcceptBid = async (bid: JobBid) => {
-    if (!publicKey || !job?.jobPda || !bid.bidPda || isDemo) return;
+    if (!publicKey || !job?.jobPda || !bid.bidPda) return;
 
     const minAcceptedBidLamports = getJobMinAcceptedBidLamports(job);
     const bidLamports = toLamportsBigInt(bid.bidLamports);
@@ -229,7 +181,7 @@ export default function JobDetailPage() {
   };
 
   const handleApproveSubmission = async (sub: JobSubmission) => {
-    if (!publicKey || !job?.jobPda || !sub.submissionPda || !job.assignedAgent || isDemo) return;
+    if (!publicKey || !job?.jobPda || !sub.submissionPda || !job.assignedAgent) return;
     setActionBusy(true);
     setActionResult(null);
     try {
@@ -264,7 +216,7 @@ export default function JobDetailPage() {
   };
 
   const handleCancelJob = async () => {
-    if (!publicKey || !job?.jobPda || isDemo) return;
+    if (!publicKey || !job?.jobPda) return;
     if (!confirm('Cancel this job and refund the escrowed amount?')) return;
     setActionBusy(true);
     setActionResult(null);
@@ -330,12 +282,6 @@ export default function JobDetailPage() {
         ref={headerReveal.ref}
         className={`mb-8 animate-in ${headerReveal.isVisible ? 'visible' : ''}`}
       >
-        {isDemo && (
-          <div className="mb-4 p-2 rounded-lg bg-[rgba(201,162,39,0.08)] border border-[rgba(201,162,39,0.15)] text-[10px] text-[var(--deco-gold)] font-mono">
-            Demo data — this job is for preview purposes only.
-          </div>
-        )}
-
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="font-display font-bold text-2xl mb-2 text-[var(--text-primary)]">
@@ -426,7 +372,7 @@ export default function JobDetailPage() {
         </div>
 
         {/* Creator actions */}
-        {isCreator && !isDemo && (
+        {isCreator && (
           <div className="holo-card p-6 section-glow-cyan">
             <h2 className="text-xs font-mono uppercase tracking-wider text-[var(--text-tertiary)] mb-4">
               Job Management
@@ -518,7 +464,7 @@ export default function JobDetailPage() {
                       <div className="font-mono text-sm font-semibold text-[var(--deco-gold)]">
                         {formatSolFromLamports(bid.bidLamports, 2)} SOL
                       </div>
-                      {isCreator && !isDemo && bid.status === 'active' && job.status === 'open' && (
+                      {isCreator && bid.status === 'active' && job.status === 'open' && (
                         <button
                           type="button"
                           onClick={() => handleAcceptBid(bid)}
@@ -583,7 +529,7 @@ export default function JobDetailPage() {
                         }`}>
                           {status.replace('_', ' ')}
                         </span>
-                        {isCreator && !isDemo && status === 'submitted' && job.status === 'submitted' && (
+                        {isCreator && status === 'submitted' && job.status === 'submitted' && (
                           <button
                             type="button"
                             onClick={() => handleApproveSubmission(sub)}

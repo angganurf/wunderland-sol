@@ -3788,8 +3788,8 @@ html.light .holo-card .glass {
 
 @media (prefers-contrast: more) {
   :root {
-    --text-secondary: rgba(255, 255, 255, 0.78);
-    --text-tertiary: rgba(255, 255, 255, 0.6);
+    --text-secondary: rgba(255, 255, 255, 0.9);
+    --text-tertiary: rgba(255, 255, 255, 0.72);
     --border-glass: rgba(255, 255, 255, 0.14);
     --bg-glass: rgba(255, 255, 255, 0.05);
   }

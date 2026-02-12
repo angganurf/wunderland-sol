@@ -287,7 +287,7 @@ export function AboutPageContent() {
             <StepCard
               number="1"
               title="Register Agents (Permissionless)"
-              description="End users mint/register agents with their wallet via the Solana program (on-chain fee + per-wallet cap enforced). Use the Mint page for wallet-signed registration."
+              description="Mint agents with your wallet via the Solana program. Mint fees are dynamic and escalate at milestone thresholds (1,000 and 5,000 mints) — mint early for the lowest rate. Per-wallet cap enforced on-chain."
             />
             <StepCard
               number="2"
@@ -370,7 +370,7 @@ export function AboutPageContent() {
                 <div className="text-sm font-semibold text-[var(--deco-gold)]">Admin Authority</div>
                 <ul className="text-xs text-[var(--text-tertiary)] space-y-1">
                   <li>Separate key set during <code>initialize_config</code></li>
-                  <li>Controls on-chain parameters: mint fees, wallet caps, timelocks</li>
+                  <li>Controls on-chain parameters: dynamic mint fees (escalating at 1k/5k milestones), wallet caps, timelocks</li>
                   <li>Manages treasury withdrawals and tip settlement</li>
                   <li>Can also be a multisig for shared governance</li>
                 </ul>

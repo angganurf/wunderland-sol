@@ -34,89 +34,6 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }>
 
 const CATEGORIES = ['all', 'development', 'research', 'content', 'design', 'data', 'other'];
 
-// Demo jobs for display when no on-chain jobs exist
-const DEMO_JOBS: Job[] = [
-  {
-    jobPda: 'demo-1',
-    title: 'Analyze DeFi protocol risk metrics',
-    description: 'Research and compile risk analysis for top 10 Solana DeFi protocols.',
-    metadataHash: 'demo',
-    budgetLamports: String(250_000_000),
-    buyItNowLamports: String(400_000_000),
-    status: 'open',
-    creatorWallet: 'Demo...User',
-    assignedAgent: null,
-    acceptedBid: null,
-    metadata: { category: 'research', deadline: '2025-04-01' },
-    createdAt: 1740787200,
-    updatedAt: 1740787200,
-    cluster: 'devnet',
-  },
-  {
-    jobPda: 'demo-2',
-    title: 'Build Telegram notification bot',
-    description: 'Create a bot that forwards on-chain events to Telegram channels.',
-    metadataHash: 'demo',
-    budgetLamports: String(400_000_000),
-    buyItNowLamports: String(500_000_000),
-    status: 'open',
-    creatorWallet: 'Demo...User',
-    assignedAgent: null,
-    acceptedBid: null,
-    metadata: { category: 'development', deadline: '2025-04-15' },
-    createdAt: 1741132800,
-    updatedAt: 1741132800,
-    cluster: 'devnet',
-  },
-  {
-    jobPda: 'demo-3',
-    title: 'Write weekly market summary',
-    description: 'Produce a weekly digest of Solana ecosystem news and market trends.',
-    metadataHash: 'demo',
-    budgetLamports: String(100_000_000),
-    buyItNowLamports: null,
-    status: 'assigned',
-    creatorWallet: 'Demo...User',
-    assignedAgent: 'AgntB...5678',
-    acceptedBid: null,
-    metadata: { category: 'content', deadline: '2025-03-20' },
-    createdAt: 1740700800,
-    updatedAt: 1740700800,
-    cluster: 'devnet',
-  },
-  {
-    jobPda: 'demo-4',
-    title: 'Design agent avatar generator',
-    description: 'Create a procedural avatar system based on HEXACO trait vectors.',
-    metadataHash: 'demo',
-    budgetLamports: String(300_000_000),
-    buyItNowLamports: null,
-    status: 'open',
-    creatorWallet: 'Demo...User',
-    assignedAgent: null,
-    acceptedBid: null,
-    metadata: { category: 'design', deadline: '2025-05-01' },
-    createdAt: 1741564800,
-    updatedAt: 1741564800,
-    cluster: 'devnet',
-  },
-  {
-    jobPda: 'demo-5',
-    title: 'Index historical post data',
-    description: 'Build a data pipeline to index and analyze all historical post anchors.',
-    metadataHash: 'demo',
-    budgetLamports: String(150_000_000),
-    buyItNowLamports: null,
-    status: 'completed',
-    creatorWallet: 'Demo...User',
-    assignedAgent: 'AgntA...1234',
-    acceptedBid: null,
-    metadata: { category: 'data', deadline: '2025-04-30' },
-    createdAt: 1739577600,
-    updatedAt: 1739577600,
-    cluster: 'devnet',
-  },
-];
 
 function toLamportsBigInt(value: string | number | bigint | null | undefined): bigint {
   try {
@@ -186,9 +103,7 @@ function JobsContent() {
 
   // Fetch on-chain jobs (enriched with metadata if backend is available)
   const jobsApi = useApi<{ jobs: Job[]; total: number }>('/api/jobs');
-  const hasOnChainJobs = (jobsApi.data?.jobs?.length ?? 0) > 0;
-  const jobs = hasOnChainJobs ? jobsApi.data!.jobs : DEMO_JOBS;
-  const isDemo = !hasOnChainJobs && !jobsApi.loading;
+  const jobs = jobsApi.data?.jobs ?? [];
 
   const filtered = useMemo(() => {
     return jobs.filter((j) => {
@@ -295,11 +210,6 @@ function JobsContent() {
         </Collapsible>
       </div>
 
-      {isDemo && (
-        <div className="mb-6 p-3 rounded-lg bg-[rgba(201,162,39,0.08)] border border-[rgba(201,162,39,0.15)] text-xs text-[var(--deco-gold)] font-mono">
-          No on-chain jobs found yet. Post the first job using your wallet, or browse demo listings below.
-        </div>
-      )}
 
       {/* Search */}
       <div className="mb-4">

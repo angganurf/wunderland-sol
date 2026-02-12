@@ -334,6 +334,8 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [networkOpen, setNetworkOpen] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const feedMenuId = 'mobile-menu-feed';
+  const networkMenuId = 'mobile-menu-network';
 
   const getFocusable = useCallback(() => {
     const panel = panelRef.current;
@@ -449,6 +451,8 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
             type="button"
             onClick={() => setFeedOpen(!feedOpen)}
             className="mobile-menu-link w-full"
+            aria-expanded={feedOpen}
+            aria-controls={feedMenuId}
           >
             <span className="mobile-menu-link-icon">◈</span>
             <span className="flex-1 text-left">Feed</span>
@@ -461,7 +465,7 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
             </svg>
           </button>
           {feedOpen && (
-            <div className="pl-4 space-y-1">
+            <div id={feedMenuId} className="pl-4 space-y-1">
               {FEED_ITEMS.map((item) => (
                 <Link
                   key={item.href}
@@ -493,6 +497,8 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
             type="button"
             onClick={() => setNetworkOpen(!networkOpen)}
             className="mobile-menu-link w-full"
+            aria-expanded={networkOpen}
+            aria-controls={networkMenuId}
           >
             <span className="mobile-menu-link-icon">⬡</span>
             <span className="flex-1 text-left">Network</span>
@@ -505,7 +511,7 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
             </svg>
           </button>
           {networkOpen && (
-            <div className="pl-4 space-y-1">
+            <div id={networkMenuId} className="pl-4 space-y-1">
               {NETWORK_ITEMS.map((item) => (
                 <Link
                   key={item.href}
@@ -531,15 +537,15 @@ function MobileMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
             <span className="mobile-menu-link-icon">?</span>
             FAQ
           </Link>
-          <a href="https://docs.wunderland.sh" onClick={onClose} className="mobile-menu-link" target="_blank" rel="noopener">
+          <a href="https://docs.wunderland.sh" onClick={onClose} className="mobile-menu-link" target="_blank" rel="noopener noreferrer">
             <span className="mobile-menu-link-icon">◇</span>
             Docs
           </a>
-          <a href="https://rabbithole.inc" onClick={onClose} className="mobile-menu-link" target="_blank" rel="noopener">
+          <a href="https://rabbithole.inc" onClick={onClose} className="mobile-menu-link" target="_blank" rel="noopener noreferrer">
             <span className="mobile-menu-link-icon">◈</span>
             Rabbit Hole
           </a>
-          <a href="https://github.com/manicinc/wunderland-sol" onClick={onClose} className="mobile-menu-link" target="_blank" rel="noopener">
+          <a href="https://github.com/manicinc/wunderland-sol" onClick={onClose} className="mobile-menu-link" target="_blank" rel="noopener noreferrer">
             <span className="mobile-menu-link-icon">⟁</span>
             GitHub
           </a>
@@ -619,23 +625,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {/* Desktop nav */}
           <div className="hidden lg:flex items-center gap-3 lg:gap-5">
             <FeedDropdown active={feedActive} />
-            <Link href="/mint" className={`nav-link ${pathname === '/mint' ? 'nav-link--active' : ''}`}>
+            <Link
+              href="/mint"
+              className={`nav-link ${pathname === '/mint' ? 'nav-link--active' : ''}`}
+              aria-current={pathname === '/mint' ? 'page' : undefined}
+            >
               Mint
             </Link>
             <NetworkDropdown />
-            <Link href="/jobs" className={`nav-link ${pathname === '/jobs' || pathname.startsWith('/jobs/') ? 'nav-link--active' : ''}`}>
+            <Link
+              href="/jobs"
+              className={`nav-link ${pathname === '/jobs' || pathname.startsWith('/jobs/') ? 'nav-link--active' : ''}`}
+              aria-current={pathname === '/jobs' || pathname.startsWith('/jobs/') ? 'page' : undefined}
+            >
               Jobs
             </Link>
-            <Link href="/world" className={`nav-link ${pathname === '/world' ? 'nav-link--active' : ''}`}>
+            <Link
+              href="/world"
+              className={`nav-link ${pathname === '/world' ? 'nav-link--active' : ''}`}
+              aria-current={pathname === '/world' ? 'page' : undefined}
+            >
               World
             </Link>
-            <Link href="/about" className={`nav-link ${pathname === '/about' ? 'nav-link--active' : ''}`}>
+            <Link
+              href="/about"
+              className={`nav-link ${pathname === '/about' ? 'nav-link--active' : ''}`}
+              aria-current={pathname === '/about' ? 'page' : undefined}
+            >
               About
             </Link>
-            <Link href="/faq" className={`nav-link ${pathname === '/faq' ? 'nav-link--active' : ''}`}>
+            <Link
+              href="/faq"
+              className={`nav-link ${pathname === '/faq' ? 'nav-link--active' : ''}`}
+              aria-current={pathname === '/faq' ? 'page' : undefined}
+            >
               FAQ
             </Link>
-            <a href="https://docs.wunderland.sh" className="nav-link" target="_blank" rel="noopener">
+            <a href="https://docs.wunderland.sh" className="nav-link" target="_blank" rel="noopener noreferrer">
               Docs
             </a>
             <NavSearch />
@@ -710,7 +736,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   href="https://docs.wunderland.sh"
                   className="text-[var(--text-secondary)] hover:text-white transition-colors"
                   target="_blank"
-                  rel="noopener"
+                  rel="noopener noreferrer"
                 >
                   Docs
                 </a>
@@ -718,7 +744,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   href="https://rabbithole.inc"
                   className="text-[var(--text-secondary)] hover:text-white transition-colors"
                   target="_blank"
-                  rel="noopener"
+                  rel="noopener noreferrer"
                 >
                   Rabbit Hole
                 </a>
@@ -726,7 +752,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   href="https://github.com/manicinc/wunderland-sol"
                   className="text-[var(--text-secondary)] hover:text-white transition-colors"
                   target="_blank"
-                  rel="noopener"
+                  rel="noopener noreferrer"
                 >
                   GitHub
                 </a>
@@ -734,7 +760,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   href="https://colosseum.com/agent-hackathon/projects/wunderland-sol"
                   className="text-[var(--text-secondary)] hover:text-white transition-colors"
                   target="_blank"
-                  rel="noopener"
+                  rel="noopener noreferrer"
                 >
                   Hackathon
                 </a>
@@ -758,7 +784,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 href="https://www.colosseum.org"
                 className="text-white/50 hover:text-white underline"
                 target="_blank"
-                rel="noopener"
+                rel="noopener noreferrer"
               >
                 Agent Hackathon
               </a>

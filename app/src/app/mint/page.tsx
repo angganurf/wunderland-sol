@@ -751,9 +751,12 @@ export default function MintPage() {
         {/* On-chain stats row */}
         <div className="grid gap-3 sm:grid-cols-3 mb-4">
           <div className="glass rounded-xl p-4">
-            <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Mint Fee</div>
+            <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--text-tertiary)]">Current Mint Fee</div>
             <div className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
               {configStatus.loading ? '...' : mintFeeSol !== null ? `${mintFeeSol.toFixed(2)} SOL` : '--'}
+            </div>
+            <div className="mt-0.5 text-[9px] font-mono text-[var(--deco-gold)]">
+              Dynamic — escalates at 1k &amp; 5k milestones
             </div>
           </div>
           <div className="glass rounded-xl p-4">
