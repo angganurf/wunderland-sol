@@ -30,6 +30,7 @@ services:
       - .env
     environment:
       - PORT=3011
+      - WUNDERLAND_BACKEND_URL=http://backend:3001
     expose:
       - "3011"
 
