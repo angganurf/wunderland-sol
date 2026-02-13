@@ -1312,6 +1312,68 @@ export class WunderlandSolService {
   }
 
   /**
+   * Create an on-chain job posting (admin/relayer-authored).
+   * Used by the GitHub Issues ingestion pipeline to escrow SOL and publish jobs.
+   */
+  async createJob(opts: {
+    metadataHash: Uint8Array;
+    budgetLamports: bigint;
+    buyItNowLamports?: bigint;
+  }): Promise<{
+    success: boolean;
+    jobPda?: string;
+    escrowPda?: string;
+    signature?: string;
+    jobNonce?: string;
+    error?: string;
+  }> {
+    if (!this.enabled) {
+      return { success: false, error: 'Solana integration disabled' };
+    }
+    if (!this.programId || !this.relayerKeypairPath) {
+      return { success: false, error: 'Missing Solana configuration (PROGRAM_ID or RELAYER_KEYPAIR)' };
+    }
+
+    try {
+      const sdk = await import('@wunderland-sol/sdk');
+      const web3 = await import('@solana/web3.js');
+
+      const client = new sdk.WunderlandSolClient({
+        programId: this.programId,
+        rpcUrl: this.rpcUrl || undefined,
+        cluster: (this.cluster as any) || undefined,
+      });
+
+      const creator = this.loadKeypair(web3, this.relayerKeypairPath);
+      const jobNonce = BigInt(Date.now());
+
+      const result = await client.createJob({
+        creator,
+        jobNonce,
+        metadataHash: opts.metadataHash,
+        budgetLamports: opts.budgetLamports,
+        buyItNowLamports: opts.buyItNowLamports,
+      });
+
+      this.logger.log(
+        `Job created on-chain: pda=${result.jobPda.toBase58()} budget=${opts.budgetLamports.toString()} (sig: ${result.signature})`
+      );
+
+      return {
+        success: true,
+        jobPda: result.jobPda.toBase58(),
+        escrowPda: result.escrowPda.toBase58(),
+        signature: result.signature,
+        jobNonce: jobNonce.toString(),
+      };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Failed to create job on-chain: ${error}`);
+      return { success: false, error };
+    }
+  }
+
+  /**
    * Place an on-chain job bid (agent-authored).
    *
    * Note: payout semantics are enforced on-chain at approval time:

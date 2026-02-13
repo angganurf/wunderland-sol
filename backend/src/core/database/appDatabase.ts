@@ -1076,6 +1076,25 @@ const runInitialSchema = async (db: StorageAdapter): Promise<void> => {
     'CREATE INDEX IF NOT EXISTS idx_wunderland_job_confidential_events_creator ON wunderland_job_confidential_events(creator_wallet, created_at DESC);'
   );
 
+  // ── GitHub Issue → On-Chain Job mapping ─────────────────────────────────
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS wunderland_github_issue_jobs (
+      github_issue_id TEXT PRIMARY KEY,
+      github_issue_url TEXT NOT NULL,
+      github_issue_number INTEGER NOT NULL,
+      github_repo TEXT NOT NULL,
+      job_pda TEXT,
+      budget_lamports TEXT NOT NULL,
+      status TEXT DEFAULT 'open',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_wunderland_github_issue_jobs_repo ON wunderland_github_issue_jobs(github_repo, status);'
+  );
+
   // ── Reward Epochs (Merkle-based distribution) ────────────────────────────
 
   await db.exec(`
@@ -1461,6 +1480,48 @@ export const initializeAppDatabase = async (): Promise<void> => {
           : 'ALTER TABLE wunderland_posts ADD COLUMN sol_entry_index INTEGER;'
       );
 
+      // Stimulus provenance columns (denormalized from manifest for queryability)
+      await ensureColumnExists(
+        adapter,
+        'wunderland_posts',
+        'stimulus_type',
+        adapter.kind === 'postgres'
+          ? 'ALTER TABLE wunderland_posts ADD COLUMN stimulus_type TEXT'
+          : 'ALTER TABLE wunderland_posts ADD COLUMN stimulus_type TEXT;'
+      );
+      await ensureColumnExists(
+        adapter,
+        'wunderland_posts',
+        'stimulus_event_id',
+        adapter.kind === 'postgres'
+          ? 'ALTER TABLE wunderland_posts ADD COLUMN stimulus_event_id TEXT'
+          : 'ALTER TABLE wunderland_posts ADD COLUMN stimulus_event_id TEXT;'
+      );
+      await ensureColumnExists(
+        adapter,
+        'wunderland_posts',
+        'stimulus_source_provider_id',
+        adapter.kind === 'postgres'
+          ? 'ALTER TABLE wunderland_posts ADD COLUMN stimulus_source_provider_id TEXT'
+          : 'ALTER TABLE wunderland_posts ADD COLUMN stimulus_source_provider_id TEXT;'
+      );
+      await ensureColumnExists(
+        adapter,
+        'wunderland_posts',
+        'stimulus_timestamp',
+        adapter.kind === 'postgres'
+          ? 'ALTER TABLE wunderland_posts ADD COLUMN stimulus_timestamp INTEGER'
+          : 'ALTER TABLE wunderland_posts ADD COLUMN stimulus_timestamp INTEGER;'
+      );
+
+      // Indexes for stimulus → response lookups
+      await adapter.exec(
+        'CREATE INDEX IF NOT EXISTS idx_wunderland_posts_stimulus_event ON wunderland_posts(stimulus_event_id, published_at DESC);'
+      );
+      await adapter.exec(
+        'CREATE INDEX IF NOT EXISTS idx_wunderland_posts_stimulus_type ON wunderland_posts(stimulus_type, published_at DESC);'
+      );
+
       // Browsing session extensions
       await ensureColumnExists(
         adapter,
@@ -1603,6 +1664,24 @@ export const initializeAppDatabase = async (): Promise<void> => {
         adapter.kind === 'postgres'
           ? 'ALTER TABLE wunderland_job_postings ADD COLUMN description TEXT'
           : 'ALTER TABLE wunderland_job_postings ADD COLUMN description TEXT;'
+      );
+
+      // ── Job source tracking columns ───────────────────────────────────
+      await ensureColumnExists(
+        adapter,
+        'wunderland_job_postings',
+        'source_type',
+        adapter.kind === 'postgres'
+          ? 'ALTER TABLE wunderland_job_postings ADD COLUMN source_type TEXT'
+          : 'ALTER TABLE wunderland_job_postings ADD COLUMN source_type TEXT;'
+      );
+      await ensureColumnExists(
+        adapter,
+        'wunderland_job_postings',
+        'source_external_id',
+        adapter.kind === 'postgres'
+          ? 'ALTER TABLE wunderland_job_postings ADD COLUMN source_external_id TEXT'
+          : 'ALTER TABLE wunderland_job_postings ADD COLUMN source_external_id TEXT;'
       );
 
       // ── Job confidential archive columns ───────────────────────────────

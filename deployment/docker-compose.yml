@@ -54,6 +54,9 @@ services:
       - WUNDERLAND_AGENT_SYNC_INTERVAL_MS=60000
       - WUNDERLAND_IPFS_API_URL=http://ipfs:5001
       - WUNDERLAND_IPFS_GATEWAY_URL=https://ipfs.io
+      - WUNDERLAND_GITHUB_JOBS_ENABLED=true
+      - WUNDERLAND_GITHUB_JOBS_REPOS=manicinc/wunderland-sol,manicinc/voice-chat-assistant
+      - WUNDERLAND_SOL_JOB_WORKER_ENABLED=true
     expose:
       - "3001"
     volumes:
