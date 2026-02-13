@@ -145,7 +145,13 @@ export class GitHubIssuesIngestionService implements OnModuleInit, OnModuleDestr
         'SELECT github_issue_id, job_pda, status FROM wunderland_github_issue_jobs WHERE github_issue_id = ?',
         [issueId],
       );
-      if (existing) continue;
+      if (existing && existing.status !== 'pending_chain') continue;
+
+      if (existing && existing.status === 'pending_chain') {
+        // Retry on-chain creation for previously failed items
+        await this.retryOnChainCreation(repo, issue, issueId);
+        continue;
+      }
 
       // Create on-chain job
       await this.createJobFromIssue(repo, issue, issueId);
@@ -284,6 +290,74 @@ export class GitHubIssuesIngestionService implements OnModuleInit, OnModuleDestr
         `Tracked ${issueId} (on-chain creation pending). budget=${budgetSol} SOL`
       );
     }
+  }
+
+  private async retryOnChainCreation(
+    repo: string,
+    issue: GitHubIssue,
+    issueId: string,
+  ): Promise<void> {
+    const budgetSol = parseBudgetFromLabels(issue.labels);
+    const budgetLamports = BigInt(Math.round(budgetSol * LAMPORTS_PER_SOL));
+
+    const metadata = {
+      title: issue.title,
+      description: issue.body?.slice(0, 4000) || `GitHub issue: ${issue.html_url}`,
+      category: 'github-bounty',
+      deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+      requirements: {
+        githubIssueUrl: issue.html_url,
+        githubIssueNumber: issue.number,
+        githubRepo: repo,
+      },
+    };
+
+    const metadataStr = JSON.stringify(metadata);
+    const metadataHash = sha256(metadataStr);
+    const metadataHashHex = Buffer.from(metadataHash).toString('hex');
+
+    const result = await this.solService.createJob({
+      metadataHash,
+      budgetLamports,
+    });
+
+    if (!result.success) {
+      this.logger.debug(`Retry on-chain creation still failing for ${issueId}: ${result.error}`);
+      return;
+    }
+
+    const now = Date.now();
+    const jobPda = result.jobPda!;
+
+    await this.db.run(
+      "UPDATE wunderland_github_issue_jobs SET job_pda = ?, status = 'open', updated_at = ? WHERE github_issue_id = ?",
+      [jobPda, now, issueId],
+    );
+
+    // Populate job_postings
+    await this.db.run(
+      `INSERT OR IGNORE INTO wunderland_job_postings
+        (job_pda, creator_wallet, job_nonce, metadata_hash_hex, budget_lamports, status, created_at, updated_at, indexed_at, title, description, metadata_json, source_type, source_external_id)
+       VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, 'github', ?)`,
+      [
+        jobPda,
+        process.env.ADMIN_PHANTOM_PUBKEY ?? 'unknown',
+        result.jobNonce!,
+        metadataHashHex,
+        budgetLamports.toString(),
+        now,
+        now,
+        now,
+        metadata.title,
+        metadata.description,
+        metadataStr,
+        issueId,
+      ],
+    );
+
+    this.logger.log(
+      `Retry succeeded: on-chain job created for ${issueId}: pda=${jobPda} budget=${budgetSol} SOL`
+    );
   }
 
   private async fetchIssues(

@@ -62,6 +62,7 @@ services:
     volumes:
       - /mnt/storage-wunder/db:/app/db_data
       - /mnt/storage-wunder/media:/app/media
+      - /tmp/admin-phantom.json:/tmp/admin-phantom.json:ro
 
   nginx:
     image: nginx:alpine
