@@ -50,8 +50,10 @@ RUN STANDALONE=/repo/app/.next/standalone/app/node_modules && \
 
 # Replace instrumentation hook with no-op — the frontend standalone image
 # doesn't have backend deps (better-sqlite3 etc.) that the hook imports.
-RUN echo '"use strict"; exports.register = function() {}; exports.onRequestError = function() {};' \
-    > /repo/app/.next/standalone/app/.next/server/instrumentation.js
+RUN INSTR_DIR=/repo/app/.next/standalone/app/.next/server && \
+    mkdir -p "$INSTR_DIR" && \
+    echo '"use strict"; exports.register = function() {}; exports.onRequestError = function() {};' \
+    > "$INSTR_DIR/instrumentation.js"
 
 # -----------------------------------------------------------------------------
 
