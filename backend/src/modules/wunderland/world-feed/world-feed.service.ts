@@ -7,8 +7,14 @@
  * HTTP polling schedulers, and the persistence layer.
  */
 
+import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { DatabaseService } from '../../../database/database.service.js';
 import type {
   CreateWorldFeedItemDto,
@@ -52,6 +58,23 @@ function parseJsonOr<T>(raw: string | null | undefined, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function deriveWebhookExternalId(
+  sourceId: string,
+  dto: Pick<CreateWorldFeedItemDto, 'externalId' | 'title' | 'summary' | 'url' | 'category'>
+): string {
+  const provided = dto.externalId?.trim() ?? '';
+  if (provided) return provided.slice(0, 256);
+
+  const key = [
+    sourceId,
+    dto.title ?? '',
+    dto.url ?? '',
+    dto.category ?? '',
+    dto.summary ?? '',
+  ].join('|');
+  return createHash('sha256').update(key, 'utf8').digest('hex');
 }
 
 @Injectable()
@@ -128,6 +151,137 @@ export class WorldFeedService {
     };
   }
 
+  async ingestWebhookItem(
+    sourceIdRaw: string,
+    secret: string | undefined,
+    dto: CreateWorldFeedItemDto
+  ): Promise<
+    | { inserted: true; item: WorldFeedItem }
+    | { inserted: false; duplicate: true; externalId: string }
+  > {
+    const expectedSecret = process.env.WUNDERLAND_WORLD_FEED_WEBHOOK_SECRET;
+    if (!expectedSecret) {
+      // Treat as disabled; avoid leaking whether the source exists.
+      throw new NotFoundException();
+    }
+
+    if (!secret || secret !== expectedSecret) {
+      throw new UnauthorizedException('Invalid webhook secret.');
+    }
+
+    const sourceId = sourceIdRaw.trim();
+    if (!sourceId) {
+      throw new BadRequestException('sourceId is required.');
+    }
+
+    const source = await this.db.get<{
+      source_id: string;
+      type: string;
+      categories: string | null;
+      is_active: number;
+    }>(
+      `
+        SELECT source_id, type, categories, is_active
+          FROM wunderland_world_feed_sources
+         WHERE source_id = ?
+         LIMIT 1
+      `,
+      [sourceId]
+    );
+
+    if (!source) {
+      throw new NotFoundException(`World feed source "${sourceId}" not found.`);
+    }
+    if (String(source.type) !== 'webhook') {
+      throw new BadRequestException(`World feed source "${sourceId}" is not a webhook source.`);
+    }
+    if (!Boolean(source.is_active)) {
+      throw new ForbiddenException(`World feed source "${sourceId}" is inactive.`);
+    }
+
+    const sourceCategories = parseJsonOr<string[]>(source.categories, []);
+    const category = dto.category?.trim() || sourceCategories[0] || undefined;
+
+    const externalId = deriveWebhookExternalId(sourceId, {
+      externalId: dto.externalId,
+      title: dto.title,
+      summary: dto.summary,
+      url: dto.url,
+      category,
+    });
+
+    const existing = await this.db.get<{ event_id: string }>(
+      `
+        SELECT event_id
+          FROM wunderland_stimuli
+         WHERE type = 'world_feed'
+           AND source_provider_id = ?
+           AND source_external_id = ?
+         LIMIT 1
+      `,
+      [sourceId, externalId]
+    );
+    if (existing) {
+      return { inserted: false, duplicate: true, externalId };
+    }
+
+    const now = Date.now();
+    const eventId = this.db.generateId();
+    const payload = {
+      title: dto.title,
+      summary: dto.summary ?? null,
+      url: dto.url ?? null,
+      category: category ?? null,
+    };
+
+    await this.db.transaction(async (trx) => {
+      await trx.run(
+        `
+          INSERT INTO wunderland_stimuli (
+            event_id,
+            type,
+            priority,
+            payload,
+            source_provider_id,
+            source_external_id,
+            source_verified,
+            target_seed_ids,
+            created_at,
+            processed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL)
+        `,
+        [
+          eventId,
+          'world_feed',
+          'normal',
+          JSON.stringify(payload),
+          sourceId,
+          externalId,
+          1,
+          now,
+        ]
+      );
+
+      await trx.run(
+        'UPDATE wunderland_world_feed_sources SET last_polled_at = ? WHERE source_id = ?',
+        [now, sourceId]
+      );
+    });
+
+    return {
+      inserted: true,
+      item: {
+        eventId,
+        sourceId,
+        title: dto.title,
+        summary: dto.summary ?? null,
+        url: dto.url ?? null,
+        category,
+        createdAt: new Date(now).toISOString(),
+      },
+    };
+  }
+
   async listWorldFeed(
     query: ListWorldFeedQueryDto = {}
   ): Promise<PaginatedResponse<WorldFeedItem>> {
@@ -152,6 +306,10 @@ export class WorldFeedService {
     if (query.category) {
       where.push('payload LIKE ?');
       params.push(`%"category":"${query.category}"%`);
+    }
+    if (query.q) {
+      where.push('payload LIKE ?');
+      params.push(`%${query.q.replace(/[%_]/g, '\\$&')}%`);
     }
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';

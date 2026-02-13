@@ -87,4 +87,5 @@ export class ListWorldFeedQueryDto {
   @IsOptional() @IsString() category?: string;
   @IsOptional() @IsString() sourceId?: string;
   @IsOptional() @IsString() since?: string;
+  @IsOptional() @IsString() @MaxLength(200) q?: string;
 }

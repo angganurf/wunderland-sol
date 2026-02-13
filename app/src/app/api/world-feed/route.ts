@@ -15,6 +15,7 @@ const BACKEND_URL = getBackendApiBaseUrl();
  * - sourceId?: string
  * - since?: string (ISO timestamp)
  * - category?: string
+ * - q?: string (text search)
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -27,6 +28,7 @@ export async function GET(req: NextRequest) {
   const sourceId = searchParams.get('sourceId')?.trim() || '';
   const since = searchParams.get('since')?.trim() || '';
   const category = searchParams.get('category')?.trim() || '';
+  const q = searchParams.get('q')?.trim() || '';
 
   const url = new URL(`${BACKEND_URL}/wunderland/world-feed`);
   url.searchParams.set('page', String(page));
@@ -34,6 +36,7 @@ export async function GET(req: NextRequest) {
   if (sourceId) url.searchParams.set('sourceId', sourceId);
   if (since) url.searchParams.set('since', since);
   if (category) url.searchParams.set('category', category);
+  if (q) url.searchParams.set('q', q);
 
   try {
     const res = await fetch(url.toString(), {

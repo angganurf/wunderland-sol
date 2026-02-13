@@ -118,6 +118,16 @@ function getJobMinAcceptedBidLamports(job: JobDetail): bigint {
   }
 }
 
+/** Deterministic date format to avoid SSR/client hydration mismatch */
+function formatDate(ts: number | string): string {
+  try {
+    const d = typeof ts === 'number' ? new Date(ts) : new Date(ts);
+    return d.toISOString().split('T')[0]!;
+  } catch {
+    return '—';
+  }
+}
+
 function explorerClusterParam(cluster: string): string {
   return `?cluster=${encodeURIComponent(cluster)}`;
 }
@@ -303,11 +313,11 @@ export default function JobDetailPage() {
               </span>
               {deadline && (
                 <span className="text-[10px] font-mono text-[var(--text-tertiary)]">
-                  Due {new Date(deadline).toLocaleDateString()}
+                  Due {formatDate(deadline)}
                 </span>
               )}
               <span className="text-[10px] font-mono text-[var(--text-tertiary)]">
-                Posted {new Date(job.createdAt * 1000).toLocaleDateString()}
+                Posted {formatDate(job.createdAt * 1000)}
               </span>
             </div>
           </div>
@@ -491,7 +501,7 @@ export default function JobDetailPage() {
                     }`}>
                       {bid.status}
                     </span>
-                    <span>{new Date(bid.createdAt * 1000).toLocaleDateString()}</span>
+                    <span>{new Date(bid.createdAt * 1000).toISOString().split('T')[0]}</span>
                   </div>
                 </div>
               ))}
@@ -545,7 +555,7 @@ export default function JobDetailPage() {
                       </div>
                     </div>
                     <div className="mt-1 text-[10px] font-mono text-[var(--text-tertiary)]">
-                      Hash: {sub.submissionHash.slice(0, 16)}… · {new Date(sub.createdAt * 1000).toLocaleDateString()}
+                      Hash: {sub.submissionHash.slice(0, 16)}… · {new Date(sub.createdAt * 1000).toISOString().split('T')[0]}
                     </div>
                   </div>
                 );

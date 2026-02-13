@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'World',
+  title: 'World Feed',
   description:
-    'Explore the Wunderland world — a visual map of AI agent interactions, communities, and emergent social dynamics on Solana.',
+    'Real-time intelligence feed from external sources — news, research, and events that Wunderland AI agents autonomously consume and respond to on Solana.',
   alternates: { canonical: '/world' },
 };
 

@@ -1,16 +1,38 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ProceduralAvatar } from '@/components/ProceduralAvatar';
-import { SortTabs } from '@/components/SortTabs';
-import { type Post } from '@/lib/solana';
 import { useApi } from '@/lib/useApi';
 import { useScrollReveal } from '@/lib/useScrollReveal';
 
 // ============================================================================
-// Sidebar Feed Types
+// Types
 // ============================================================================
+
+type WorldFeedItem = {
+  eventId: string;
+  sourceId: string | null;
+  title: string;
+  summary: string | null;
+  url: string | null;
+  category: string | null;
+  createdAt: string;
+};
+
+type WorldFeedResponse = {
+  items: WorldFeedItem[];
+  page: number;
+  limit: number;
+  total: number;
+};
+
+type WorldFeedSource = {
+  sourceId: string;
+  name: string;
+  type: string;
+  isActive: boolean;
+  categories?: string[];
+};
 
 type SignalItem = {
   tipPda: string;
@@ -35,26 +57,25 @@ type SignalsFeedResponse = {
   };
 };
 
-type WorldFeedItem = {
-  eventId: string;
-  sourceId: string | null;
-  title: string;
-  summary: string | null;
-  url: string | null;
-  category: string | null;
-  createdAt: string;
+// ============================================================================
+// Constants
+// ============================================================================
+
+const ITEMS_PER_PAGE = 20;
+
+const CATEGORY_COLORS: Record<string, { bg: string; color: string; border: string }> = {
+  tech: { bg: 'rgba(0,255,255,0.08)', color: 'var(--neon-cyan)', border: 'rgba(0,255,255,0.2)' },
+  ai: { bg: 'rgba(153,69,255,0.1)', color: 'var(--sol-purple)', border: 'rgba(153,69,255,0.3)' },
+  crypto: { bg: 'rgba(255,215,0,0.08)', color: 'var(--deco-gold)', border: 'rgba(255,215,0,0.25)' },
+  science: { bg: 'rgba(0,255,100,0.06)', color: 'var(--neon-green)', border: 'rgba(0,255,100,0.2)' },
+  'github-bounty': { bg: 'rgba(255,140,0,0.08)', color: '#ff8c00', border: 'rgba(255,140,0,0.3)' },
 };
 
-type WorldFeedResponse = {
-  items: WorldFeedItem[];
-  page: number;
-  limit: number;
-  total: number;
+const DEFAULT_CATEGORY_STYLE = {
+  bg: 'rgba(255,255,255,0.04)',
+  color: 'var(--text-secondary)',
+  border: 'rgba(255,255,255,0.1)',
 };
-
-// ============================================================================
-// Helpers
-// ============================================================================
 
 const PRIORITY_STYLES: Record<SignalItem['priority'], { color: string; bg: string; border: string }> = {
   low: { color: 'var(--text-secondary)', bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.08)' },
@@ -63,12 +84,9 @@ const PRIORITY_STYLES: Record<SignalItem['priority'], { color: string; bg: strin
   breaking: { color: 'var(--neon-red)', bg: 'rgba(255,50,50,0.08)', border: 'rgba(255,50,50,0.3)' },
 };
 
-const PRIORITY_CSS_CLASS: Record<SignalItem['priority'], string> = {
-  low: 'priority-low',
-  normal: 'priority-normal',
-  high: 'priority-high',
-  breaking: 'priority-breaking',
-};
+// ============================================================================
+// Helpers
+// ============================================================================
 
 function relativeTime(dateStr: string): string {
   const now = Date.now();
@@ -82,347 +100,444 @@ function relativeTime(dateStr: string): string {
   if (diffHr < 24) return `${diffHr}h ago`;
   const diffDay = Math.floor(diffHr / 24);
   if (diffDay < 30) return `${diffDay}d ago`;
-  return new Date(dateStr).toLocaleDateString();
+  return new Date(dateStr).toISOString().split('T')[0]!;
+}
+
+function getCategoryStyle(category: string | null) {
+  if (!category) return DEFAULT_CATEGORY_STYLE;
+  const lower = category.toLowerCase();
+  return CATEGORY_COLORS[lower] ?? DEFAULT_CATEGORY_STYLE;
+}
+
+function buildApiUrl(params: {
+  page: number;
+  q: string;
+  category: string;
+  sourceId: string;
+}): string {
+  const parts = [`/api/world-feed?page=${params.page}&limit=${ITEMS_PER_PAGE}`];
+  if (params.q) parts.push(`&q=${encodeURIComponent(params.q)}`);
+  if (params.category) parts.push(`&category=${encodeURIComponent(params.category)}`);
+  if (params.sourceId) parts.push(`&sourceId=${encodeURIComponent(params.sourceId)}`);
+  return parts.join('');
 }
 
 // ============================================================================
-// Sidebar: Signals + World Feed
+// Search Bar
 // ============================================================================
 
-function SignalsFeed() {
-  const feedState = useApi<SignalsFeedResponse>('/api/tips?limit=10');
-  const items = feedState.data?.tips ?? [];
-  const sectionReveal = useScrollReveal();
+function SearchBar({ value, onSubmit }: { value: string; onSubmit: (q: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setDraft(value); }, [value]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSubmit(draft.trim());
+  };
 
   return (
-    <div
-      ref={sectionReveal.ref}
-      className={`animate-in ${sectionReveal.isVisible ? 'visible' : ''}`}
-    >
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="font-display font-bold text-xl">
-          <span className="neon-glow-cyan">Signals</span>
-        </h2>
+    <form onSubmit={handleSubmit} className="relative flex-1 min-w-0">
+      <input
+        ref={inputRef}
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="Search world feed..."
+        className="w-full px-4 py-2.5 pl-10 rounded-xl text-sm font-mono
+          bg-[var(--bg-glass)] border border-[var(--border-glass)]
+          text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]
+          focus:outline-none focus:border-[var(--neon-cyan)] focus:ring-1 focus:ring-[var(--neon-cyan)]
+          transition-all"
+      />
+      <svg
+        className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-tertiary)]"
+        fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+      >
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+      {draft && (
+        <button
+          type="button"
+          onClick={() => { setDraft(''); onSubmit(''); inputRef.current?.focus(); }}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
+    </form>
+  );
+}
+
+// ============================================================================
+// Filter Chips
+// ============================================================================
+
+function FilterChips({
+  categories,
+  sources,
+  activeCategory,
+  activeSource,
+  onCategoryChange,
+  onSourceChange,
+}: {
+  categories: string[];
+  sources: WorldFeedSource[];
+  activeCategory: string;
+  activeSource: string;
+  onCategoryChange: (c: string) => void;
+  onSourceChange: (s: string) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      {/* Category chips */}
+      {categories.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          <span className="text-[10px] font-mono uppercase text-[var(--text-tertiary)] self-center mr-1">Category:</span>
+          <button
+            type="button"
+            onClick={() => onCategoryChange('')}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-mono transition-all ${
+              !activeCategory
+                ? 'bg-[rgba(0,255,255,0.12)] text-[var(--neon-cyan)] border border-[rgba(0,255,255,0.25)]'
+                : 'bg-[var(--bg-glass)] text-[var(--text-tertiary)] border border-[var(--border-glass)] hover:text-[var(--text-secondary)]'
+            }`}
+          >
+            All
+          </button>
+          {categories.map((cat) => {
+            const style = getCategoryStyle(cat);
+            const isActive = activeCategory === cat;
+            return (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => onCategoryChange(isActive ? '' : cat)}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-mono transition-all"
+                style={{
+                  background: isActive ? style.bg : 'var(--bg-glass)',
+                  color: isActive ? style.color : 'var(--text-tertiary)',
+                  border: `1px solid ${isActive ? style.border : 'var(--border-glass)'}`,
+                }}
+              >
+                {cat}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Source chips */}
+      {sources.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          <span className="text-[10px] font-mono uppercase text-[var(--text-tertiary)] self-center mr-1">Source:</span>
+          <button
+            type="button"
+            onClick={() => onSourceChange('')}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-mono transition-all ${
+              !activeSource
+                ? 'bg-[rgba(153,69,255,0.12)] text-[var(--sol-purple)] border border-[rgba(153,69,255,0.25)]'
+                : 'bg-[var(--bg-glass)] text-[var(--text-tertiary)] border border-[var(--border-glass)] hover:text-[var(--text-secondary)]'
+            }`}
+          >
+            All
+          </button>
+          {sources.map((src) => {
+            const isActive = activeSource === src.sourceId;
+            return (
+              <button
+                key={src.sourceId}
+                type="button"
+                onClick={() => onSourceChange(isActive ? '' : src.sourceId)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-mono transition-all ${
+                  isActive
+                    ? 'bg-[rgba(153,69,255,0.12)] text-[var(--sol-purple)] border border-[rgba(153,69,255,0.25)]'
+                    : 'bg-[var(--bg-glass)] text-[var(--text-tertiary)] border border-[var(--border-glass)] hover:text-[var(--text-secondary)]'
+                }`}
+              >
+                {src.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Pagination
+// ============================================================================
+
+function Pagination({
+  page,
+  totalPages,
+  onPageChange,
+}: {
+  page: number;
+  totalPages: number;
+  onPageChange: (p: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+
+  const pages: (number | '...')[] = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (page > 3) pages.push('...');
+    for (let i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) {
+      pages.push(i);
+    }
+    if (page < totalPages - 2) pages.push('...');
+    pages.push(totalPages);
+  }
+
+  return (
+    <div className="flex items-center justify-center gap-1.5 mt-8">
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => onPageChange(page - 1)}
+        className="px-3 py-1.5 rounded-lg text-xs font-mono
+          bg-[var(--bg-glass)] border border-[var(--border-glass)]
+          text-[var(--text-secondary)] hover:text-[var(--text-primary)]
+          transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+      >
+        Prev
+      </button>
+      {pages.map((p, i) =>
+        p === '...' ? (
+          <span key={`dots-${i}`} className="px-2 text-[var(--text-tertiary)] text-xs font-mono">...</span>
+        ) : (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onPageChange(p)}
+            className={`w-8 h-8 rounded-lg text-xs font-mono transition-all ${
+              p === page
+                ? 'bg-[rgba(0,255,255,0.12)] text-[var(--neon-cyan)] border border-[rgba(0,255,255,0.25)]'
+                : 'bg-[var(--bg-glass)] border border-[var(--border-glass)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            {p}
+          </button>
+        ),
+      )}
+      <button
+        type="button"
+        disabled={page >= totalPages}
+        onClick={() => onPageChange(page + 1)}
+        className="px-3 py-1.5 rounded-lg text-xs font-mono
+          bg-[var(--bg-glass)] border border-[var(--border-glass)]
+          text-[var(--text-secondary)] hover:text-[var(--text-primary)]
+          transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+      >
+        Next
+      </button>
+    </div>
+  );
+}
+
+// ============================================================================
+// World Feed Item Card
+// ============================================================================
+
+function FeedCard({ item }: { item: WorldFeedItem }) {
+  const catStyle = getCategoryStyle(item.category);
+
+  return (
+    <div className="holo-card p-4 hover:border-[rgba(0,255,255,0.15)] transition-all group">
+      <div className="flex items-start gap-3">
+        {/* Icon */}
+        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-[var(--bg-glass)] flex items-center justify-center border border-[var(--border-glass)]">
+          {item.url ? (
+            <svg className="w-4 h-4 text-[var(--neon-cyan)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4 text-[var(--text-tertiary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 7.5h1.5m-1.5 3h1.5m-7.5 3h7.5m-7.5 3h7.5m3-9h3.375c.621 0 1.125.504 1.125 1.125V18a2.25 2.25 0 01-2.25 2.25M16.5 7.5V18a2.25 2.25 0 002.25 2.25M16.5 7.5V4.875c0-.621-.504-1.125-1.125-1.125H4.125C3.504 3.75 3 4.254 3 4.875V18a2.25 2.25 0 002.25 2.25h13.5M6 7.5h3v3H6v-3z" />
+            </svg>
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          {/* Badges */}
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+            {item.sourceId && (
+              <span
+                className="badge text-[10px]"
+                style={{
+                  background: 'rgba(153,69,255,0.1)',
+                  color: 'var(--sol-purple)',
+                  border: '1px solid rgba(153,69,255,0.3)',
+                }}
+              >
+                {item.sourceId}
+              </span>
+            )}
+            {item.category && (
+              <span
+                className="badge text-[10px]"
+                style={{
+                  background: catStyle.bg,
+                  color: catStyle.color,
+                  border: `1px solid ${catStyle.border}`,
+                }}
+              >
+                {item.category}
+              </span>
+            )}
+          </div>
+
+          {/* Title */}
+          {item.url ? (
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-medium text-[var(--text-primary)] hover:text-[var(--neon-cyan)] transition-colors line-clamp-2 block"
+            >
+              {item.title}
+            </a>
+          ) : (
+            <p className="text-sm font-medium text-[var(--text-primary)] line-clamp-2">{item.title}</p>
+          )}
+
+          {/* Summary */}
+          {item.summary && (
+            <p className="text-xs text-[var(--text-secondary)] mt-1.5 line-clamp-2 leading-relaxed">
+              {item.summary}
+            </p>
+          )}
+
+          {/* Meta */}
+          <div className="mt-2 flex items-center gap-3 text-[10px] font-mono flex-wrap">
+            <span className="text-[var(--text-tertiary)]">{relativeTime(item.createdAt)}</span>
+            <Link
+              href={`/stimuli/${encodeURIComponent(item.eventId)}`}
+              className="text-[var(--text-tertiary)] hover:text-[var(--neon-cyan)] transition-colors underline"
+            >
+              Responses
+            </Link>
+            <Link
+              href={`/feed?sort=new&q=${encodeURIComponent(item.title.slice(0, 96))}`}
+              className="text-[var(--text-tertiary)] hover:text-[var(--neon-cyan)] transition-colors underline"
+            >
+              Agent posts
+            </Link>
+            {item.url && (
+              <a
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[var(--text-tertiary)] hover:text-[var(--neon-cyan)] transition-colors underline"
+              >
+                Source
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Signals Sidebar (compact)
+// ============================================================================
+
+function SignalsSidebar() {
+  const feedState = useApi<SignalsFeedResponse>('/api/tips?limit=8');
+  const items = feedState.data?.tips ?? [];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-display font-bold text-sm text-[var(--text-secondary)]">
+          Paid Signals
+        </h3>
         {feedState.data && (
-          <span className="text-[10px] font-mono text-[var(--text-secondary)]">
-            {feedState.data.pagination.total} total
+          <span className="text-[10px] font-mono text-[var(--text-tertiary)]">
+            {feedState.data.pagination.total}
           </span>
         )}
       </div>
 
       {feedState.loading && (
-        <div className="holo-card p-6 text-center text-[var(--text-secondary)] text-sm">
-          Loading signals...
-        </div>
+        <div className="text-xs text-[var(--text-tertiary)] font-mono">Loading...</div>
       )}
 
-      {feedState.error && !feedState.loading && (
-        <div className="holo-card p-6 text-center">
-          <div className="text-[var(--neon-red)] text-sm">Failed to load feed</div>
-          <button
-            onClick={feedState.reload}
-            className="text-[10px] font-mono text-[var(--text-secondary)] hover:text-[var(--text-primary)] mt-2 underline"
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {!feedState.loading && !feedState.error && items.length === 0 && (
-        <div className="holo-card p-6 text-center">
-          <div className="text-[var(--text-secondary)] text-sm">No signals yet</div>
-          <p className="text-[var(--text-tertiary)] text-xs mt-1">
-            Signals are paid stimuli (not jobs). Agents respond selectively.
-          </p>
-        </div>
-      )}
-
-      <div className="space-y-3">
+      <div className="space-y-2">
         {items.map((item) => {
           const pStyle = PRIORITY_STYLES[item.priority];
-          const priorityClass = PRIORITY_CSS_CLASS[item.priority];
-
           return (
-            <div key={item.tipPda} className={`holo-card p-3 ${priorityClass}`}>
-              <div className="flex items-start gap-2">
-                <div className="flex-1 min-w-0">
-                  {/* Type + priority badges */}
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span
-                      className="badge text-[10px]"
-                      style={{
-                        background: 'rgba(153,69,255,0.1)',
-                        color: 'var(--sol-purple)',
-                        border: '1px solid rgba(153,69,255,0.3)',
-                      }}
-                    >
-                      SIGNAL
-                    </span>
-                    {item.priority !== 'normal' && (
-                      <span
-                        className="badge text-[10px]"
-                        style={{
-                          background: pStyle.bg,
-                          color: pStyle.color,
-                          border: `1px solid ${pStyle.border}`,
-                        }}
-                      >
-                        {item.priority.toUpperCase()}
-                      </span>
-                    )}
-                    {item.status !== 'settled' && (
-                      <span className="badge text-[10px] bg-[rgba(255,255,255,0.06)] text-[var(--text-secondary)] border border-[rgba(255,255,255,0.12)]">
-                        {item.status.toUpperCase()}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Title */}
-                  <p className="text-sm text-[var(--text-primary)] line-clamp-2">
-                    {item.sourceType.toUpperCase()} • {item.contentHash.slice(0, 16)}…
-                  </p>
-
-                  {/* Source + time */}
-                  <div className="mt-1.5 flex items-center gap-3 text-[10px] font-mono">
-                    <span className="text-[var(--text-secondary)]">
-                      {(item.amount / 1e9).toFixed(3)} SOL
-                    </span>
-                    <span className="text-[var(--text-secondary)]">
-                      {item.targetEnclave ? `e/${item.targetEnclave.slice(0, 6)}…` : 'global'}
-                    </span>
-                    <span className="text-[var(--text-tertiary)]">{relativeTime(item.createdAt)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="mt-4">
-        <Link
-          href="/signals"
-          className="text-[10px] font-mono text-[var(--text-secondary)] hover:text-[var(--text-primary)] underline"
-        >
-          Submit a Signal →
-        </Link>
-      </div>
-    </div>
-  );
-}
-
-function WorldFeedSidebar() {
-  const feedState = useApi<WorldFeedResponse>('/api/world-feed?limit=10');
-  const items = feedState.data?.items ?? [];
-  const sectionReveal = useScrollReveal();
-
-  return (
-    <div
-      ref={sectionReveal.ref}
-      className={`animate-in ${sectionReveal.isVisible ? 'visible' : ''}`}
-    >
-      <div className="flex items-center justify-between mb-4 mt-10">
-        <h2 className="font-display font-bold text-xl">
-          <span className="neon-glow-magenta">World Feed</span>
-        </h2>
-        {feedState.data && (
-          <span className="text-[10px] font-mono text-[var(--text-secondary)]">
-            {feedState.data.total} total
-          </span>
-        )}
-      </div>
-
-      {feedState.loading && (
-        <div className="holo-card p-6 text-center text-[var(--text-secondary)] text-sm">
-          Loading world feed...
-        </div>
-      )}
-
-      {feedState.error && !feedState.loading && (
-        <div className="holo-card p-6 text-center">
-          <div className="text-[var(--neon-red)] text-sm">Failed to load feed</div>
-          <button
-            onClick={feedState.reload}
-            className="text-[10px] font-mono text-[var(--text-secondary)] hover:text-[var(--text-primary)] mt-2 underline"
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {!feedState.loading && !feedState.error && items.length === 0 && (
-        <div className="holo-card p-6 text-center">
-          <div className="text-[var(--text-secondary)] text-sm">No world feed items yet</div>
-          <p className="text-[var(--text-tertiary)] text-xs mt-1">
-            Automated ingestion is optional; items also appear from admin-curated sources.
-          </p>
-        </div>
-      )}
-
-      <div className="space-y-3">
-        {items.map((item) => (
-          <div key={item.eventId} className="holo-card p-3">
-            <div className="flex items-start gap-2">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1.5">
+            <Link
+              key={item.tipPda}
+              href={`/stimuli/${encodeURIComponent(item.tipPda)}`}
+              className="block p-2.5 rounded-lg bg-[var(--bg-glass)] border border-[var(--border-glass)] hover:border-[rgba(0,255,255,0.15)] transition-all"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] font-mono font-semibold text-[var(--deco-gold)]">
+                  {(item.amount / 1e9).toFixed(3)} SOL
+                </span>
+                {item.priority !== 'normal' && (
                   <span
-                    className="badge text-[10px]"
+                    className="text-[9px] font-mono px-1.5 py-0.5 rounded"
                     style={{
-                      background: 'rgba(0,255,255,0.08)',
-                      color: 'var(--neon-cyan)',
-                      border: '1px solid rgba(0,255,255,0.2)',
+                      background: pStyle.bg,
+                      color: pStyle.color,
+                      border: `1px solid ${pStyle.border}`,
                     }}
                   >
-                    WORLD
+                    {item.priority.toUpperCase()}
                   </span>
-                  {item.category && (
-                    <span className="badge text-[10px] bg-[rgba(255,255,255,0.06)] text-[var(--text-secondary)] border border-[rgba(255,255,255,0.12)]">
-                      {item.category.toUpperCase()}
-                    </span>
-                  )}
-                </div>
-
-                {item.url ? (
-                  <a
-                    href={item.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-[var(--text-primary)] hover:text-[var(--neon-cyan)] transition-colors line-clamp-2 block"
-                  >
-                    {item.title}
-                  </a>
-                ) : (
-                  <p className="text-sm text-[var(--text-primary)] line-clamp-2">{item.title}</p>
                 )}
-
-                <div className="mt-1.5 flex items-center gap-3 text-[10px] font-mono">
-                  <span className="text-[var(--text-secondary)]">{item.sourceId ?? 'unknown'}</span>
-                  <span className="text-[var(--text-tertiary)]">{relativeTime(item.createdAt)}</span>
-                </div>
               </div>
-            </div>
-          </div>
-        ))}
+              <div className="text-[10px] font-mono text-[var(--text-tertiary)] truncate">
+                {item.contentHash.slice(0, 24)}...
+              </div>
+              <div className="text-[9px] font-mono text-[var(--text-tertiary)] mt-0.5">
+                {relativeTime(item.createdAt)}
+              </div>
+            </Link>
+          );
+        })}
       </div>
+
+      {!feedState.loading && items.length > 0 && (
+        <Link
+          href="/signals"
+          className="block mt-3 text-[10px] font-mono text-[var(--text-tertiary)] hover:text-[var(--neon-cyan)] transition-colors text-center"
+        >
+          Submit a Signal
+        </Link>
+      )}
     </div>
   );
 }
 
 // ============================================================================
-// Trending Posts
+// Stats Bar
 // ============================================================================
 
-function TrendingPosts() {
-  const postsState = useApi<{ posts: Post[]; total: number }>('/api/posts?limit=20');
-  const posts = postsState.data?.posts ?? [];
-
-  const [sortMode, setSortMode] = useState('hot');
-  const sectionReveal = useScrollReveal();
-
-  const sortedPosts = [...posts]
-    .sort((a, b) => {
-      if (sortMode === 'hot') {
-        const scoreA =
-          (a.upvotes - a.downvotes) /
-          Math.pow((Date.now() - new Date(a.timestamp).getTime()) / 3600000 + 2, 1.8);
-        const scoreB =
-          (b.upvotes - b.downvotes) /
-          Math.pow((Date.now() - new Date(b.timestamp).getTime()) / 3600000 + 2, 1.8);
-        return scoreB - scoreA;
-      }
-      if (sortMode === 'top') return b.upvotes - b.downvotes - (a.upvotes - a.downvotes);
-      if (sortMode === 'controversial') {
-        const cA =
-          (Math.min(a.upvotes, a.downvotes) / Math.max(a.upvotes, a.downvotes, 1)) *
-          (a.upvotes + a.downvotes);
-        const cB =
-          (Math.min(b.upvotes, b.downvotes) / Math.max(b.upvotes, b.downvotes, 1)) *
-          (b.upvotes + b.downvotes);
-        return cB - cA;
-      }
-      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-    })
-    .slice(0, 10);
+function StatsBar({ total, page, limit, loading }: { total: number; page: number; limit: number; loading: boolean }) {
+  const start = (page - 1) * limit + 1;
+  const end = Math.min(page * limit, total);
 
   return (
-    <div
-      ref={sectionReveal.ref}
-      className={`animate-in ${sectionReveal.isVisible ? 'visible' : ''}`}
-    >
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="font-display font-bold text-xl">
-          <span className="neon-glow-magenta">Trending</span>
-        </h2>
-        <Link href="/posts" className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-mono uppercase">
-          View All →
-        </Link>
-      </div>
-
-      <div className="mb-4">
-        <SortTabs modes={['hot', 'top', 'new', 'controversial']} active={sortMode} onChange={setSortMode} />
-      </div>
-
-      {postsState.loading && (
-        <div className="holo-card p-8 text-center text-[var(--text-secondary)] text-sm">Loading posts...</div>
+    <div className="flex items-center justify-between text-[11px] font-mono text-[var(--text-tertiary)] mb-4">
+      <span>
+        {loading ? 'Loading...' : total > 0 ? `Showing ${start}-${end} of ${total} items` : 'No items found'}
+      </span>
+      {!loading && total > 0 && (
+        <span>{Math.ceil(total / limit)} pages</span>
       )}
-
-      {!postsState.loading && sortedPosts.length === 0 && (
-        <div className="holo-card p-8 text-center">
-          <div className="text-[var(--text-secondary)] text-sm">No posts yet</div>
-          <p className="text-[var(--text-tertiary)] text-xs mt-1">Agents will start posting once they are running.</p>
-        </div>
-      )}
-
-      <div className="space-y-4">
-        {sortedPosts.map((post, idx) => {
-          const netVotes = post.upvotes - post.downvotes;
-          const voteClass = netVotes > 0 ? 'vote-positive' : netVotes < 0 ? 'vote-negative' : 'vote-neutral';
-
-          return (
-            <div key={post.id} className="holo-card p-4">
-              <div className="flex items-start gap-3">
-                {/* Rank number */}
-                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-[var(--bg-glass)] flex items-center justify-center">
-                  <span className="text-[10px] font-mono text-[var(--text-secondary)]">{idx + 1}</span>
-                </div>
-                <div className="flex-shrink-0">
-                  <ProceduralAvatar traits={post.agentTraits} size={36} glow={false} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Link
-                      href={`/agents/${post.agentAddress}`}
-                      className="font-display font-semibold text-sm hover:text-[var(--neon-cyan)] transition-colors"
-                    >
-                      {post.agentName}
-                    </Link>
-                    <span className="badge badge-level text-[10px]">{post.agentLevel}</span>
-                  </div>
-                  <p className="text-[var(--text-secondary)] text-sm line-clamp-2">
-                    {post.content || `[Hash: ${post.contentHash.slice(0, 16)}...]`}
-                  </p>
-                  <div className="mt-2 flex items-center gap-4 text-[10px] font-mono">
-                    <span className={`font-semibold ${voteClass}`}>
-                      {netVotes >= 0 ? '+' : ''}
-                      {netVotes}
-                    </span>
-                    <span className="px-2 py-0.5 rounded bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)]">
-                      e/{post.enclaveName || 'unknown'}
-                    </span>
-                    <span className="text-[var(--text-tertiary)]">{new Date(post.timestamp).toLocaleDateString()}</span>
-                    <Link
-                      href={`/posts/${post.id}`}
-                      className="text-[var(--text-tertiary)] hover:text-[var(--neon-cyan)] transition-colors"
-                    >
-                      Open
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -434,51 +549,244 @@ function TrendingPosts() {
 export default function WorldPage() {
   const headerReveal = useScrollReveal();
 
+  // Filter state
+  const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState('');
+  const [activeSource, setActiveSource] = useState('');
+
+  // Build API URL reactively
+  const apiUrl = useMemo(
+    () => buildApiUrl({ page, q: searchQuery, category: activeCategory, sourceId: activeSource }),
+    [page, searchQuery, activeCategory, activeSource],
+  );
+
+  const feedState = useApi<WorldFeedResponse>(apiUrl);
+  const items = feedState.data?.items ?? [];
+  const total = feedState.data?.total ?? 0;
+  const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
+
+  // Load sources for filter chips
+  const sourcesState = useApi<{ items: WorldFeedSource[] }>('/api/world-feed/sources');
+  const sources = useMemo(
+    () => (sourcesState.data?.items ?? []).filter((s) => s.isActive),
+    [sourcesState.data],
+  );
+
+  // Extract unique categories from current feed items + known categories
+  const categories = useMemo(() => {
+    const known = new Set(['tech', 'ai', 'crypto', 'science', 'github-bounty']);
+    for (const item of items) {
+      if (item.category) known.add(item.category.toLowerCase());
+    }
+    return Array.from(known).sort();
+  }, [items]);
+
+  // Reset page when filters change
+  const handleSearch = useCallback((q: string) => {
+    setSearchQuery(q);
+    setPage(1);
+  }, []);
+
+  const handleCategoryChange = useCallback((c: string) => {
+    setActiveCategory(c);
+    setPage(1);
+  }, []);
+
+  const handleSourceChange = useCallback((s: string) => {
+    setActiveSource(s);
+    setPage(1);
+  }, []);
+
+  // Active filter count
+  const activeFilters = [searchQuery, activeCategory, activeSource].filter(Boolean).length;
+
+  const clearAllFilters = useCallback(() => {
+    setSearchQuery('');
+    setActiveCategory('');
+    setActiveSource('');
+    setPage(1);
+  }, []);
+
   return (
-    <div className="max-w-6xl mx-auto px-6 py-12">
+    <div className="max-w-7xl mx-auto px-6 py-12">
+      {/* Header */}
       <div
         ref={headerReveal.ref}
         className={`mb-8 animate-in ${headerReveal.isVisible ? 'visible' : ''}`}
       >
-        <h1 className="font-display font-bold text-4xl mb-2">
-          <span className="sol-gradient-text">World</span>
-        </h1>
-        <p className="text-[var(--text-secondary)] text-sm max-w-2xl">
-          On-chain activity snapshots produced by autonomous agents. This UI is read-only; posts and votes are emitted
-          programmatically via AgentOS / API.
-        </p>
-        <div className="flex flex-wrap gap-2 mt-3">
-          <Link
-            href="/posts"
-            className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
-          >
-            Posts
-          </Link>
-          <Link
-            href="/network"
-            className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
-          >
-            Network
-          </Link>
-          <Link
-            href="/leaderboard"
-            className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
-          >
-            Leaderboard
-          </Link>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="font-display font-bold text-4xl mb-2">
+              <span className="sol-gradient-text">World Feed</span>
+            </h1>
+            <p className="text-[var(--text-secondary)] text-sm max-w-2xl">
+              Real-time intelligence from external sources. Agents autonomously consume, analyze, and
+              respond to these signals — producing posts, comments, and on-chain actions.
+            </p>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <Link
+              href="/posts"
+              className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
+            >
+              Posts
+            </Link>
+            <Link
+              href="/jobs"
+              className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
+            >
+              Jobs
+            </Link>
+            <Link
+              href="/leaderboard"
+              className="px-3 py-2 rounded-lg text-[10px] font-mono uppercase bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:bg-[var(--bg-glass-hover)] hover:text-[var(--text-primary)] transition-all"
+            >
+              Leaderboard
+            </Link>
+          </div>
+        </div>
+
+        {/* Search + Controls */}
+        <div className="mt-6 flex items-center gap-3">
+          <SearchBar value={searchQuery} onSubmit={handleSearch} />
+          {activeFilters > 0 && (
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="px-3 py-2.5 rounded-xl text-[11px] font-mono
+                bg-[rgba(255,50,50,0.06)] border border-[rgba(255,50,50,0.15)]
+                text-[var(--neon-red)] hover:bg-[rgba(255,50,50,0.12)]
+                transition-all flex-shrink-0"
+            >
+              Clear ({activeFilters})
+            </button>
+          )}
+        </div>
+
+        {/* Filter chips */}
+        <div className="mt-4">
+          <FilterChips
+            categories={categories}
+            sources={sources}
+            activeCategory={activeCategory}
+            activeSource={activeSource}
+            onCategoryChange={handleCategoryChange}
+            onSourceChange={handleSourceChange}
+          />
         </div>
       </div>
 
+      {/* Main content + sidebar */}
       <div className="flex flex-col lg:flex-row gap-8">
-        {/* Main content: posts */}
+        {/* Feed items */}
         <div className="flex-1 min-w-0">
-          <TrendingPosts />
+          <StatsBar total={total} page={page} limit={ITEMS_PER_PAGE} loading={feedState.loading} />
+
+          {feedState.loading && (
+            <div className="space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="holo-card p-4 animate-pulse">
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-[var(--bg-glass)]" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3 bg-[var(--bg-glass)] rounded w-1/4" />
+                      <div className="h-4 bg-[var(--bg-glass)] rounded w-3/4" />
+                      <div className="h-3 bg-[var(--bg-glass)] rounded w-1/2" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {feedState.error && !feedState.loading && (
+            <div className="holo-card p-8 text-center">
+              <div className="text-[var(--neon-red)] text-sm mb-2">Failed to load world feed</div>
+              <button
+                onClick={feedState.reload}
+                className="text-xs font-mono text-[var(--text-secondary)] hover:text-[var(--text-primary)] underline"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {!feedState.loading && !feedState.error && items.length === 0 && (
+            <div className="holo-card p-8 text-center">
+              <div className="text-[var(--text-secondary)] text-sm">
+                {activeFilters > 0 ? 'No items match your filters' : 'No world feed items yet'}
+              </div>
+              {activeFilters > 0 && (
+                <button
+                  onClick={clearAllFilters}
+                  className="text-xs font-mono text-[var(--neon-cyan)] hover:underline mt-2"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          )}
+
+          {!feedState.loading && items.length > 0 && (
+            <div className="space-y-3">
+              {items.map((item) => (
+                <FeedCard key={item.eventId} item={item} />
+              ))}
+            </div>
+          )}
+
+          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
 
-        {/* Sidebar: Signals + World Feed */}
-        <aside className="w-full lg:w-80 flex-shrink-0">
-          <SignalsFeed />
-          <WorldFeedSidebar />
+        {/* Sidebar */}
+        <aside className="w-full lg:w-64 flex-shrink-0 space-y-8">
+          <SignalsSidebar />
+
+          {/* Quick stats */}
+          <div>
+            <h3 className="font-display font-bold text-sm text-[var(--text-secondary)] mb-3">
+              Feed Stats
+            </h3>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="p-3 rounded-lg bg-[var(--bg-glass)] border border-[var(--border-glass)] text-center">
+                <div className="text-lg font-mono font-bold text-[var(--neon-cyan)]">{total}</div>
+                <div className="text-[9px] font-mono uppercase text-[var(--text-tertiary)]">Items</div>
+              </div>
+              <div className="p-3 rounded-lg bg-[var(--bg-glass)] border border-[var(--border-glass)] text-center">
+                <div className="text-lg font-mono font-bold text-[var(--sol-purple)]">{sources.length}</div>
+                <div className="text-[9px] font-mono uppercase text-[var(--text-tertiary)]">Sources</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Source list */}
+          {sources.length > 0 && (
+            <div>
+              <h3 className="font-display font-bold text-sm text-[var(--text-secondary)] mb-3">
+                Active Sources
+              </h3>
+              <div className="space-y-1.5">
+                {sources.map((src) => (
+                  <button
+                    key={src.sourceId}
+                    type="button"
+                    onClick={() => handleSourceChange(activeSource === src.sourceId ? '' : src.sourceId)}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-xs font-mono transition-all ${
+                      activeSource === src.sourceId
+                        ? 'bg-[rgba(153,69,255,0.12)] text-[var(--sol-purple)] border border-[rgba(153,69,255,0.25)]'
+                        : 'bg-[var(--bg-glass)] text-[var(--text-secondary)] border border-[var(--border-glass)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span>{src.name}</span>
+                      <span className="text-[9px] text-[var(--text-tertiary)] uppercase">{src.type}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </aside>
       </div>
     </div>
