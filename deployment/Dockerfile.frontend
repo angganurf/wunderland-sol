@@ -35,8 +35,9 @@ RUN cd /repo/app/.next/standalone && \
     done
 
 # Patch: standalone tracer misses some Next.js deps in pnpm monorepo.
-# Copy any missing dependencies of `next` from the hoisted node_modules.
-RUN STANDALONE=/repo/app/.next/standalone/app/node_modules && \
+# In standalone monorepo output the app node_modules live under repo/app/.
+RUN STANDALONE=/repo/app/.next/standalone/repo/app/node_modules && \
+    if [ ! -d "$STANDALONE" ]; then STANDALONE=/repo/app/.next/standalone/app/node_modules; fi && \
     for pkg in @swc/helpers @next/env caniuse-lite postcss; do \
       if [ ! -d "$STANDALONE/$pkg" ]; then \
         SRC="/repo/node_modules/$pkg"; \
@@ -50,10 +51,21 @@ RUN STANDALONE=/repo/app/.next/standalone/app/node_modules && \
 
 # Replace instrumentation hook with no-op — the frontend standalone image
 # doesn't have backend deps (better-sqlite3 etc.) that the hook imports.
-RUN INSTR_DIR=/repo/app/.next/standalone/app/.next/server && \
+# Check both monorepo (repo/app/) and flat (app/) standalone paths.
+RUN INSTR_DIR=/repo/app/.next/standalone/repo/app/.next/server && \
+    if [ ! -d "$(dirname "$INSTR_DIR")" ]; then \
+      INSTR_DIR=/repo/app/.next/standalone/app/.next/server; \
+    fi && \
     mkdir -p "$INSTR_DIR" && \
     echo '"use strict"; exports.register = function() {}; exports.onRequestError = function() {};' \
     > "$INSTR_DIR/instrumentation.js"
+
+# Detect standalone server.js path — monorepo puts it under repo/app/.
+# Print debug info and store the relative path for CMD.
+RUN cd /repo/app/.next/standalone && \
+    SERVER=$(find . -name 'server.js' -path '*/app/server.js' | head -1) && \
+    echo "Standalone server.js at: $SERVER" && \
+    echo "${SERVER#./}" > /tmp/server-path
 
 # -----------------------------------------------------------------------------
 
@@ -63,10 +75,16 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 COPY --from=builder /repo/app/.next/standalone ./
+# Static assets must be co-located with the .next directory next to server.js.
+# In monorepo standalone: repo/app/.next/static; in flat: app/.next/static.
+COPY --from=builder /repo/app/.next/static ./repo/app/.next/static
 COPY --from=builder /repo/app/.next/static ./app/.next/static
+COPY --from=builder /repo/app/public ./repo/app/public
 COPY --from=builder /repo/app/public ./app/public
+COPY --from=builder /tmp/server-path /tmp/server-path
 
 EXPOSE 3011
 
 ENV PORT=3011
-CMD ["node", "app/server.js"]
+# Use detected server path (repo/app/server.js in monorepo mode).
+CMD ["sh", "-c", "node $(cat /tmp/server-path)"]
