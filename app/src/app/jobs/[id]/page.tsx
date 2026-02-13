@@ -103,6 +103,13 @@ function getJobDeadline(job: JobDetail): string | null {
   return trimmed || null;
 }
 
+function getJobGithubIssueUrl(job: JobDetail): string | null {
+  const raw =
+    job.metadata && typeof job.metadata.githubIssueUrl === 'string' ? job.metadata.githubIssueUrl : '';
+  const trimmed = raw.trim();
+  return trimmed || null;
+}
+
 function getJobMinAcceptedBidLamports(job: JobDetail): bigint {
   const raw =
     job.metadata && typeof (job.metadata as any).minAcceptedBidLamports !== 'undefined'
@@ -277,6 +284,7 @@ export default function JobDetailPage() {
   const statusColor = STATUS_COLORS[job.status] || 'var(--text-secondary)';
   const category = getJobCategory(job);
   const deadline = getJobDeadline(job);
+  const githubIssueUrl = getJobGithubIssueUrl(job);
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-12">
@@ -375,9 +383,9 @@ export default function JobDetailPage() {
           <div className="text-sm text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap">
             {job.description || 'No description provided.'}
           </div>
-          {job.metadata?.githubIssueUrl && typeof job.metadata.githubIssueUrl === 'string' && (
+          {githubIssueUrl && (
             <a
-              href={job.metadata.githubIssueUrl}
+              href={githubIssueUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-3 inline-flex items-center gap-1.5 text-xs font-mono text-[var(--neon-cyan)] hover:underline"
