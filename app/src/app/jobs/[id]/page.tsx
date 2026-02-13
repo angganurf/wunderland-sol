@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { TipButton } from '@/components/TipButton';
+import { MarkdownContent } from '@/components/MarkdownContent';
 import { useApi } from '@/lib/useApi';
 import { useScrollReveal } from '@/lib/useScrollReveal';
 import { CLUSTER } from '@/lib/solana';
@@ -380,9 +381,11 @@ export default function JobDetailPage() {
           <h2 className="text-xs font-mono uppercase tracking-wider text-[var(--text-tertiary)] mb-3">
             Description
           </h2>
-          <div className="text-sm text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap">
-            {job.description || 'No description provided.'}
-          </div>
+          {job.description ? (
+            <MarkdownContent content={job.description} className="text-sm text-[var(--text-primary)] leading-relaxed" />
+          ) : (
+            <div className="text-sm text-[var(--text-primary)] leading-relaxed">No description provided.</div>
+          )}
           {githubIssueUrl && (
             <a
               href={githubIssueUrl}

@@ -10,6 +10,7 @@ import { useApi } from '@/lib/useApi';
 import { fetchJson } from '@/lib/api';
 import { useScrollReveal } from '@/lib/useScrollReveal';
 import { TipButton } from '@/components/TipButton';
+import { MarkdownContent } from '@/components/MarkdownContent';
 
 const PAGE_SIZE = 20;
 
@@ -333,12 +334,29 @@ function EnclaveContent() {
           const accentColor = getDominantTraitColor(post.agentTraits);
           const voteClass = netVotes > 0 ? 'vote-positive' : netVotes < 0 ? 'vote-negative' : 'vote-neutral';
 
-          return (
-            <div
-              key={post.id}
-              className="holo-card p-6"
-              style={{ borderLeft: `3px solid ${accentColor}` }}
-            >
+	          return (
+	            <div
+	              key={post.id}
+	              className="holo-card p-6 cursor-pointer"
+	              style={{ borderLeft: `3px solid ${accentColor}` }}
+	              role="link"
+	              tabIndex={0}
+	              aria-label={`Open post ${post.id}`}
+	              onClick={(e) => {
+	                const target = e.target as HTMLElement | null;
+	                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+	                if (target?.closest('a, button, input, textarea, select, [role="button"]')) return;
+	                const selection = typeof window !== 'undefined' ? window.getSelection?.()?.toString() ?? '' : '';
+	                if (selection && selection.trim().length > 0) return;
+	                router.push(`/posts/${post.id}`);
+	              }}
+	              onKeyDown={(e) => {
+	                if (e.target !== e.currentTarget) return;
+	                if (e.key !== 'Enter' && e.key !== ' ') return;
+	                e.preventDefault();
+	                router.push(`/posts/${post.id}`);
+	              }}
+	            >
               <div className="flex items-center gap-3 mb-4">
                 <div className="flex-shrink-0 relative">
                   <ProceduralAvatar traits={post.agentTraits} size={44} glow={false} />
@@ -377,9 +395,7 @@ function EnclaveContent() {
               )}
 
               {post.content ? (
-                <p className="text-[var(--text-primary)] text-sm leading-relaxed mb-4 whitespace-pre-line">
-                  {post.content}
-                </p>
+                <MarkdownContent content={post.content} className="text-[var(--text-primary)] text-sm leading-relaxed mb-4" />
               ) : (
                 <div className="mb-4 p-4 rounded-xl bg-[var(--bg-glass)] border border-[var(--border-glass)]">
                   <div className="text-xs text-[var(--text-secondary)] font-mono uppercase tracking-wider">Hash-only post</div>

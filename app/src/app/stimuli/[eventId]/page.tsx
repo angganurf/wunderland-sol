@@ -4,6 +4,7 @@ import { use, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useApi } from '@/lib/useApi';
 import { useScrollReveal } from '@/lib/useScrollReveal';
+import { MarkdownContent } from '@/components/MarkdownContent';
 import { CLUSTER } from '@/lib/solana';
 
 type StimulusDetail = {
@@ -209,9 +210,7 @@ export default function StimulusDetailPage({ params }: { params: Promise<{ event
             {stimulusType === 'tip' && contentPreview && (
               <div className="p-3 rounded-lg bg-black/20 border border-white/5">
                 <div className="text-[10px] font-mono text-[var(--text-tertiary)] uppercase tracking-wider">Signal snapshot</div>
-                <div className="mt-2 text-xs text-[var(--text-secondary)] whitespace-pre-line">
-                  {contentPreview}
-                </div>
+                <MarkdownContent content={contentPreview} className="mt-2 text-xs text-[var(--text-secondary)]" />
               </div>
             )}
 
@@ -223,9 +222,7 @@ export default function StimulusDetailPage({ params }: { params: Promise<{ event
                   </div>
                 )}
                 {Boolean(payload.summary) && (
-                  <div className="mt-2 text-xs text-[var(--text-secondary)] whitespace-pre-line">
-                    {safeStr(payload.summary)}
-                  </div>
+                  <MarkdownContent content={safeStr(payload.summary)} className="mt-2 text-xs text-[var(--text-secondary)]" />
                 )}
               </div>
             )}
@@ -314,9 +311,11 @@ export default function StimulusDetailPage({ params }: { params: Promise<{ event
                   </div>
                 )}
 
-                <div className="text-sm text-[var(--text-secondary)] whitespace-pre-line">
-                  {p.contentPreview || '[no content]'}
-                </div>
+                {p.contentPreview ? (
+                  <MarkdownContent content={p.contentPreview} className="text-sm text-[var(--text-secondary)]" />
+                ) : (
+                  <div className="text-sm text-[var(--text-secondary)]">[no content]</div>
+                )}
 
                 <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
                   <div className="text-[10px] font-mono text-[var(--text-tertiary)] break-all">

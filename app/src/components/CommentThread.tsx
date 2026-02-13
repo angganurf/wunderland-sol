@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { TipButton } from '@/components/TipButton';
+import { MarkdownContent } from '@/components/MarkdownContent';
 
 type Comment = {
   commentId: string;
@@ -92,9 +93,7 @@ function CommentNode({
         {/* Content */}
         {!collapsed && (
           <>
-            <p className="text-sm text-[var(--text-primary)] leading-relaxed mb-1 whitespace-pre-line">
-              {comment.content}
-            </p>
+            <MarkdownContent content={comment.content} className="text-sm text-[var(--text-primary)] leading-relaxed mb-1" />
 
             {/* Footer */}
             <div className="flex items-center gap-3 text-[10px] font-mono">

@@ -12,6 +12,7 @@ import { CLUSTER, type Agent, type Post } from '@/lib/solana';
 import { useApi } from '@/lib/useApi';
 import { useScrollReveal } from '@/lib/useScrollReveal';
 import { buildDonateToAgentIx, sha256Utf8 } from '@/lib/wunderland-program';
+import { MarkdownContent } from '@/components/MarkdownContent';
 import { PageContainer, SectionHeader, CyberFrame } from '@/components/layout';
 
 const TRAIT_LABELS: Record<string, string> = {
@@ -566,9 +567,7 @@ export default function AgentProfilePage({ params }: { params: Promise<{ address
               )}
 
               {post.content ? (
-                <p className="text-white/90 text-sm leading-relaxed mb-4 whitespace-pre-line">
-                  {post.content}
-                </p>
+                <MarkdownContent content={post.content} className="text-white/90 text-sm leading-relaxed mb-4" />
               ) : (
                 <div className="mb-4 p-4 rounded-xl bg-black/20 border border-white/5">
                   <div className="text-xs text-[var(--text-secondary)] font-mono uppercase tracking-wider">Hash-only post</div>

@@ -10,6 +10,7 @@ import { useApi } from '@/lib/useApi';
 import { fetchJson } from '@/lib/api';
 import { useScrollReveal } from '@/lib/useScrollReveal';
 import { TipButton } from '@/components/TipButton';
+import { MarkdownContent } from '@/components/MarkdownContent';
 import { PageContainer, SectionHeader } from '@/components/layout';
 
 const PAGE_SIZE = 20;
@@ -507,7 +508,7 @@ function FeedContent() {
 	              onClick={(e) => {
 	                const target = e.target as HTMLElement | null;
 	                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-	                if (target?.closest('a, button, input, textarea, select, [role="button"], [role="link"]')) return;
+	                if (target?.closest('a, button, input, textarea, select, [role="button"]')) return;
 	                const selection = typeof window !== 'undefined' ? window.getSelection?.()?.toString() ?? '' : '';
 	                if (selection && selection.trim().length > 0) return;
 	                router.push(`/posts/${post.id}`);
@@ -571,9 +572,7 @@ function FeedContent() {
 
               {/* Content */}
               {post.content ? (
-                <p className="text-[var(--text-primary)] text-sm leading-relaxed mb-4 whitespace-pre-line">
-                  {post.content}
-                </p>
+                <MarkdownContent content={post.content} className="text-[var(--text-primary)] text-sm leading-relaxed mb-4" />
               ) : (
                 <div className="mb-4 p-4 rounded-xl bg-[var(--bg-glass)] border border-[var(--border-glass)]">
                   <div className="text-xs text-[var(--text-secondary)] font-mono uppercase tracking-wider">Hash-only post</div>

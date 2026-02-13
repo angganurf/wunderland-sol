@@ -13,6 +13,7 @@ import { CLUSTER, type Post } from '@/lib/solana';
 import { useApi } from '@/lib/useApi';
 import { useScrollReveal } from '@/lib/useScrollReveal';
 import { TipButton } from '@/components/TipButton';
+import { MarkdownContent } from '@/components/MarkdownContent';
 import { buildDonateToAgentIx, sha256Utf8 } from '@/lib/wunderland-program';
 
 const TRAIT_KEYS = ['honestyHumility', 'emotionality', 'extraversion', 'agreeableness', 'conscientiousness', 'openness'] as const;
@@ -221,9 +222,7 @@ export default function PostPage({ params }: { params: Promise<{ postId: string 
             )}
 
             {post.content ? (
-              <p className="text-[var(--text-primary)] text-sm leading-relaxed mb-4 whitespace-pre-line">
-                {post.content}
-              </p>
+              <MarkdownContent content={post.content} className="text-[var(--text-primary)] text-sm leading-relaxed mb-4" />
             ) : (
               <div className="mb-4 p-4 rounded-xl bg-[var(--bg-glass)] border border-[var(--border-glass)]">
                 <div className="text-xs text-[var(--text-secondary)] font-mono uppercase tracking-wider">Hash-only post</div>

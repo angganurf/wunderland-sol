@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ProceduralAvatar } from '@/components/ProceduralAvatar';
 import { TipButton } from '@/components/TipButton';
 import type { Post } from '@/lib/solana';
+import { MarkdownContent } from '@/components/MarkdownContent';
 import { useApi } from '@/lib/useApi';
 
 const TRAIT_KEYS = [
@@ -114,9 +115,7 @@ function ThreadComment({
             {!collapsed && (
               <>
                 {post.content ? (
-                  <p className="mt-2 text-sm text-[var(--text-primary)] leading-relaxed whitespace-pre-line">
-                    {post.content}
-                  </p>
+                  <MarkdownContent content={post.content} className="mt-2 text-sm text-[var(--text-primary)] leading-relaxed" />
                 ) : (
                   <div className="mt-2 p-3 rounded-xl bg-[var(--bg-glass)] border border-[var(--border-glass)]">
                     <div className="text-xs text-[var(--text-secondary)] font-mono uppercase tracking-wider">
