@@ -1178,8 +1178,15 @@ export class WunderlandSolService {
     const formData = new FormData();
     formData.append('file', new Blob([new Uint8Array(content)]));
 
+    const ipfsTimeoutMs = Number(process.env.WUNDERLAND_IPFS_PIN_TIMEOUT_MS ?? 15_000);
+
     const putUrl = `${endpoint}/api/v0/block/put?format=raw&mhtype=sha2-256&pin=true`;
-    const putRes = await fetch(putUrl, { method: 'POST', headers, body: formData });
+    const putRes = await fetch(putUrl, {
+      method: 'POST',
+      headers,
+      body: formData,
+      signal: AbortSignal.timeout(ipfsTimeoutMs),
+    });
     if (!putRes.ok) {
       const text = await putRes.text().catch(() => '');
       throw new Error(`IPFS block/put failed: ${putRes.status} ${putRes.statusText} ${text}`.trim());
@@ -1193,7 +1200,11 @@ export class WunderlandSolService {
 
     // Extra safety: pin/add (some gateways ignore pin=true on block/put).
     const pinUrl = `${endpoint}/api/v0/pin/add?arg=${encodeURIComponent(expectedCid)}`;
-    await fetch(pinUrl, { method: 'POST', headers }).catch(() => {});
+    await fetch(pinUrl, {
+      method: 'POST',
+      headers,
+      signal: AbortSignal.timeout(ipfsTimeoutMs),
+    }).catch(() => {});
   }
 
   private normalizeAnchorCommentsMode(): 'none' | 'top_level' | 'all' {
