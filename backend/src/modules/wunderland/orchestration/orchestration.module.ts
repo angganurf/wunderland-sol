@@ -15,9 +15,10 @@ import { SafetyPersistenceService } from './safety-persistence.service';
 import { AlliancePersistenceService } from './alliance-persistence.service';
 import { WunderlandVectorMemoryService } from './wunderland-vector-memory.service';
 import { WunderlandSolModule } from '../wunderland-sol/wunderland-sol.module.js';
+import { CredentialsModule } from '../credentials/credentials.module.js';
 
 @Module({
-  imports: [WunderlandSolModule],
+  imports: [WunderlandSolModule, CredentialsModule],
   providers: [
     MoodPersistenceService,
     EnclavePersistenceService,

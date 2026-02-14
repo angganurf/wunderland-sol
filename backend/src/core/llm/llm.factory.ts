@@ -11,10 +11,12 @@ import { OpenAiLlmService } from './openai.llm.service.js';
 import { OpenRouterLlmService } from './openrouter.llm.service.js';
 import { AnthropicLlmService } from './anthropic.llm.service.js';
 import { OllamaLlmService } from './ollama.llm.service.js';
+import { createHash } from 'node:crypto';
 import {
   IChatMessage,
   ILlmResponse,
   ILlmService,
+  ILlmProviderConfig,
   IChatCompletionParams,
   ILlmTool,
 } from './llm.interfaces.js';
@@ -23,6 +25,47 @@ import { getModelPrice } from '../../../config/models.config.js';
 
 let llmConfigService: LlmConfigService;
 const serviceCache: Map<LlmProviderId | string, ILlmService> = new Map();
+const runtimeServiceCache: Map<string, ILlmService> = new Map();
+
+function stableHash(value: string): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, 12);
+}
+
+function runtimeServiceCacheKey(config: ILlmProviderConfig): string {
+  const providerId = String(config.providerId || '').toLowerCase();
+  const baseUrl = config.baseUrl || '';
+  const keyHash = config.apiKey ? stableHash(config.apiKey) : 'no-key';
+  const headersHash = config.additionalHeaders ? stableHash(JSON.stringify(config.additionalHeaders)) : 'no-headers';
+  const model = config.defaultModel || '';
+  return `runtime:${providerId}:${keyHash}:${stableHash(baseUrl)}:${headersHash}:${stableHash(model)}`;
+}
+
+function getRuntimeLlmService(providerConfig: ILlmProviderConfig): ILlmService {
+  const key = runtimeServiceCacheKey(providerConfig);
+  const cached = runtimeServiceCache.get(key);
+  if (cached) return cached;
+
+  let service: ILlmService;
+  switch (String(providerConfig.providerId).toLowerCase()) {
+    case LlmProviderId.OPENAI:
+      service = new OpenAiLlmService(providerConfig);
+      break;
+    case LlmProviderId.OPENROUTER:
+      service = new OpenRouterLlmService(providerConfig);
+      break;
+    case LlmProviderId.ANTHROPIC:
+      service = new AnthropicLlmService(providerConfig);
+      break;
+    case LlmProviderId.OLLAMA:
+      service = new OllamaLlmService(providerConfig);
+      break;
+    default:
+      throw new Error(`[LLM Factory] Unsupported runtime provider: ${String(providerConfig.providerId)}`);
+  }
+
+  runtimeServiceCache.set(key, service);
+  return service;
+}
 
 /**
  * Initializes the LLM configuration service. Must be called once at application startup.
@@ -257,4 +300,54 @@ export async function callLlm(
     }
     throw error; // Re-throw error if not retryable or no fallback
   }
+}
+
+/**
+ * Unified function to make a chat completion request to an LLM using a runtime provider config
+ * (e.g., agent-specific API keys stored in the credential vault).
+ *
+ * NOTE: Does not use the global LlmConfigService providerConfigs; it instantiates/caches
+ * per-config services keyed by a hash of the API key + baseUrl + headers.
+ */
+export async function callLlmWithProviderConfig(
+  messages: IChatMessage[],
+  modelId: string | undefined,
+  params: IChatCompletionParams | undefined,
+  providerConfig: ILlmProviderConfig,
+  userIdForCostTracking: string = 'system_user_llm_factory'
+): Promise<ILlmResponse> {
+  const providerId = String(providerConfig.providerId || '').toLowerCase() as LlmProviderId | string;
+  const effectiveModelId = modelId || providerConfig.defaultModel;
+  if (!effectiveModelId) {
+    throw new Error(`[LLM Factory] No model ID provided and no default model configured for provider: ${providerId}`);
+  }
+
+  const service = getRuntimeLlmService(providerConfig);
+  const completionParams: IChatCompletionParams = {
+    ...params,
+    tools: params?.tools,
+    tool_choice: params?.tool_choice,
+  };
+
+  const response = await service.generateChatCompletion(messages, effectiveModelId, completionParams);
+
+  const modelPriceInfo = getModelPrice(response.model || effectiveModelId);
+  if (response.usage && modelPriceInfo) {
+    const cost =
+      ((response.usage.prompt_tokens || 0) / 1000) * modelPriceInfo.inputCostPer1K +
+      ((response.usage.completion_tokens || 0) / 1000) * modelPriceInfo.outputCostPer1K;
+    CostService.trackCost(
+      userIdForCostTracking,
+      'llm',
+      cost,
+      response.model || effectiveModelId,
+      response.usage.prompt_tokens || 0,
+      'tokens',
+      response.usage.completion_tokens || 0,
+      'tokens',
+      { provider: providerId, runtimeConfig: true, hasToolCalls: !!response.toolCalls?.length },
+    );
+  }
+
+  return response;
 }

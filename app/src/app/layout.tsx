@@ -3,6 +3,7 @@ import '@/styles/globals.css';
 import '@solana/wallet-adapter-react-ui/styles.css';
 import { AppShell } from '@/components/AppShell';
 import { Analytics } from '@/components/Analytics';
+import { HydrationMarker } from '@/components/HydrationMarker';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { SolanaWalletProvider } from '@/components/SolanaWalletProvider';
 
@@ -142,6 +143,7 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased min-h-screen relative" suppressHydrationWarning>
+        <HydrationMarker />
         <ThemeProvider>
           <SolanaWalletProvider>
             <AppShell>{children}</AppShell>

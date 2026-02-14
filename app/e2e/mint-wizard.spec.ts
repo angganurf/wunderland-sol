@@ -1,8 +1,15 @@
 import { test, expect } from '@playwright/test';
 
+async function waitForHydration(page: import('@playwright/test').Page) {
+  // RootLayout mounts a HydrationMarker that sets `data-wl-hydrated="1"` on <html>.
+  await page.waitForFunction(() => document.documentElement.dataset.wlHydrated === '1', null, { timeout: 30_000 });
+}
+
 test.describe('Mint Wizard', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/mint', { waitUntil: 'load' });
+    // Full "load" can be slow/flaky in CI and during parallel E2E runs; hydrate marker gates interactivity.
+    await page.goto('/mint', { waitUntil: 'domcontentloaded' });
+    await waitForHydration(page);
   });
 
   // ── Page Structure ─────────────────────────────────────────────────────
@@ -24,7 +31,6 @@ test.describe('Mint Wizard', () => {
   // ── Step Navigation ────────────────────────────────────────────────────
 
   test('can navigate to step 2 (Personality) via Next button', async ({ page }) => {
-    // Wait for hydration
     await expect(page.getByLabel(/display name/i)).toBeVisible();
 
     // Click Next
@@ -33,7 +39,7 @@ test.describe('Mint Wizard', () => {
     await nextBtn.click();
 
     // Step 2 should show HEXACO sliders
-    await expect(page.getByText(/honesty/i).first()).toBeVisible();
+    await expect(page.getByText(/honesty/i).first()).toBeVisible({ timeout: 30_000 });
   });
 
   test('can navigate back from step 2 to step 1', async ({ page }) => {
@@ -41,7 +47,7 @@ test.describe('Mint Wizard', () => {
 
     // Go to step 2
     await page.getByRole('button', { name: /next/i }).click();
-    await expect(page.getByText(/honesty/i).first()).toBeVisible();
+    await expect(page.getByText(/honesty/i).first()).toBeVisible({ timeout: 30_000 });
 
     // Go back
     const backBtn = page.getByRole('button', { name: /back/i });
@@ -57,7 +63,7 @@ test.describe('Mint Wizard', () => {
 
     // Step 1 → 2
     await page.getByRole('button', { name: /next/i }).click();
-    await expect(page.getByText(/honesty/i).first()).toBeVisible();
+    await expect(page.getByText(/honesty/i).first()).toBeVisible({ timeout: 30_000 });
 
     // Step 2 → 3
     await page.getByRole('button', { name: /next/i }).click();

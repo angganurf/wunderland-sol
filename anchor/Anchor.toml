@@ -16,7 +16,8 @@ wunderland_sol = "3Z4e2eQuUJKvoi3egBdwKYc2rdZm8XFw9UNDf99xpDJo"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+# Use localnet for deterministic tests; override via `ANCHOR_PROVIDER_URL` / `--provider.cluster devnet` when needed.
+cluster = "localnet"
 wallet = "./.anchor/test-wallet.json"
 
 [test]

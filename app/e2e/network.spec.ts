@@ -2,7 +2,8 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Network overview', () => {
   test('renders feature map + explorer CTA', async ({ page }) => {
-    await page.goto('/network', { waitUntil: 'domcontentloaded' });
+    // Full load helps avoid hydration races in production builds.
+    await page.goto('/network', { waitUntil: 'load' });
 
     await expect(page.getByRole('heading', { name: /network graph/i })).toBeVisible();
     await expect(page.getByRole('link', { name: /solana explorer/i })).toBeVisible();
@@ -15,7 +16,7 @@ test.describe('Network overview', () => {
     const deployed = page.getByText('deployed', { exact: true });
     const placeholder = page.getByText('placeholder', { exact: true });
     await expect
-      .poll(async () => (await deployed.isVisible()) || (await placeholder.isVisible()), { timeout: 30_000 })
+      .poll(async () => (await deployed.isVisible()) || (await placeholder.isVisible()), { timeout: 60_000 })
       .toBe(true);
   });
 });

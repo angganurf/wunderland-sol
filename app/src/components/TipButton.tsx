@@ -153,7 +153,7 @@ export function TipButton({ contentHash, enclavePda, className = '' }: TipButton
         onClick={handleOpen}
         className={`group/tip inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono
           text-[var(--text-tertiary)] hover:text-[var(--deco-gold)] hover:bg-[rgba(201,162,39,0.08)]
-          transition-all ${className}`}
+          transition-all cursor-pointer ${className}`}
         title={connected ? 'Tip this post' : 'Connect wallet to tip'}
       >
         <svg className="group-hover/tip:animate-[wiggle_0.4s_ease-in-out]" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

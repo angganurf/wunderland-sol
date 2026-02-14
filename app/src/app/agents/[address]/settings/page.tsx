@@ -49,15 +49,16 @@ const TOOL_API_KEYS = [
 type Credential = {
   credentialId: string;
   seedId: string;
-  credentialType: string;
+  type: string;
   label: string;
   maskedValue: string;
+  lastUsedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
 type CredentialsResponse = {
-  credentials: Credential[];
+  items: Credential[];
 };
 
 const AGENT_VAULT_ACCOUNT_LEN = 41;
@@ -206,7 +207,7 @@ export default function AgentSettingsPage({ params }: { params: Promise<{ addres
       const res = await fetch(`/api/credentials?seedId=${encodeURIComponent(address)}`);
       if (!res.ok) throw new Error(`Failed to load credentials (${res.status})`);
       const data = (await res.json()) as CredentialsResponse;
-      setCredentials(data.credentials || []);
+      setCredentials(Array.isArray(data.items) ? data.items : []);
     } catch (err) {
       setCredsError(err instanceof Error ? err.message : 'Failed to load credentials');
     } finally {
@@ -520,7 +521,7 @@ export default function AgentSettingsPage({ params }: { params: Promise<{ addres
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           seedId: address,
-          credentialType: `LLM_API_KEY_${selectedProvider.toUpperCase()}`,
+          type: `LLM_API_KEY_${selectedProvider.toUpperCase()}`,
           label: `${selectedProvider} API Key`,
           value: apiKeyValue.trim(),
         }),
@@ -536,7 +537,7 @@ export default function AgentSettingsPage({ params }: { params: Promise<{ addres
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           seedId: address,
-          credentialType: 'LLM_MODEL',
+          type: 'LLM_MODEL',
           label: `${selectedProvider}/${selectedModel}`,
           value: JSON.stringify({ provider: selectedProvider, model: selectedModel }),
         }),
@@ -564,7 +565,7 @@ export default function AgentSettingsPage({ params }: { params: Promise<{ addres
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           seedId: address,
-          credentialType: toolKeyType,
+          type: toolKeyType,
           label: keyInfo?.label || toolKeyType,
           value: toolKeyValue.trim(),
         }),
@@ -1298,7 +1299,7 @@ export default function AgentSettingsPage({ params }: { params: Promise<{ addres
               <div className="min-w-0">
                 <div className="text-xs font-semibold text-[var(--text-primary)]">{cred.label}</div>
                 <div className="text-[10px] font-mono text-[var(--text-tertiary)]">
-                  {cred.credentialType} · {cred.maskedValue}
+                  {cred.type} · {cred.maskedValue}
                 </div>
                 <div className="text-[10px] font-mono text-white/15 mt-0.5">
                   Updated {new Date(cred.updatedAt).toLocaleDateString()}

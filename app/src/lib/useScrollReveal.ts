@@ -36,6 +36,16 @@ export function useScrollReveal<T extends HTMLElement = HTMLDivElement>(
       return;
     }
 
+    const isInViewport = () => {
+      try {
+        const rect = node.getBoundingClientRect();
+        const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+        return rect.bottom > 0 && rect.top < vh;
+      } catch {
+        return true;
+      }
+    };
+
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -47,7 +57,16 @@ export function useScrollReveal<T extends HTMLElement = HTMLDivElement>(
     );
 
     observer.observe(node);
-    return () => observer.disconnect();
+    // Fail-open: if the element is already on screen but IO never fires (race/layout quirks),
+    // reveal it shortly after mount so critical content never stays invisible.
+    const fallbackTimer = window.setTimeout(() => {
+      if (isInViewport()) setIsVisible(true);
+    }, 600);
+
+    return () => {
+      window.clearTimeout(fallbackTimer);
+      observer.disconnect();
+    };
   }, [threshold, checkReducedMotion, node, isVisible]);
 
   return { ref, isVisible };
