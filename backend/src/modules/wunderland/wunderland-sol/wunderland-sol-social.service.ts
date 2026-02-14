@@ -867,13 +867,92 @@ export class WunderlandSolSocialService {
       [raw],
     );
 
-    if (!row) return null;
+    if (!row) {
+      // If the ID looks like a UUID (from DB fallback posts), look up wunderland_posts directly.
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (UUID_RE.test(raw)) {
+        return this.getPostByUuid(raw);
+      }
+      return null;
+    }
     const post = rowToApiPost(row);
     if (opts?.includeIpfsContent !== false) {
       const [filled] = await this.fillMissingIpfsContent([post]);
       return filled ?? post;
     }
     return post;
+  }
+
+  /**
+   * Look up a single post from wunderland_posts by its UUID post_id.
+   * Used for DB-fallback posts that haven't been anchored to Solana yet.
+   */
+  private async getPostByUuid(postId: string): Promise<SolPostApi | null> {
+    const row = await this.db.get<{
+      post_id: string;
+      seed_id: string;
+      content: string;
+      manifest: string | null;
+      reply_to_post_id: string | null;
+      likes: number | null;
+      downvotes: number | null;
+      replies: number | null;
+      created_at: number;
+      content_hash_hex: string | null;
+      manifest_hash_hex: string | null;
+      subreddit_id: string | null;
+    }>(
+      `
+        SELECT wp.post_id, wp.seed_id, wp.content, wp.manifest, wp.reply_to_post_id,
+               wp.likes, wp.downvotes, wp.replies, wp.created_at,
+               wp.content_hash_hex, wp.manifest_hash_hex, wp.subreddit_id
+          FROM wunderland_posts wp
+         WHERE wp.post_id = ? AND wp.status = 'published'
+         LIMIT 1
+      `,
+      [postId],
+    );
+    if (!row) return null;
+
+    const seedId = String(row.seed_id ?? '');
+    let agentName = seedId.slice(0, 8) + '…';
+    let agentLevel = 'Newcomer';
+    let agentTraits = safeTraits(null);
+    try {
+      const agentRow = await this.db.get<{
+        display_name: string | null;
+        level_label: string | null;
+        traits_json: string | null;
+      }>(
+        `SELECT display_name, level_label, traits_json FROM wunderland_sol_agents WHERE agent_pda = ? LIMIT 1`,
+        [seedId],
+      );
+      if (agentRow) {
+        agentName = agentRow.display_name ? String(agentRow.display_name) : agentName;
+        agentLevel = agentRow.level_label ? String(agentRow.level_label) : agentLevel;
+        agentTraits = safeTraits(agentRow.traits_json ?? null);
+      }
+    } catch { /* non-critical */ }
+
+    const createdAtMs = Number(row.created_at ?? 0);
+    return {
+      id: String(row.post_id),
+      kind: row.reply_to_post_id ? 'comment' as const : 'post' as const,
+      replyTo: row.reply_to_post_id ? String(row.reply_to_post_id) : undefined,
+      agentAddress: seedId,
+      agentPda: seedId,
+      agentName,
+      agentLevel,
+      agentTraits,
+      postIndex: 0,
+      content: String(row.content ?? ''),
+      contentHash: row.content_hash_hex ? String(row.content_hash_hex) : '',
+      manifestHash: row.manifest_hash_hex ? String(row.manifest_hash_hex) : '',
+      upvotes: Number(row.likes ?? 0),
+      downvotes: Number(row.downvotes ?? 0),
+      commentCount: Number(row.replies ?? 0),
+      timestamp: new Date(Number.isFinite(createdAtMs) ? createdAtMs : 0).toISOString(),
+    };
   }
 
   async getThread(opts: {
