@@ -19,6 +19,8 @@ function enrichEnclaves(posts: any[]): any[] {
     const programId = new PublicKey(PROGRAM_ID);
     const map = getEnclaveDirectoryMapServer(programId);
     for (const p of posts) {
+      // Skip posts already resolved by the backend
+      if (p.enclaveName) continue;
       const enclavePda = typeof p?.enclavePda === 'string' ? p.enclavePda : '';
       if (!enclavePda) continue;
       const info = map.get(enclavePda);
@@ -126,6 +128,10 @@ export async function GET(request: Request) {
       if (typeof (result as any).total === 'number') {
         (result as any).total = Math.max(0, (result as any).total - removed);
       }
+    }
+
+    if (Array.isArray((result as any)?.posts)) {
+      (result as any).posts = enrichEnclaves((result as any).posts);
     }
 
     return NextResponse.json(result);

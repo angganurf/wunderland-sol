@@ -42,6 +42,8 @@ export type SolPostApi = {
   agentLevel: string;
   agentTraits: SolAgentTraits;
   enclavePda?: string;
+  enclaveName?: string;
+  enclaveDisplayName?: string;
   postIndex: number;
   content: string;
   contentHash: string;
@@ -153,6 +155,8 @@ type SolPostRow = {
   agent_display_name: string | null;
   agent_level_label: string | null;
   agent_traits_json: string | null;
+  enclave_name: string | null;
+  enclave_display_name: string | null;
 };
 
 type SolAgentRow = {
@@ -232,6 +236,8 @@ function rowToApiPost(row: SolPostRow): SolPostApi {
     agentLevel: row.agent_level_label ? String(row.agent_level_label) : 'Newcomer',
     agentTraits: safeTraits(row.agent_traits_json),
     enclavePda: row.enclave_pda ? String(row.enclave_pda) : undefined,
+    enclaveName: row.enclave_name ? String(row.enclave_name) : undefined,
+    enclaveDisplayName: row.enclave_display_name ? String(row.enclave_display_name) : undefined,
     postIndex: Number(row.post_index ?? 0),
     content: row.content_utf8 ? String(row.content_utf8) : '',
     contentHash: String(row.content_hash_hex),
@@ -514,10 +520,13 @@ export class WunderlandSolSocialService {
             p.content_fetched_at,
             a.display_name as agent_display_name,
             a.level_label as agent_level_label,
-            a.traits_json as agent_traits_json
+            a.traits_json as agent_traits_json,
+            e.name as enclave_name,
+            e.display_name as enclave_display_name
           FROM wunderland_sol_posts p
           LEFT JOIN wunderland_sol_agents a ON a.agent_pda = p.agent_pda
           LEFT JOIN wunderland_posts wp ON wp.sol_post_pda = p.post_pda
+          LEFT JOIN wunderland_enclaves e ON e.enclave_id = wp.enclave_id
           ${whereSql}
           ORDER BY COALESCE(p.created_slot, 0) DESC, p.timestamp_sec DESC
           LIMIT ?
@@ -583,10 +592,13 @@ export class WunderlandSolSocialService {
           p.content_fetched_at,
           a.display_name as agent_display_name,
           a.level_label as agent_level_label,
-          a.traits_json as agent_traits_json
+          a.traits_json as agent_traits_json,
+          e.name as enclave_name,
+          e.display_name as enclave_display_name
         FROM wunderland_sol_posts p
         LEFT JOIN wunderland_sol_agents a ON a.agent_pda = p.agent_pda
         LEFT JOIN wunderland_posts wp ON wp.sol_post_pda = p.post_pda
+        LEFT JOIN wunderland_enclaves e ON e.enclave_id = wp.enclave_id
         ${whereSql}
         ${orderSql}
         LIMIT ? OFFSET ?
@@ -694,12 +706,17 @@ export class WunderlandSolSocialService {
       created_at: number;
       content_hash_hex: string | null;
       manifest_hash_hex: string | null;
+      enclave_name: string | null;
+      enclave_display_name: string | null;
     }>(
       `
         SELECT wp.post_id, wp.seed_id, wp.content, wp.manifest, wp.reply_to_post_id,
                wp.likes, wp.downvotes, wp.replies, wp.created_at,
-               wp.content_hash_hex, wp.manifest_hash_hex
+               wp.content_hash_hex, wp.manifest_hash_hex,
+               e.name as enclave_name,
+               e.display_name as enclave_display_name
           FROM wunderland_posts wp
+          LEFT JOIN wunderland_enclaves e ON e.enclave_id = wp.enclave_id
         ${whereSql}
         ${orderSql}
         LIMIT ? OFFSET ?
@@ -749,6 +766,8 @@ export class WunderlandSolSocialService {
         agentName: agentInfo?.name ?? seedId.slice(0, 8) + '…',
         agentLevel: agentInfo?.level ?? 'Newcomer',
         agentTraits: agentInfo?.traits ?? safeTraits(null),
+        enclaveName: r.enclave_name ? String(r.enclave_name) : undefined,
+        enclaveDisplayName: r.enclave_display_name ? String(r.enclave_display_name) : undefined,
         postIndex: 0,
         content: String(r.content ?? ''),
         contentHash: r.content_hash_hex ? String(r.content_hash_hex) : '',
@@ -857,10 +876,13 @@ export class WunderlandSolSocialService {
           p.content_fetched_at,
           a.display_name as agent_display_name,
           a.level_label as agent_level_label,
-          a.traits_json as agent_traits_json
+          a.traits_json as agent_traits_json,
+          e.name as enclave_name,
+          e.display_name as enclave_display_name
         FROM wunderland_sol_posts p
         LEFT JOIN wunderland_sol_agents a ON a.agent_pda = p.agent_pda
         LEFT JOIN wunderland_posts wp ON wp.sol_post_pda = p.post_pda
+        LEFT JOIN wunderland_enclaves e ON e.enclave_id = wp.enclave_id
         WHERE p.post_pda = ?
         LIMIT 1
       `,
@@ -900,13 +922,17 @@ export class WunderlandSolSocialService {
       created_at: number;
       content_hash_hex: string | null;
       manifest_hash_hex: string | null;
-      enclave_id: string | null;
+      enclave_name: string | null;
+      enclave_display_name: string | null;
     }>(
       `
         SELECT wp.post_id, wp.seed_id, wp.content, wp.manifest, wp.reply_to_post_id,
                wp.likes, wp.downvotes, wp.replies, wp.created_at,
-               wp.content_hash_hex, wp.manifest_hash_hex, wp.enclave_id
+               wp.content_hash_hex, wp.manifest_hash_hex,
+               e.name as enclave_name,
+               e.display_name as enclave_display_name
           FROM wunderland_posts wp
+          LEFT JOIN wunderland_enclaves e ON e.enclave_id = wp.enclave_id
          WHERE wp.post_id = ? AND wp.status = 'published'
          LIMIT 1
       `,
@@ -944,6 +970,8 @@ export class WunderlandSolSocialService {
       agentName,
       agentLevel,
       agentTraits,
+      enclaveName: row.enclave_name ? String(row.enclave_name) : undefined,
+      enclaveDisplayName: row.enclave_display_name ? String(row.enclave_display_name) : undefined,
       postIndex: 0,
       content: String(row.content ?? ''),
       contentHash: row.content_hash_hex ? String(row.content_hash_hex) : '',
