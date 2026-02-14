@@ -22,12 +22,19 @@ import type { HEXACOTraits } from '../core/types.js';
 import type { DynamicVoiceProfile, VoiceArchetype } from './DynamicVoiceProfile.js';
 import type { ITool, ToolExecutionContext, ToolExecutionResult } from '@framers/agentos';
 
+/** A single part of a multimodal message (OpenAI vision format). */
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail?: 'low' | 'high' | 'auto' } };
+
 /**
  * LLM message format for tool-calling conversations.
+ * `content` may be a plain string or an array of multimodal content parts
+ * (text + images) for vision-capable models.
  */
 export interface LLMMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | null;
+  content: string | ContentPart[] | null;
   tool_calls?: Array<{
     id: string;
     type: 'function';
@@ -376,9 +383,12 @@ export class NewsroomAgency {
     // Prepare tool definitions for the LLM
     const toolDefs = this.getToolDefinitionsForLLM();
 
+    // Build user message — multimodal if stimulus contains image URLs
+    const userMessage = buildMultimodalUserMessage(userPrompt, stimulus);
+
     const messages: LLMMessage[] = [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
+      userMessage,
     ];
 
     const modelId = this.config.seedConfig.inferenceHierarchy?.primaryModel?.modelId || 'gpt-4o-mini';
@@ -714,4 +724,76 @@ export class NewsroomAgency {
     }
     return this.postsThisHour < this.config.maxPostsPerHour;
   }
+}
+
+// ============================================================================
+// Vision Utilities
+// ============================================================================
+
+/** Common image file extensions for URL detection. */
+const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|svg|bmp|avif)(\?[^)]*)?$/i;
+
+/** Markdown image pattern: ![alt](url) */
+const MARKDOWN_IMAGE_RE = /!\[[^\]]*\]\(([^)]+)\)/g;
+
+/** Bare image URL pattern (http/https ending in image extension). */
+const BARE_IMAGE_URL_RE = /https?:\/\/[^\s"'<>]+\.(jpg|jpeg|png|gif|webp|svg|bmp|avif)(\?[^\s"'<>]*)?/gi;
+
+/**
+ * Extract image URLs from text content (markdown images + bare image URLs).
+ * Returns unique URLs, max 4 to avoid token explosion.
+ */
+function extractImageUrls(text: string): string[] {
+  const urls = new Set<string>();
+
+  let match: RegExpExecArray | null;
+  while ((match = MARKDOWN_IMAGE_RE.exec(text)) !== null) {
+    if (match[1] && IMAGE_EXTENSIONS.test(match[1])) {
+      urls.add(match[1]);
+    }
+  }
+
+  while ((match = BARE_IMAGE_URL_RE.exec(text)) !== null) {
+    urls.add(match[0]);
+  }
+
+  return [...urls].slice(0, 4);
+}
+
+/**
+ * Build a multimodal user message with text + image content parts.
+ */
+function buildMultimodalUserMessage(
+  textContent: string,
+  stimulus: StimulusEvent,
+): LLMMessage {
+  const imageUrls: string[] = [];
+
+  const payload = stimulus.payload;
+  if ('sourceUrl' in payload && typeof payload.sourceUrl === 'string' && IMAGE_EXTENSIONS.test(payload.sourceUrl)) {
+    imageUrls.push(payload.sourceUrl);
+  }
+  if ('body' in payload && typeof payload.body === 'string') {
+    imageUrls.push(...extractImageUrls(payload.body));
+  }
+  if ('content' in payload && typeof payload.content === 'string') {
+    imageUrls.push(...extractImageUrls(payload.content));
+  }
+  imageUrls.push(...extractImageUrls(textContent));
+
+  const uniqueUrls = [...new Set(imageUrls)].slice(0, 4);
+
+  if (uniqueUrls.length === 0) {
+    return { role: 'user', content: textContent };
+  }
+
+  const parts: ContentPart[] = [
+    { type: 'text', text: textContent },
+    ...uniqueUrls.map((url): ContentPart => ({
+      type: 'image_url',
+      image_url: { url, detail: 'low' },
+    })),
+  ];
+
+  return { role: 'user', content: parts };
 }
