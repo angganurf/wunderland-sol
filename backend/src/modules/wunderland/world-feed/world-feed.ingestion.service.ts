@@ -14,6 +14,15 @@ import axios from 'axios';
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { DatabaseService } from '../../../database/database.service.js';
 
+// Puppeteer-core for headless Chromium Reddit scraping (Reddit blocks datacenter IPs).
+// Uses system-installed Chromium (/usr/bin/chromium) set via PUPPETEER_EXECUTABLE_PATH env.
+let puppeteer: typeof import('puppeteer-core') | null = null;
+try {
+  puppeteer = await import('puppeteer-core');
+} catch {
+  // puppeteer-core not installed — will fall back to Serper/API fetching
+}
+
 type WorldFeedSourceRow = {
   source_id: string;
   name: string;
@@ -295,8 +304,10 @@ export class WorldFeedIngestionService implements OnModuleInit, OnModuleDestroy 
     const timeoutMs = Number(process.env.WUNDERLAND_WORLD_FEED_INGESTION_HTTP_TIMEOUT_MS ?? 15000);
 
     try {
-      const fetched =
-        source.type === 'rss'
+      const isRedditSource = source.url!.includes('reddit.com');
+      const fetched = isRedditSource
+        ? await this.fetchRedditViaSerper(source.url!, { timeoutMs })
+        : source.type === 'rss'
           ? await this.fetchRss(source.url!, { timeoutMs })
           : await this.fetchApi(source.url!, { timeoutMs });
 
@@ -423,6 +434,155 @@ export class WorldFeedIngestionService implements OnModuleInit, OnModuleDestroy 
     return parseRssOrAtom(xml);
   }
 
+  /**
+   * Fetch Reddit content using Puppeteer (headless Chromium) to bypass API blocks.
+   * Falls back to Serper Google Search if Puppeteer/Chromium is unavailable.
+   * Reddit blocks datacenter IPs for API/RSS but serves pages to real browsers.
+   */
+  private async fetchRedditViaSerper(
+    redditUrl: string,
+    options: { timeoutMs: number }
+  ): Promise<IngestedWorldFeedItem[]> {
+    const match = redditUrl.match(/reddit\.com\/r\/([^/.?]+)/i);
+    const subreddit = match?.[1] ?? 'artificial';
+
+    // Try Puppeteer first
+    const browserResults = await this.fetchRedditViaBrowser(subreddit, options);
+    if (browserResults.length > 0) return browserResults;
+
+    // Fallback: Serper Google Search
+    return this.fetchRedditViaSerperSearch(subreddit, options);
+  }
+
+  /**
+   * Scrape Reddit using headless Chromium via old.reddit.com (simpler DOM).
+   */
+  private async fetchRedditViaBrowser(
+    subreddit: string,
+    options: { timeoutMs: number }
+  ): Promise<IngestedWorldFeedItem[]> {
+    if (!puppeteer) {
+      this.logger.debug('puppeteer-core not available — skipping browser Reddit fetch');
+      return [];
+    }
+
+    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium';
+
+    let browser: import('puppeteer-core').Browser | null = null;
+    try {
+      browser = await puppeteer.launch({
+        executablePath,
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--single-process',
+        ],
+        timeout: options.timeoutMs,
+      });
+
+      const page = await browser.newPage();
+      await page.setUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+      );
+
+      // Use old.reddit.com for simpler HTML structure
+      await page.goto(`https://old.reddit.com/r/${subreddit}/hot`, {
+        waitUntil: 'domcontentloaded',
+        timeout: options.timeoutMs,
+      });
+
+      // Extract posts from old Reddit DOM
+      const posts = await page.evaluate(() => {
+        const things = document.querySelectorAll('#siteTable > .thing.link');
+        const results: Array<{ title: string; url: string; selftext: string; score: string }> = [];
+        things.forEach((el) => {
+          const titleEl = el.querySelector('a.title');
+          const scoreEl = el.querySelector('.score.unvoted');
+          const mdEl = el.querySelector('.md');
+          if (titleEl) {
+            results.push({
+              title: titleEl.textContent?.trim() || '',
+              url: (titleEl as HTMLAnchorElement).href || '',
+              selftext: mdEl?.textContent?.trim().slice(0, 300) || '',
+              score: scoreEl?.textContent?.trim() || '0',
+            });
+          }
+        });
+        return results.slice(0, 25);
+      });
+
+      this.logger.log(`Puppeteer scraped ${posts.length} posts from r/${subreddit}`);
+
+      return posts
+        .filter((p) => p.title)
+        .map((p) => ({
+          externalId: p.url || p.title,
+          title: p.title,
+          summary: p.selftext || `${p.score} points on r/${subreddit}`,
+          url: p.url || null,
+          category: subreddit,
+        }));
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Puppeteer Reddit fetch for r/${subreddit} failed: ${msg}`);
+      return [];
+    } finally {
+      if (browser) {
+        await browser.close().catch(() => {});
+      }
+    }
+  }
+
+  /**
+   * Fallback: Fetch Reddit via Serper (Google Search API).
+   */
+  private async fetchRedditViaSerperSearch(
+    subreddit: string,
+    options: { timeoutMs: number }
+  ): Promise<IngestedWorldFeedItem[]> {
+    const serperKey = process.env.SERPER_API_KEY;
+    if (!serperKey) {
+      this.logger.warn('SERPER_API_KEY not set — no Reddit fallback available');
+      return [];
+    }
+
+    const query = `site:reddit.com/r/${subreddit} -site:reddit.com/r/${subreddit}/wiki`;
+
+    try {
+      const res = await axios.post<any>(
+        'https://google.serper.dev/search',
+        { q: query, num: 20, tbs: 'qdr:d' },
+        {
+          timeout: options.timeoutMs,
+          headers: {
+            'X-API-KEY': serperKey,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      const organic: Array<{ title: string; snippet: string; link: string; date?: string }> =
+        res.data?.organic ?? [];
+
+      return organic
+        .filter((r) => r.title && r.link)
+        .map((result) => ({
+          externalId: result.link,
+          title: result.title.replace(/ : r\/\w+$/, '').replace(/ - Reddit$/, ''),
+          summary: result.snippet || null,
+          url: result.link,
+          category: subreddit,
+        }));
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Serper Reddit fallback for r/${subreddit} failed: ${msg}`);
+      return [];
+    }
+  }
+
   private async fetchApi(
     url: string,
     options: { timeoutMs: number }
@@ -430,6 +590,10 @@ export class WorldFeedIngestionService implements OnModuleInit, OnModuleDestroy 
     const res = await axios.get<any>(url, {
       timeout: options.timeoutMs,
       validateStatus: (status) => status >= 200 && status < 300,
+      headers: {
+        'User-Agent': 'WunderlandBot/1.0 (feed reader; +https://wunderland.sh)',
+        'Accept': 'application/json, */*',
+      },
     });
 
     const data = res.data as any;

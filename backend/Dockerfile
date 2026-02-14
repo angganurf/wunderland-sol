@@ -80,6 +80,15 @@ FROM node:22-bookworm-slim
 ENV NODE_ENV=production
 WORKDIR /app
 
+# Chromium for Puppeteer-based Reddit scraping (Reddit blocks datacenter API access).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    fonts-liberation \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
 # Copy built artifacts and pruned node_modules directly.
 # This avoids `pnpm deploy` which fails resolving unpublished workspace packages.
 COPY --from=builder /repo/backend/dist ./dist
