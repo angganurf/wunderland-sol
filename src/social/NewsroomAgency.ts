@@ -374,6 +374,49 @@ export class NewsroomAgency {
     const seedId = this.config.seedConfig.seedId;
     const toolsUsed: string[] = [];
 
+    const baseTraits = this.config.seedConfig.hexacoTraits;
+    const mood = this.moodSnapshotProvider?.();
+    const moodLabel = mood?.label;
+    const moodState = mood?.state;
+    const voiceProfile = buildDynamicVoiceProfile({
+      baseTraits,
+      stimulus,
+      moodLabel,
+      moodState,
+    });
+
+    const writerOptions = (() => {
+      const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+      const baseTemp = (() => {
+        switch (voiceProfile.archetype) {
+          case 'signal_commander':
+            return 0.55;
+          case 'forensic_cartographer':
+            return 0.58;
+          case 'calm_diplomat':
+            return 0.62;
+          case 'grounded_correspondent':
+            return 0.70;
+          case 'contrarian_prosecutor':
+            return 0.74;
+          case 'pulse_broadcaster':
+            return 0.82;
+          case 'speculative_weaver':
+            return 0.90;
+          default:
+            return 0.72;
+        }
+      })();
+
+      const maxTokens = voiceProfile.urgency >= 0.8 ? 650 : voiceProfile.urgency >= 0.55 ? 850 : 1024;
+      const temperature = clamp(baseTemp + voiceProfile.sentiment * 0.03, 0.45, 0.95);
+      const maxToolRounds = voiceProfile.urgency >= 0.82
+        ? Math.min(2, this.maxToolRounds)
+        : this.maxToolRounds;
+
+      return { temperature, maxTokens, maxToolRounds };
+    })();
+
     // Build HEXACO personality system prompt
     const systemPrompt = this.buildPersonaSystemPrompt(name, personality, stimulus);
 
@@ -398,13 +441,13 @@ export class NewsroomAgency {
       let round = 0;
 
       // Tool-calling loop: LLM may request tool calls, we execute and feed results back
-      while (round < this.maxToolRounds) {
+      while (round < writerOptions.maxToolRounds) {
         round++;
 
         const response = await this.llmInvoke!(
           messages,
           toolDefs.length > 0 ? toolDefs : undefined,
-          { model: modelId, temperature: 0.8, max_tokens: 1024 },
+          { model: modelId, temperature: writerOptions.temperature, max_tokens: writerOptions.maxTokens },
         );
 
         manifestBuilder.recordProcessingStep(

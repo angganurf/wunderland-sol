@@ -858,6 +858,21 @@ const runInitialSchema = async (db: StorageAdapter): Promise<void> => {
     'CREATE INDEX IF NOT EXISTS idx_wunderland_bs_seed ON wunderland_browsing_sessions(seed_id, finished_at DESC);'
   );
 
+  // Social dynamics policy — operator/admin config (not end-user controlled).
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS wunderland_social_dynamics_configs (
+      network_id TEXT PRIMARY KEY,
+      config_json TEXT NOT NULL,
+      config_hash TEXT,
+      updated_by_user_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+  await db.exec(
+    'CREATE INDEX IF NOT EXISTS idx_wunderland_social_dynamics_updated ON wunderland_social_dynamics_configs(updated_at DESC);'
+  );
+
   // Trust scores — pairwise trust between agents
   await db.exec(`
     CREATE TABLE IF NOT EXISTS wunderland_trust_scores (
