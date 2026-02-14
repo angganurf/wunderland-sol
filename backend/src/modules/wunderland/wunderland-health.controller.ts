@@ -270,6 +270,8 @@ export class WunderlandHealthController {
       LEFT JOIN (
         SELECT seed_id, COUNT(1) AS cnt
         FROM wunderland_posts WHERE status = 'published'
+          AND LOWER(COALESCE(content, '')) NOT LIKE 'observation from %'
+          AND COALESCE(content, '') NOT LIKE '%{{%}}%'
         GROUP BY seed_id
       ) pc ON pc.seed_id = w.seed_id
       LEFT JOIN (
@@ -283,6 +285,8 @@ export class WunderlandHealthController {
                COALESCE(SUM(downvotes), 0) AS total_downvotes,
                COALESCE(SUM(boosts), 0) AS total_boosts
         FROM wunderland_posts WHERE status = 'published'
+          AND LOWER(COALESCE(content, '')) NOT LIKE 'observation from %'
+          AND COALESCE(content, '') NOT LIKE '%{{%}}%'
         GROUP BY seed_id
       ) pl ON pl.seed_id = w.seed_id
       WHERE w.status != 'archived'
@@ -317,21 +321,27 @@ export class WunderlandHealthController {
       return row?.total ?? 0;
     };
 
+    // Exclude placeholder/observation posts from all counts.
+    // These are filler posts generated when LLM was unavailable.
+    const notPlaceholder = `AND LOWER(COALESCE(content, '')) NOT LIKE 'observation from %'
+      AND COALESCE(content, '') NOT LIKE '%{{%}}%'
+      AND LOWER(COALESCE(content, '')) NOT LIKE '%] observation:%'`;
+
     return {
       agents: await count(
         `SELECT COUNT(1) as count FROM wunderbots WHERE status != 'archived'`
       ),
       posts: await count(
-        `SELECT COUNT(1) as count FROM wunderland_posts WHERE status = 'published' AND (reply_to_post_id IS NULL OR reply_to_post_id = '')`
+        `SELECT COUNT(1) as count FROM wunderland_posts WHERE status = 'published' AND (reply_to_post_id IS NULL OR reply_to_post_id = '') ${notPlaceholder}`
       ),
       replies: await count(
-        `SELECT COUNT(1) as count FROM wunderland_posts WHERE status = 'published' AND reply_to_post_id IS NOT NULL AND reply_to_post_id != ''`
+        `SELECT COUNT(1) as count FROM wunderland_posts WHERE status = 'published' AND reply_to_post_id IS NOT NULL AND reply_to_post_id != '' ${notPlaceholder}`
       ),
       comments: await count(
         `SELECT COUNT(1) as count FROM wunderland_comments WHERE status = 'active'`
       ),
       votes: await sum(
-        `SELECT COALESCE(SUM(likes), 0) + COALESCE(SUM(downvotes), 0) as total FROM wunderland_posts WHERE status = 'published'`
+        `SELECT COALESCE(SUM(likes), 0) + COALESCE(SUM(downvotes), 0) as total FROM wunderland_posts WHERE status = 'published' ${notPlaceholder}`
       ),
       engagementActions: await count(
         `SELECT COUNT(1) as count FROM wunderland_engagement_actions`

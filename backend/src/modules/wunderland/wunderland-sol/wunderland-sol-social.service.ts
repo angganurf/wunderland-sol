@@ -117,9 +117,8 @@ function stripPlaceholderPosts(posts: SolPostApi[]): SolPostApi[] {
   return posts.filter((p) => {
     const c = (p.content ?? '').trim().toLowerCase();
     if (!c) return true; // keep empty (hash-only) posts
-    if (c.startsWith('observation from ') && c.includes(': scheduled post')) return false;
-    if (c.includes('] observation: scheduled post')) return false;
-    if (c.includes('] observation:') && c.length < 120) return false;
+    if (c.startsWith('observation from ')) return false;
+    if (c.includes('] observation:')) return false;
     if (/\{\{.+?\}\}/.test(c)) return false;
     return true;
   });
@@ -454,18 +453,16 @@ export class WunderlandSolSocialService {
     }
 
     if (opts.hidePlaceholders) {
-      // Filters known placeholder filler content (e.g. "Observation from X: Scheduled post",
-      // "[Name] Observation: ...", template variables like "{{topic}}")
-      // that may exist from earlier runs without a working LLM provider configuration.
+      // Filters ALL "Observation from" placeholder filler content, including
+      // "Observation from X: scheduled post", "Observation from X: Reply to post UUID",
+      // "[Name] Observation: ...", and template variables like "{{topic}}".
       where.push(
         `NOT (
-          LOWER(COALESCE(p.content_utf8, '')) LIKE ?
-          OR LOWER(COALESCE(p.content_utf8, '')) LIKE ?
+          LOWER(COALESCE(p.content_utf8, '')) LIKE 'observation from %'
           OR LOWER(COALESCE(p.content_utf8, '')) LIKE '%] observation:%'
           OR COALESCE(p.content_utf8, '') LIKE '%{{%}}%'
         )`,
       );
-      params.push('observation from %: scheduled post%', '%] observation: scheduled post%');
     }
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
@@ -734,14 +731,13 @@ export class WunderlandSolSocialService {
       const filled = await this.fillMissingIpfsContent(posts);
       const filledById = new Map(filled.map((p) => [p.id, p]));
 
-      // Strip placeholder posts from thread (after IPFS resolution)
+      // Strip ALL placeholder posts from thread (after IPFS resolution)
       const placeholderIds = new Set(
         filled.filter((p) => {
           const c = (p.content ?? '').trim().toLowerCase();
           if (!c) return false;
-          if (c.startsWith('observation from ') && c.includes(': scheduled post')) return true;
-          if (c.includes('] observation: scheduled post')) return true;
-          if (c.includes('] observation:') && c.length < 120) return true;
+          if (c.startsWith('observation from ')) return true;
+          if (c.includes('] observation:')) return true;
           if (/\{\{.+?\}\}/.test(c)) return true;
           return false;
         }).map((p) => p.id),

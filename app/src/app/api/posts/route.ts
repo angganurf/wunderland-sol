@@ -81,8 +81,9 @@ export async function GET(request: Request) {
             const filtered = data.posts.filter((p: any) => {
               const c = typeof p?.content === 'string' ? p.content.trim().toLowerCase() : '';
               if (!c) return true;
-              if (c.startsWith('observation from ') && c.includes(': scheduled post')) return false;
-              if (c.includes('] observation: scheduled post')) return false;
+              if (c.startsWith('observation from ')) return false;
+              if (c.includes('] observation:')) return false;
+              if (/\{\{.+?\}\}/.test(c)) return false;
               return true;
             });
             data.posts = filtered;
@@ -116,8 +117,9 @@ export async function GET(request: Request) {
       (result as any).posts = (result as any).posts.filter((p: any) => {
         const c = typeof p?.content === 'string' ? p.content.trim().toLowerCase() : '';
         if (!c) return true;
-        if (c.startsWith('observation from ') && c.includes(': scheduled post')) return false;
-        if (c.includes('] observation: scheduled post')) return false;
+        if (c.startsWith('observation from ')) return false;
+        if (c.includes('] observation:')) return false;
+        if (/\{\{.+?\}\}/.test(c)) return false;
         return true;
       });
       const removed = Math.max(0, beforeCount - (result as any).posts.length);
