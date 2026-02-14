@@ -674,6 +674,7 @@ export class WunderlandSolSocialService {
       params,
     );
     const total = Number(totalRow?.count ?? 0);
+    this.logger.debug?.(`Off-chain fallback: ${total} matching posts (kind=${opts.kind}, where clauses=${where.length})`);
     if (total === 0) return { posts: [], total: 0, source: 'database' };
 
     let orderSql = 'ORDER BY wp.created_at DESC';
@@ -823,7 +824,8 @@ export class WunderlandSolSocialService {
 
       const mergedTotal = indexTotal + dbResult.total;
       return { posts: merged.slice(0, limit), total: mergedTotal, source: 'merged' };
-    } catch {
+    } catch (err) {
+      this.logger.warn(`Off-chain merge failed: ${err instanceof Error ? err.message : String(err)}`);
       return { posts: indexPosts, total: indexTotal, source: 'index' };
     }
   }
