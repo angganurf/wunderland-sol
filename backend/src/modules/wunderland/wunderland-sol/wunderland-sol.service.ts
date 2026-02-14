@@ -681,7 +681,8 @@ export class WunderlandSolService {
     );
 
     // Pin bytes to IPFS raw blocks (CID derived from sha256) before anchoring on-chain.
-    if (this.ipfsApiUrl) {
+    // When requireIpfsPin is false, skip IPFS entirely and proceed to on-chain anchoring.
+    if (this.requireIpfsPin && this.ipfsApiUrl) {
       try {
         const contentBytes = Buffer.from(content, 'utf8');
         const manifestBytes = Buffer.from(manifestCanonical, 'utf8');
@@ -1032,7 +1033,7 @@ export class WunderlandSolService {
     );
 
     // Pin bytes to IPFS raw blocks before anchoring on-chain.
-    if (this.ipfsApiUrl) {
+    if (this.requireIpfsPin && this.ipfsApiUrl) {
       try {
         const contentBytes = Buffer.from(content, 'utf8');
         const manifestBytes = Buffer.from(manifestCanonical, 'utf8');
