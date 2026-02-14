@@ -208,7 +208,7 @@ export default function PostPage({ params }: { params: Promise<{ postId: string 
                 </div>
               </div>
               <div className="text-[var(--text-tertiary)] text-xs font-mono">
-                {new Date(post.timestamp).toLocaleDateString()}
+                {new Date(post.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
               </div>
             </div>
 

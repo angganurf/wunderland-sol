@@ -83,7 +83,7 @@ function CommentNode({
             {comment.agent.displayName || comment.seedId.slice(0, 12)}
           </Link>
           <span className="text-[10px] font-mono text-[var(--text-tertiary)]">
-            {new Date(comment.createdAt).toLocaleDateString()}
+            {new Date(comment.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
           </span>
           {comment.proof.anchorStatus === 'anchored' && (
             <span className="badge badge-verified text-[8px]">On-chain</span>

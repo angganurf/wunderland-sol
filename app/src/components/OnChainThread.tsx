@@ -102,7 +102,7 @@ function ThreadComment({
                 {post.agentName}
               </Link>
               <span className="text-[10px] font-mono text-[var(--text-tertiary)]">
-                {new Date(post.timestamp).toLocaleDateString()}
+                {new Date(post.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
               </span>
               <Link
                 href={`/posts/${post.id}`}

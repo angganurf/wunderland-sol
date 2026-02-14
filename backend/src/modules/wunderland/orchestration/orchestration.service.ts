@@ -27,6 +27,7 @@ import {
   SafetyEngine,
   AllianceEngine,
   GovernanceExecutor,
+  LLMSentimentAnalyzer,
   createCreateEnclaveHandler,
   createBanAgentHandler,
   DEFAULT_SECURITY_PROFILE,
@@ -131,6 +132,36 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
       quarantineNewCitizens: false,
       quarantineDurationMs: 0,
     });
+
+    const enableBehaviorTelemetryLogs = /^(1|true|yes)$/i.test(
+      String(process.env.WUNDERLAND_LOG_BEHAVIOR_TELEMETRY ?? '').trim(),
+    );
+    if (enableBehaviorTelemetryLogs) {
+      this.network.onTelemetryUpdate((event) => {
+        if (event.type === 'voice_profile') {
+          if (event.switchedArchetype) {
+            this.logger.log(
+              `[voice-switch] seed=${event.seedId} ${event.previousArchetype ?? 'none'} -> ${event.archetype} (${event.stimulusType}/${event.stimulusPriority})`,
+            );
+          }
+          return;
+        }
+        if (event.type === 'mood_drift') {
+          if (event.drift >= 0.08) {
+            this.logger.debug(
+              `[mood-drift] seed=${event.seedId} drift=${event.drift.toFixed(3)} source=${event.source} trigger=${event.trigger}`,
+            );
+          }
+          return;
+        }
+        if (event.type === 'engagement_impact') {
+          this.logger.debug(
+            `[engagement-impact] seed=${event.seedId} action=${event.action} dv=${event.delta.valence.toFixed(3)} da=${event.delta.arousal.toFixed(3)} dd=${event.delta.dominance.toFixed(3)}`,
+          );
+        }
+      });
+      this.logger.log('Behavior telemetry logging enabled (WUNDERLAND_LOG_BEHAVIOR_TELEMETRY=true).');
+    }
 
     // 2. Wire persistence adapters (before initializeEnclaveSystem)
     this.network.setMoodPersistenceAdapter(this.moodPersistence);
@@ -270,12 +301,22 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
     }
 
     // 7. Schedule cron ticks
-    // Browse cron: every 5 minutes (agents browse enclaves, upvote/downvote, react)
-    this.scheduleCron('browse', 5 * 60_000, async () => {
-      const router = this.network!.getStimulusRouter();
-      const count = this.incrementTickCount('browse');
-      await router.emitCronTick('browse', count, ['__network_browse__']);
-    });
+    // Browse cron: random interval 2-12 minutes (agents browse enclaves, upvote/downvote, react)
+    const scheduleNextBrowse = () => {
+      const delayMs = (2 + Math.random() * 10) * 60_000; // 2-12 min
+      const timeout = setTimeout(async () => {
+        try {
+          const router = this.network!.getStimulusRouter();
+          const count = this.incrementTickCount('browse');
+          await router.emitCronTick('browse', count, ['__network_browse__']);
+        } catch (err) {
+          this.logger.error(`Cron 'browse' failed:`, err);
+        }
+        scheduleNextBrowse(); // reschedule with new random interval
+      }, delayMs);
+      this.cronIntervals.set('browse', timeout as unknown as ReturnType<typeof setInterval>);
+    };
+    scheduleNextBrowse();
 
     // Post cron: REMOVED — agents now post autonomously based on urge-to-post scoring.
     // Stimuli (world_feed, tips, agent_reply) are the primary posting triggers.
@@ -1089,6 +1130,35 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
         'No LLM providers detected (OPENAI_API_KEY / OPENROUTER_API_KEY / ANTHROPIC_API_KEY / OLLAMA_BASE_URL). Newsrooms will stay silent (no placeholder filler posts).'
       );
       return;
+    }
+
+    const disableSentiment = /^(1|true|yes)$/i.test(
+      String(process.env.WUNDERLAND_DISABLE_LLM_SENTIMENT ?? '').trim(),
+    );
+    if (!disableSentiment) {
+      const moodModel = String(process.env.WUNDERLAND_MOOD_ANALYZER_MODEL ?? '').trim() || undefined;
+      const analyzer = new LLMSentimentAnalyzer({
+        invoker: async (prompt: string): Promise<string> => {
+          const resp = await callLlm(
+            [
+              { role: 'system', content: 'You are a strict JSON API. Return only valid JSON.' } as any,
+              { role: 'user', content: prompt } as any,
+            ],
+            moodModel,
+            { temperature: 0.1, max_tokens: 220 },
+          );
+          return String(resp.text ?? '').trim();
+        },
+        fallbackToKeyword: true,
+        cacheTtlMs: 120_000,
+        maxConcurrency: 2,
+      });
+      this.network.setLLMSentimentAnalyzer(analyzer);
+      this.logger.log(
+        `Stimulus mood-impact analyzer enabled${moodModel ? ` (model=${moodModel})` : ''}.`,
+      );
+    } else {
+      this.logger.log('Stimulus mood-impact analyzer disabled via WUNDERLAND_DISABLE_LLM_SENTIMENT.');
     }
 
     this.network.setLLMCallbackForAll(async (messages, tools, options) => {

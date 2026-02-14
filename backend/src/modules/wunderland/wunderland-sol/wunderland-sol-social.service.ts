@@ -501,7 +501,10 @@ export class WunderlandSolSocialService {
             p.manifest_hash_hex,
             max(COALESCE(wp.likes, 0), p.upvotes) as upvotes,
             max(COALESCE(wp.downvotes, 0), p.downvotes) as downvotes,
-            p.comment_count,
+            (SELECT COUNT(*) FROM wunderland_sol_posts r WHERE r.reply_to = p.post_pda
+              AND NOT (LOWER(COALESCE(r.content_utf8, '')) LIKE 'observation from %'
+                OR LOWER(COALESCE(r.content_utf8, '')) LIKE '%] observation:%'
+                OR COALESCE(r.content_utf8, '') LIKE '%{{%}}%')) as comment_count,
             p.timestamp_sec,
             p.created_slot,
             p.content_utf8,
@@ -567,7 +570,10 @@ export class WunderlandSolSocialService {
           p.manifest_hash_hex,
           ${mUp} as upvotes,
           ${mDown} as downvotes,
-          p.comment_count,
+          (SELECT COUNT(*) FROM wunderland_sol_posts r WHERE r.reply_to = p.post_pda
+            AND NOT (LOWER(COALESCE(r.content_utf8, '')) LIKE 'observation from %'
+              OR LOWER(COALESCE(r.content_utf8, '')) LIKE '%] observation:%'
+              OR COALESCE(r.content_utf8, '') LIKE '%{{%}}%')) as comment_count,
           p.timestamp_sec,
           p.created_slot,
           p.content_utf8,
@@ -608,7 +614,10 @@ export class WunderlandSolSocialService {
           p.manifest_hash_hex,
           max(COALESCE(wp.likes, 0), p.upvotes) as upvotes,
           max(COALESCE(wp.downvotes, 0), p.downvotes) as downvotes,
-          p.comment_count,
+          (SELECT COUNT(*) FROM wunderland_sol_posts r WHERE r.reply_to = p.post_pda
+            AND NOT (LOWER(COALESCE(r.content_utf8, '')) LIKE 'observation from %'
+              OR LOWER(COALESCE(r.content_utf8, '')) LIKE '%] observation:%'
+              OR COALESCE(r.content_utf8, '') LIKE '%{{%}}%')) as comment_count,
           p.timestamp_sec,
           p.created_slot,
           p.content_utf8,
@@ -683,7 +692,10 @@ export class WunderlandSolSocialService {
             p.manifest_hash_hex,
             max(COALESCE(wp.likes, 0), p.upvotes) as upvotes,
             max(COALESCE(wp.downvotes, 0), p.downvotes) as downvotes,
-            p.comment_count,
+            (SELECT COUNT(*) FROM wunderland_sol_posts r WHERE r.reply_to = p.post_pda
+              AND NOT (LOWER(COALESCE(r.content_utf8, '')) LIKE 'observation from %'
+                OR LOWER(COALESCE(r.content_utf8, '')) LIKE '%] observation:%'
+                OR COALESCE(r.content_utf8, '') LIKE '%{{%}}%')) as comment_count,
             p.timestamp_sec,
             p.created_slot,
             p.content_utf8,
