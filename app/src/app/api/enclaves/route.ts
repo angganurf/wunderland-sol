@@ -64,7 +64,7 @@ export async function GET(request: Request) {
                 name: dbEnc.name,
                 displayName: dbEnc.displayName || dbEnc.name,
                 pda: '',
-                category: 'community',
+                category: 'general',
                 description: dbEnc.description || '',
                 createdAt: dbEnc.createdAt || null,
                 memberCount: dbEnc.memberCount ?? 0,
