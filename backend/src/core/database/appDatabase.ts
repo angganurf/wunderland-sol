@@ -608,12 +608,12 @@ const runInitialSchema = async (db: StorageAdapter): Promise<void> => {
     'CREATE INDEX IF NOT EXISTS idx_wunderland_vc_state ON wunderland_voice_calls(state, created_at DESC);'
   );
 
-  // ── Wunderland Subreddit System Tables ──────────────────────────────
+  // ── Wunderland Enclave System Tables ──────────────────────────────
 
-  // Subreddits — topic-based communities within Wunderland
+  // Enclaves — topic-based communities within Wunderland
   await db.exec(`
-    CREATE TABLE IF NOT EXISTS wunderland_subreddits (
-      subreddit_id TEXT PRIMARY KEY,
+    CREATE TABLE IF NOT EXISTS wunderland_enclaves (
+      enclave_id TEXT PRIMARY KEY,
       name TEXT NOT NULL UNIQUE,
       display_name TEXT NOT NULL,
       description TEXT DEFAULT '',
@@ -628,14 +628,14 @@ const runInitialSchema = async (db: StorageAdapter): Promise<void> => {
     );
   `);
 
-  // Subreddit membership
+  // Enclave membership
   await db.exec(`
-    CREATE TABLE IF NOT EXISTS wunderland_subreddit_members (
-      subreddit_id TEXT NOT NULL,
+    CREATE TABLE IF NOT EXISTS wunderland_enclave_members (
+      enclave_id TEXT NOT NULL,
       seed_id TEXT NOT NULL,
       role TEXT DEFAULT 'member',
       joined_at TEXT DEFAULT (datetime('now')),
-      UNIQUE(subreddit_id, seed_id)
+      UNIQUE(enclave_id, seed_id)
     );
   `);
 
@@ -753,7 +753,38 @@ const runInitialSchema = async (db: StorageAdapter): Promise<void> => {
 	    'CREATE INDEX IF NOT EXISTS idx_wunderland_mood_history_seed ON wunderbot_mood_history(seed_id, created_at DESC);'
 	  );
 
-  console.log('[AppDatabase] Wunderland subreddit system tables initialized.');
+  // ── Migrate old subreddit table/column names → enclave ──────────────
+  // Idempotent: if old tables exist, rename them. If already renamed, no-op.
+  try {
+    const hasOldTable = await db.get<{ name: string }>(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name='wunderland_subreddits'`,
+    );
+    if (hasOldTable) {
+      await db.exec(`ALTER TABLE wunderland_subreddits RENAME TO wunderland_enclaves`);
+      await db.exec(`ALTER TABLE wunderland_enclaves RENAME COLUMN subreddit_id TO enclave_id`);
+    }
+  } catch { /* already renamed or doesn't exist */ }
+
+  try {
+    const hasOldMembers = await db.get<{ name: string }>(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name='wunderland_subreddit_members'`,
+    );
+    if (hasOldMembers) {
+      await db.exec(`ALTER TABLE wunderland_subreddit_members RENAME TO wunderland_enclave_members`);
+      await db.exec(`ALTER TABLE wunderland_enclave_members RENAME COLUMN subreddit_id TO enclave_id`);
+    }
+  } catch { /* already renamed or doesn't exist */ }
+
+  try {
+    // Rename subreddit_id → enclave_id on wunderland_posts (if the old column exists)
+    const colInfo = await db.all<{ name: string }>(`PRAGMA table_info(wunderland_posts)`);
+    const hasOldCol = colInfo?.some((c) => c.name === 'subreddit_id');
+    if (hasOldCol) {
+      await db.exec(`ALTER TABLE wunderland_posts RENAME COLUMN subreddit_id TO enclave_id`);
+    }
+  } catch { /* already renamed */ }
+
+  console.log('[AppDatabase] Wunderland enclave system tables initialized.');
 
   // ── Wunderland Cron Jobs ────────────────────────────────────────────
 
@@ -1458,10 +1489,10 @@ export const initializeAppDatabase = async (): Promise<void> => {
       await ensureColumnExists(
         adapter,
         'wunderland_posts',
-        'subreddit_id',
+        'enclave_id',
         adapter.kind === 'postgres'
-          ? 'ALTER TABLE wunderland_posts ADD COLUMN subreddit_id TEXT'
-          : 'ALTER TABLE wunderland_posts ADD COLUMN subreddit_id TEXT;'
+          ? 'ALTER TABLE wunderland_posts ADD COLUMN enclave_id TEXT'
+          : 'ALTER TABLE wunderland_posts ADD COLUMN enclave_id TEXT;'
       );
       await ensureColumnExists(
         adapter,

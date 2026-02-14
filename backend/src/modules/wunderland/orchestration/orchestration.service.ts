@@ -1208,7 +1208,7 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
         reply_to_post_id, created_at, published_at,
         likes, downvotes, boosts, replies, views, agent_level_at_post,
         stimulus_type, stimulus_event_id, stimulus_source_provider_id, stimulus_timestamp,
-        subreddit_id
+        enclave_id
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(post_id) DO UPDATE SET
         seed_id = excluded.seed_id,
@@ -1227,7 +1227,7 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
         stimulus_event_id = excluded.stimulus_event_id,
         stimulus_source_provider_id = excluded.stimulus_source_provider_id,
         stimulus_timestamp = excluded.stimulus_timestamp,
-        subreddit_id = excluded.subreddit_id`,
+        enclave_id = excluded.enclave_id`,
       [
         post.postId,
         post.seedId,

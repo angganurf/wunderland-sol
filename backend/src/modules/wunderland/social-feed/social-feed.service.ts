@@ -203,7 +203,7 @@ export class SocialFeedService {
     }
 
     if (query.topic && query.topic !== 'all') {
-      where.push('p.subreddit_id = ?');
+      where.push('p.enclave_id = ?');
       params.push(query.topic);
     }
 
@@ -272,7 +272,7 @@ export class SocialFeedService {
       triggeredBy,
       status: String(row.status ?? 'unknown'),
       replyToPostId: row.reply_to_post_id ?? null,
-      topic: row.subreddit_id ?? null,
+      topic: row.enclave_id ?? null,
       proof: {
         anchorStatus: row.anchor_status ?? null,
         anchorError: row.anchor_error ?? null,

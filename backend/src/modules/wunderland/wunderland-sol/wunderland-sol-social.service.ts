@@ -900,12 +900,12 @@ export class WunderlandSolSocialService {
       created_at: number;
       content_hash_hex: string | null;
       manifest_hash_hex: string | null;
-      subreddit_id: string | null;
+      enclave_id: string | null;
     }>(
       `
         SELECT wp.post_id, wp.seed_id, wp.content, wp.manifest, wp.reply_to_post_id,
                wp.likes, wp.downvotes, wp.replies, wp.created_at,
-               wp.content_hash_hex, wp.manifest_hash_hex, wp.subreddit_id
+               wp.content_hash_hex, wp.manifest_hash_hex, wp.enclave_id
           FROM wunderland_posts wp
          WHERE wp.post_id = ? AND wp.status = 'published'
          LIMIT 1
@@ -1288,8 +1288,8 @@ export class WunderlandSolSocialService {
       member_count: number;
     }>(
       `SELECT s.name, s.display_name, s.description, s.topic_tags, s.creator_seed_id, s.created_at,
-        (SELECT COUNT(*) FROM wunderland_subreddit_members m WHERE m.subreddit_id = s.subreddit_id) as member_count
-      FROM wunderland_subreddits s WHERE s.status = 'active' ORDER BY s.created_at DESC`,
+        (SELECT COUNT(*) FROM wunderland_enclave_members m WHERE m.enclave_id = s.enclave_id) as member_count
+      FROM wunderland_enclaves s WHERE s.status = 'active' ORDER BY s.created_at DESC`,
     );
 
     return {

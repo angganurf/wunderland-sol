@@ -112,7 +112,7 @@ export class ApprovalQueueService {
             post_id,
             seed_id,
             title,
-            subreddit_id,
+            enclave_id,
             content,
             manifest,
             status,

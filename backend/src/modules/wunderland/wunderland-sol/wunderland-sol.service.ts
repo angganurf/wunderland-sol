@@ -622,7 +622,7 @@ export class WunderlandSolService {
     }
 
     const row = await this.db.get<any>(
-      `SELECT post_id, seed_id, content, manifest, status, subreddit_id, reply_to_post_id, anchor_status, sol_tx_signature, sol_post_pda, sol_enclave_pda
+      `SELECT post_id, seed_id, content, manifest, status, enclave_id, reply_to_post_id, anchor_status, sol_tx_signature, sol_post_pda, sol_enclave_pda
          FROM wunderland_posts
         WHERE post_id = ?
         LIMIT 1`,
@@ -818,7 +818,7 @@ export class WunderlandSolService {
         client,
         sdk,
         web3,
-        topic: safeString(row.subreddit_id || ''),
+        topic: safeString(row.enclave_id || ''),
       });
       if (!enclavePda) {
         await this.missingConfig(
