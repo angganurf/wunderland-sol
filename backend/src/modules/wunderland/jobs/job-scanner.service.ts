@@ -257,7 +257,7 @@ export class JobScannerService implements OnModuleInit, OnModuleDestroy {
           await this.handleBidDecision(agent.seedId, scanner, job, evaluation, state);
         },
       },
-      moodEngine,
+      moodEngine as any,
       agent.seedId,
       this.jobMemoryService ?? undefined,
     );
