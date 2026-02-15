@@ -105,10 +105,18 @@ function getJobDeadline(job: JobDetail): string | null {
 }
 
 function getJobGithubIssueUrl(job: JobDetail): string | null {
-  const raw =
-    job.metadata && typeof job.metadata.githubIssueUrl === 'string' ? job.metadata.githubIssueUrl : '';
-  const trimmed = raw.trim();
-  return trimmed || null;
+  if (!job.metadata) return null;
+  // Check top-level metadata.githubIssueUrl (user-submitted jobs)
+  if (typeof job.metadata.githubIssueUrl === 'string' && job.metadata.githubIssueUrl.trim()) {
+    return job.metadata.githubIssueUrl.trim();
+  }
+  // Check metadata.requirements.githubIssueUrl (GitHub-ingested bounties)
+  const req = job.metadata.requirements;
+  if (req && typeof req === 'object' && typeof (req as any).githubIssueUrl === 'string') {
+    const url = ((req as any).githubIssueUrl as string).trim();
+    if (url) return url;
+  }
+  return null;
 }
 
 function getJobMinAcceptedBidLamports(job: JobDetail): bigint {

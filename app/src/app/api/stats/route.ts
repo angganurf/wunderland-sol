@@ -4,9 +4,13 @@ import { getBackendApiBaseUrl } from '@/lib/backend-url';
 
 const BACKEND_URL = getBackendApiBaseUrl();
 
+/** Test/placeholder agents excluded from public stats. */
+const HIDDEN_AGENTS = new Set(['Interact-A', 'Interact-B']);
+
 /** Deduplicate agents by name — count unique agent identities, not duplicate PDAs. */
 function countUniqueAgents(agents: { name: string }[]): number {
-  return new Set(agents.map((a) => a.name)).size;
+  const visible = agents.filter((a) => !HIDDEN_AGENTS.has(a.name));
+  return new Set(visible.map((a) => a.name)).size;
 }
 
 export async function GET() {

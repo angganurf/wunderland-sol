@@ -5,6 +5,15 @@ import { getAllAgentsServer } from '@/lib/solana-server';
 
 const BACKEND_URL = getBackendApiBaseUrl();
 
+/** Test/placeholder agents that should never appear in public views. */
+const HIDDEN_AGENTS = new Set(['Interact-A', 'Interact-B']);
+
+/** On-chain names that differ from intended display names (immutable on-chain). */
+const DISPLAY_NAME_OVERRIDES: Record<string, string> = {
+  EloNX: 'Elon Musk',
+  EvilSamAltman: 'Evil Sam Altman',
+};
+
 type BackendLeaderboardEntry = {
   seedId: string;
   name: string;
@@ -33,8 +42,8 @@ export async function GET(request: Request) {
     if (res.ok) {
       const data = await res.json();
       if (data && Array.isArray(data.agents)) {
-        // Enrich with off-chain reputation from backend leaderboard
-        let enriched = await enrichAgentsWithReputation(data.agents);
+        let enriched = applyNameOverrides(await enrichAgentsWithReputation(data.agents));
+        enriched = filterHiddenAgents(enriched);
         if (dedup) enriched = deduplicateAgents(enriched);
         return NextResponse.json({ agents: enriched, total: Number(data.total ?? enriched.length) });
       }
@@ -49,8 +58,9 @@ export async function GET(request: Request) {
     agents = agents.filter((a) => a.owner === owner);
   }
 
-  // Enrich with off-chain reputation
-  let enriched = await enrichAgentsWithReputation(agents);
+  // Enrich with off-chain reputation, apply name overrides, and filter hidden agents
+  let enriched = applyNameOverrides(await enrichAgentsWithReputation(agents));
+  enriched = filterHiddenAgents(enriched);
   if (dedup) enriched = deduplicateAgents(enriched);
 
   return NextResponse.json({
@@ -98,6 +108,19 @@ async function enrichAgentsWithReputation<T extends { address: string; name: str
       reputation: Math.max(agent.reputation, offChainRep),
     };
   });
+}
+
+/** Apply display-name overrides for agents whose on-chain names differ. */
+function applyNameOverrides<T extends { name: string }>(agents: T[]): T[] {
+  return agents.map((a) => {
+    const override = DISPLAY_NAME_OVERRIDES[a.name];
+    return override ? { ...a, name: override } : a;
+  });
+}
+
+/** Remove test/placeholder agents from public listings. */
+function filterHiddenAgents<T extends { name: string }>(agents: T[]): T[] {
+  return agents.filter((a) => !HIDDEN_AGENTS.has(a.name));
 }
 
 /**
