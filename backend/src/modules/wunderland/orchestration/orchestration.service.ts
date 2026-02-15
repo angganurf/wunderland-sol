@@ -52,6 +52,7 @@ import type {
   StimulusSource,
   TipPayload,
   WorldFeedPayload,
+  ExtendedBrowsingSessionRecord,
 } from '@wunderland/social';
 
 // Import all 7 persistence adapters
@@ -250,6 +251,21 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
 	        } else if (actionType === 'view') {
 	          await this.db.run('UPDATE wunderland_posts SET views = views + 1 WHERE post_id = ?', [postId]);
 	        }
+
+        // Update TrustEngine from engagement (so routing + DM gating reflects real interactions).
+        // Note: TrustEngine records directional trust (actor -> author).
+        if (this.trustEngine && this.network && (actionType === 'like' || actionType === 'downvote' || actionType === 'boost')) {
+          const post = this.network.getPost(postId);
+          const authorSeedId = post?.seedId;
+          if (authorSeedId && authorSeedId !== actorSeedId) {
+            const actorTraits = this.network.getCitizen(actorSeedId)?.personality;
+            const interaction =
+              actionType === 'like' ? 'upvote'
+              : actionType === 'downvote' ? 'downvote'
+              : 'boost';
+            this.trustEngine.recordInteraction(actorSeedId, authorSeedId, interaction, actorTraits);
+          }
+        }
 
         // Best-effort on-chain vote bridging (optional; gated by WUNDERLAND_SOL_VOTING_ENABLED).
         // Maps: like => +1, downvote => -1. (Views/boosts remain off-chain.)
@@ -1345,6 +1361,24 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
         'UPDATE wunderland_posts SET replies = replies + 1 WHERE post_id = ?',
         [post.replyToPostId]
       );
+
+      // Trust update: replying is a (usually positive) engagement signal.
+      // Direction: replier -> parent author.
+      if (this.trustEngine && this.network) {
+        try {
+          const parent = await this.db.get<{ seed_id: string }>(
+            'SELECT seed_id FROM wunderland_posts WHERE post_id = ? LIMIT 1',
+            [post.replyToPostId],
+          );
+          const parentSeedId = parent?.seed_id ? String(parent.seed_id) : '';
+          if (parentSeedId && parentSeedId !== post.seedId) {
+            const replierTraits = this.network.getCitizen(post.seedId)?.personality;
+            this.trustEngine.recordInteraction(post.seedId, parentSeedId, 'reply', replierTraits);
+          }
+        } catch {
+          // non-critical
+        }
+      }
     }
 
     // Best-effort on-chain anchoring (hash commitments + IPFS raw blocks).
@@ -1440,6 +1474,62 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
 
   getGovernanceExecutor(): GovernanceExecutor | undefined {
     return this.governanceExecutor;
+  }
+
+  async getLastBrowsingSessionExtended(
+    seedId: string,
+  ): Promise<{ sessionId: string; record: ExtendedBrowsingSessionRecord } | null> {
+    const row = await this.db.get<{
+      session_id: string;
+      seed_id: string;
+      enclaves_visited: string;
+      posts_read: number;
+      comments_written: number;
+      votes_cast: number;
+      emoji_reactions: number;
+      episodic_json?: string | null;
+      reasoning_traces_json?: string | null;
+      started_at: number;
+      finished_at: number;
+    }>(
+      `SELECT session_id, seed_id, enclaves_visited, posts_read, comments_written, votes_cast, emoji_reactions,
+              episodic_json, reasoning_traces_json, started_at, finished_at
+         FROM wunderland_browsing_sessions
+        WHERE seed_id = ?
+        ORDER BY finished_at DESC
+        LIMIT 1`,
+      [seedId],
+    );
+
+    if (!row?.session_id) return null;
+
+    const record: ExtendedBrowsingSessionRecord = {
+      seedId: String(row.seed_id),
+      enclavesVisited: JSON.parse(String(row.enclaves_visited || '[]')) as string[],
+      postsRead: Number(row.posts_read ?? 0),
+      commentsWritten: Number(row.comments_written ?? 0),
+      votesCast: Number(row.votes_cast ?? 0),
+      emojiReactions: Number(row.emoji_reactions ?? 0),
+      startedAt: new Date(Number(row.started_at ?? Date.now())).toISOString(),
+      finishedAt: new Date(Number(row.finished_at ?? Date.now())).toISOString(),
+    };
+
+    try {
+      if (row.episodic_json) record.episodic = JSON.parse(String(row.episodic_json));
+    } catch {
+      // ignore invalid JSON
+    }
+    try {
+      if (row.reasoning_traces_json) record.reasoningTraces = JSON.parse(String(row.reasoning_traces_json));
+    } catch {
+      // ignore invalid JSON
+    }
+
+    return { sessionId: String(row.session_id), record };
+  }
+
+  async getEpisodicMemory(seedId: string, opts?: { moodLabel?: string; minSalience?: number; limit?: number }) {
+    return this.browsingPersistence.loadEpisodicMemory?.(seedId, opts) ?? [];
   }
 
   isEnabled(): boolean {

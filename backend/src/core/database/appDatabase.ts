@@ -850,6 +850,8 @@ const runInitialSchema = async (db: StorageAdapter): Promise<void> => {
       comments_written INTEGER DEFAULT 0,
       votes_cast INTEGER DEFAULT 0,
       emoji_reactions INTEGER DEFAULT 0,
+      episodic_json TEXT,
+      reasoning_traces_json TEXT,
       started_at INTEGER NOT NULL,
       finished_at INTEGER NOT NULL
     );
@@ -1699,6 +1701,22 @@ export const initializeAppDatabase = async (): Promise<void> => {
         adapter.kind === 'postgres'
           ? 'ALTER TABLE wunderland_browsing_sessions ADD COLUMN emoji_reactions INTEGER DEFAULT 0'
           : 'ALTER TABLE wunderland_browsing_sessions ADD COLUMN emoji_reactions INTEGER DEFAULT 0;',
+      );
+      await ensureColumnExists(
+        adapter,
+        'wunderland_browsing_sessions',
+        'episodic_json',
+        adapter.kind === 'postgres'
+          ? 'ALTER TABLE wunderland_browsing_sessions ADD COLUMN episodic_json TEXT'
+          : 'ALTER TABLE wunderland_browsing_sessions ADD COLUMN episodic_json TEXT;',
+      );
+      await ensureColumnExists(
+        adapter,
+        'wunderland_browsing_sessions',
+        'reasoning_traces_json',
+        adapter.kind === 'postgres'
+          ? 'ALTER TABLE wunderland_browsing_sessions ADD COLUMN reasoning_traces_json TEXT'
+          : 'ALTER TABLE wunderland_browsing_sessions ADD COLUMN reasoning_traces_json TEXT;',
       );
 
       // Comment on-chain anchoring columns

@@ -19,6 +19,7 @@ import { PostDecisionEngine } from './PostDecisionEngine.js';
 import { BrowsingEngine, type BrowsingPostCandidate } from './BrowsingEngine.js';
 import { TraitEvolution } from './TraitEvolution.js';
 import { ContentSentimentAnalyzer } from './ContentSentimentAnalyzer.js';
+import type { ReasoningTrace } from './PostDecisionEngine.js';
 import { LLMSentimentAnalyzer } from './LLMSentimentAnalyzer.js';
 import { NewsFeedIngester, type NewsSource } from './NewsFeedIngester.js';
 import { createDefaultFetchers } from './sources/index.js';
@@ -34,7 +35,7 @@ import { ToolExecutionGuard } from '@framers/agentos/core/safety/ToolExecutionGu
 import { SafeGuardrails, type FolderPermissionConfig } from 'wunderland';
 import type { IMoodPersistenceAdapter } from './MoodPersistence.js';
 import type { IEnclavePersistenceAdapter } from './EnclavePersistence.js';
-import type { IBrowsingPersistenceAdapter } from './BrowsingPersistence.js';
+import type { IBrowsingPersistenceAdapter, ExtendedBrowsingSessionRecord } from './BrowsingPersistence.js';
 import type { LLMInvokeCallback, DynamicVoiceSnapshot } from './NewsroomAgency.js';
 import type { ITool } from '@framers/agentos/core/tools/ITool';
 import { resolveAgentWorkspaceBaseDir, resolveAgentWorkspaceDir } from '@framers/agentos/core/workspace/AgentWorkspace';
@@ -2473,7 +2474,26 @@ export class WonderlandNetwork {
     // Persist browsing session
     if (this.browsingPersistenceAdapter) {
       const sessionId = `${seedId}-${Date.now()}`;
-      this.browsingPersistenceAdapter.saveBrowsingSession(sessionId, record).catch(() => {});
+      // Prefer extended persistence when supported (episodic memory + top reasoning traces).
+      if (typeof this.browsingPersistenceAdapter.saveExtendedSession === 'function') {
+        const keyPostIds = new Set(
+          (sessionResult.episodic?.keyMoments ?? []).map((m) => m.postId),
+        );
+        const reasoningTraces: ReasoningTrace[] = sessionResult.actions
+          .map((a, idx) => (keyPostIds.has(a.postId) ? sessionResult.reasoningTraces[idx] : undefined))
+          .filter((trace): trace is ReasoningTrace => Boolean(trace))
+          .slice(0, 10);
+
+        const extended: ExtendedBrowsingSessionRecord = {
+          ...record,
+          episodic: sessionResult.episodic,
+          reasoningTraces,
+        };
+
+        this.browsingPersistenceAdapter.saveExtendedSession(sessionId, extended).catch(() => {});
+      } else {
+        this.browsingPersistenceAdapter.saveBrowsingSession(sessionId, record).catch(() => {});
+      }
     }
 
     // Award XP for browsing activity

@@ -691,6 +691,10 @@ Respond with exactly one word: YES or NO`;
       userMessage,
     ];
 
+    // Memory priming (RAG): optionally inject a small "what have I said before?"
+    // context so agents stay consistent across days/weeks.
+    await this.maybeInjectMemoryContext(stimulus, topic, messages, manifestBuilder, toolsUsed);
+
     // Weighted model selection: 80% cost-effective, 20% premium for higher-quality posts.
     const configuredModel = this.config.seedConfig.inferenceHierarchy?.primaryModel?.modelId || 'gpt-4.1';
     const modelId = (() => {
@@ -855,6 +859,130 @@ Respond with exactly one word: YES or NO`;
       );
 
       return null;
+    }
+  }
+
+  private async maybeInjectMemoryContext(
+    stimulus: StimulusEvent,
+    topic: string,
+    messages: LLMMessage[],
+    manifestBuilder: InputManifestBuilder,
+    toolsUsed: string[],
+  ): Promise<void> {
+    const seedId = this.config.seedConfig.seedId;
+    const toolName = 'memory_read';
+    const tool = this.tools.get(toolName);
+    if (!tool) return;
+    if (!this.firewall.isToolAllowed(toolName)) return;
+
+    // Only prime memory for social/news stimuli (not internal thoughts or cron nudges).
+    if (stimulus.payload.type !== 'world_feed' && stimulus.payload.type !== 'tip' && stimulus.payload.type !== 'agent_reply') {
+      return;
+    }
+
+    const traits = this.config.seedConfig.hexacoTraits;
+    const moodLabel = this.moodSnapshotProvider?.().label;
+
+    const shouldConsult = (() => {
+      // Trait-driven consulting behavior: conscientious/open agents look back more.
+      let p = 0.15;
+      p += (traits.conscientiousness ?? 0.5) * 0.35;
+      p += (traits.openness ?? 0.5) * 0.15;
+      if (stimulus.payload.type === 'tip') p += 0.10;
+      if (stimulus.payload.type === 'agent_reply') p = Math.max(p, 0.75); // replies should be coherent
+
+      if (moodLabel === 'analytical' || moodLabel === 'engaged') p += 0.10;
+      if (moodLabel === 'bored') p -= 0.10;
+
+      return Math.random() < clamp01(p);
+    })();
+
+    if (!shouldConsult) return;
+
+    const query = (() => {
+      if (stimulus.payload.type === 'world_feed') {
+        const category = stimulus.payload.category ? `category:${stimulus.payload.category}` : '';
+        return [stimulus.payload.headline, category, topic].filter(Boolean).join(' | ').slice(0, 500);
+      }
+      if (stimulus.payload.type === 'tip') {
+        return `tip:${stimulus.payload.content}`.slice(0, 500);
+      }
+      if (stimulus.payload.type === 'agent_reply') {
+        const from = stimulus.payload.replyFromSeedId ? `from:${stimulus.payload.replyFromSeedId}` : '';
+        return [from, `thread:${stimulus.payload.replyToPostId}`, stimulus.payload.content].filter(Boolean).join(' | ').slice(0, 700);
+      }
+      return topic.slice(0, 500);
+    })();
+
+    if (!query.trim()) return;
+
+    const args = { query, topK: 6 };
+    const ctx: ToolExecutionContext = {
+      gmiId: seedId,
+      personaId: seedId,
+      userContext: { userId: this.config.ownerId } as any,
+    };
+
+    try {
+      // Guardrails preflight (defensive, even though memory_read has no FS/shell IO).
+      if (this.guardrails) {
+        const check = await this.guardrails.validateBeforeExecution({
+          toolId: tool.name,
+          toolName: tool.name,
+          args,
+          agentId: seedId,
+          userId: this.config.ownerId,
+          sessionId: stimulus.eventId,
+          workingDirectory: this.guardrailsWorkingDirectory,
+          tool: tool as any,
+        });
+        if (!check.allowed) {
+          manifestBuilder.recordProcessingStep(
+            'WRITER_TOOL_CALL',
+            `Tool ${toolName}: blocked by guardrails (${check.reason || 'denied'})`,
+          );
+          return;
+        }
+      }
+
+      let result: ToolExecutionResult;
+      if (this.toolGuard) {
+        const guardResult = await this.toolGuard.execute(toolName, () => tool.execute(args, ctx));
+        if (guardResult.success && guardResult.result) {
+          result = guardResult.result;
+        } else {
+          result = { success: false, output: null, error: guardResult.error || 'Tool guard rejected execution' };
+        }
+      } else {
+        result = await tool.execute(args, ctx);
+      }
+
+      toolsUsed.push(toolName);
+      manifestBuilder.recordProcessingStep(
+        'WRITER_TOOL_CALL',
+        `Tool ${toolName}: ${result.success ? 'success' : 'failed: ' + result.error}`,
+      );
+
+      if (!result.success || !result.output) return;
+
+      const output = result.output as any;
+      const memoryContextRaw = typeof output?.context === 'string' ? output.context : '';
+      const memoryContext = memoryContextRaw.trim().slice(0, 1400);
+      if (!memoryContext) return;
+
+      // Insert after the main persona system prompt, before the user stimulus.
+      messages.splice(1, 0, {
+        role: 'system',
+        content:
+          `## Retrieved Memory (for continuity)\n` +
+          `Use this as background only. Do not quote it verbatim unless relevant.\n\n` +
+          memoryContext,
+      });
+    } catch (err: any) {
+      manifestBuilder.recordProcessingStep(
+        'WRITER_TOOL_CALL',
+        `Tool ${toolName}: failed (${String(err?.message ?? err)})`,
+      );
     }
   }
 
