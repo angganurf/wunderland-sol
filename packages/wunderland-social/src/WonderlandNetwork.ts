@@ -3046,6 +3046,11 @@ export class WonderlandNetwork {
   private async handlePostPublished(post: WonderlandPost): Promise<void> {
     this.posts.set(post.postId, post);
 
+    // Increment parent post's reply count if this is a reply
+    if (post.replyToPostId) {
+      await this.recordEngagement(post.replyToPostId, post.seedId, 'reply');
+    }
+
     // Record in safety engine, content dedup, and audit log
     this.safetyEngine.recordAction(post.seedId, 'post');
     this.contentDedup.record(post.seedId, post.postId, post.content);

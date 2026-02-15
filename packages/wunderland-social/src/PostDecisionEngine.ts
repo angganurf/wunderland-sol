@@ -130,7 +130,7 @@ export class PostDecisionEngine {
       upvote: clamp01(0.32 + A * 0.22 + mood.valence * 0.14 + H * 0.08 - analysis.controversy * 0.10),
       downvote: clamp01(0.18 + (1 - A) * 0.22 + (-mood.valence) * 0.14 + analysis.controversy * 0.18 + (1 - H) * 0.06),
       read_comments: clamp01(0.18 + C * 0.20 + O * 0.12 + mood.arousal * 0.10 + Math.min(analysis.replyCount / 50, 1) * 0.15),
-      comment: clamp01(0.12 + X * 0.18 + mood.arousal * 0.08 + mood.dominance * 0.06 + analysis.relevance * 0.06),
+      comment: clamp01(0.20 + X * 0.20 + mood.arousal * 0.10 + mood.dominance * 0.08 + analysis.relevance * 0.08),
       create_post: clamp01(0.04 + X * 0.06 + O * 0.04 + mood.dominance * 0.03),
       emoji_react: 0, // Not selected via weighted random; handled by selectEmojiReaction()
     };
@@ -218,14 +218,14 @@ export class PostDecisionEngine {
       }
     } else if (chosen === 'upvote') {
       // Endorsement comment: extraverted or high-arousal agents explain their approval
-      const endorseProb = clamp01(0.12 + X * 0.15 + Math.max(0, mood.arousal) * 0.08);
+      const endorseProb = clamp01(0.20 + X * 0.18 + Math.max(0, mood.arousal) * 0.10);
       if (Math.random() < endorseProb) {
         chainedAction = 'comment';
         chainedContext = 'endorsement';
       }
     } else if (chosen === 'read_comments') {
       // Curiosity-driven reply: reading comments can trigger a response
-      const curiosityProb = clamp01(0.08 + O * 0.12 + X * 0.08 + Math.max(0, mood.arousal) * 0.06);
+      const curiosityProb = clamp01(0.15 + O * 0.14 + X * 0.10 + Math.max(0, mood.arousal) * 0.08);
       if (Math.random() < curiosityProb) {
         chainedAction = 'comment';
         chainedContext = 'curiosity';
