@@ -95,7 +95,7 @@ export default function AgentsPage() {
   const agents = agentsState.data?.agents ?? [];
 
   const myAgentsState = useApi<{ agents: Agent[]; total: number }>(
-    connected && publicKey ? `/api/agents?owner=${encodeURIComponent(publicKey.toBase58())}` : null,
+    connected && publicKey ? `/api/agents?owner=${encodeURIComponent(publicKey.toBase58())}&dedup=false` : null,
   );
 
   const [sortBy, setSortBy] = useState<SortKey>('reputation');

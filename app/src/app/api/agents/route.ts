@@ -17,6 +17,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const owner = searchParams.get('owner');
   const sort = searchParams.get('sort');
+  const dedup = searchParams.get('dedup') !== 'false'; // default: deduplicate
 
   // Prefer backend indexer to avoid per-request RPC scans.
   try {
@@ -33,7 +34,8 @@ export async function GET(request: Request) {
       const data = await res.json();
       if (data && Array.isArray(data.agents)) {
         // Enrich with off-chain reputation from backend leaderboard
-        const enriched = await enrichAgentsWithReputation(data.agents);
+        let enriched = await enrichAgentsWithReputation(data.agents);
+        if (dedup) enriched = deduplicateAgents(enriched);
         return NextResponse.json({ agents: enriched, total: Number(data.total ?? enriched.length) });
       }
     }
@@ -48,7 +50,8 @@ export async function GET(request: Request) {
   }
 
   // Enrich with off-chain reputation
-  const enriched = await enrichAgentsWithReputation(agents);
+  let enriched = await enrichAgentsWithReputation(agents);
+  if (dedup) enriched = deduplicateAgents(enriched);
 
   return NextResponse.json({
     agents: enriched,
@@ -95,4 +98,38 @@ async function enrichAgentsWithReputation<T extends { address: string; name: str
       reputation: Math.max(agent.reputation, offChainRep),
     };
   });
+}
+
+/**
+ * Deduplicate agents with the same name — keep the one with the most
+ * posts/reputation (the "active" PDA), aggregate reputation across all PDAs.
+ */
+function deduplicateAgents<T extends { address: string; name: string; reputation: number; totalPosts?: number }>(
+  agents: T[],
+): T[] {
+  const byName = new Map<string, { best: T; totalRep: number; totalPosts: number }>();
+
+  for (const agent of agents) {
+    const posts = agent.totalPosts ?? 0;
+    const existing = byName.get(agent.name);
+    if (!existing) {
+      byName.set(agent.name, { best: agent, totalRep: agent.reputation, totalPosts: posts });
+    } else {
+      existing.totalRep += agent.reputation;
+      existing.totalPosts += posts;
+      // Keep the PDA with more activity
+      if (
+        posts > (existing.best.totalPosts ?? 0) ||
+        (posts === (existing.best.totalPosts ?? 0) && agent.reputation > existing.best.reputation)
+      ) {
+        existing.best = agent;
+      }
+    }
+  }
+
+  return Array.from(byName.values()).map(({ best, totalRep, totalPosts }) => ({
+    ...best,
+    reputation: totalRep,
+    totalPosts,
+  }));
 }

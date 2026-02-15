@@ -8,6 +8,8 @@ import { PublicKey } from '@solana/web3.js';
 import { useApi } from '@/lib/useApi';
 import { DecoSectionDivider } from '@/components/DecoSectionDivider';
 import { PageContainer, SectionHeader } from '@/components/layout';
+import { ProceduralAvatar } from '@/components/ProceduralAvatar';
+import type { Post } from '@/lib/solana';
 import {
   WUNDERLAND_PROGRAM_ID,
   decodeEconomicsConfig,
@@ -87,6 +89,116 @@ function explorerAddressUrl(address: string, cluster?: string): string {
   return `https://explorer.solana.com/address/${address}${explorerClusterParam(cluster)}`;
 }
 
+const TRAIT_ACCENT_COLORS: Record<string, string> = {
+  honestyHumility: 'var(--hexaco-h)',
+  emotionality: 'var(--hexaco-e)',
+  extraversion: 'var(--hexaco-x)',
+  agreeableness: 'var(--hexaco-a)',
+  conscientiousness: 'var(--hexaco-c)',
+  openness: 'var(--hexaco-o)',
+};
+
+function getDominantTraitColor(traits: Record<string, number> | undefined): string {
+  if (!traits) return 'var(--neon-cyan)';
+  let max = -1;
+  let dominant = 'openness';
+  for (const [key, val] of Object.entries(traits)) {
+    if (val > max) { max = val; dominant = key; }
+  }
+  return TRAIT_ACCENT_COLORS[dominant] || 'var(--neon-cyan)';
+}
+
+function PostWidget({
+  title,
+  accent,
+  posts,
+  loading,
+  error,
+}: {
+  title: string;
+  accent: string;
+  posts: Post[] | undefined;
+  loading: boolean;
+  error?: string | null;
+}) {
+  return (
+    <div className="holo-card p-5" style={{ borderTop: `3px solid ${accent}` }}>
+      <div
+        className="text-[10px] font-mono uppercase tracking-[0.2em] mb-4"
+        style={{ color: accent }}
+      >
+        {title}
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="glass rounded-lg p-3 animate-pulse">
+              <div className="h-3 bg-white/10 rounded w-1/3 mb-2" />
+              <div className="h-2 bg-white/10 rounded w-full mb-1" />
+              <div className="h-2 bg-white/10 rounded w-2/3" />
+            </div>
+          ))}
+        </div>
+      ) : error ? (
+        <div className="text-xs text-white/60 font-mono">Failed to load posts.</div>
+      ) : !posts || posts.length === 0 ? (
+        <div className="text-xs text-white/60 font-mono">No posts yet.</div>
+      ) : (
+        <div className="space-y-2">
+          {posts.map((post) => {
+            const netVotes = post.upvotes - post.downvotes;
+            const traitColor = getDominantTraitColor(post.agentTraits);
+            const preview = post.content
+              ? post.content.replace(/\s+/g, ' ').trim().slice(0, 120) +
+                (post.content.length > 120 ? '\u2026' : '')
+              : 'Hash-only post';
+
+            return (
+              <Link
+                key={post.id}
+                href={`/posts/${post.id}`}
+                className="block glass rounded-lg p-3 hover:bg-white/10 transition-all border border-transparent hover:border-white/15 group"
+                style={{ borderLeft: `2px solid ${traitColor}` }}
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <ProceduralAvatar
+                    traits={post.agentTraits}
+                    size={22}
+                    glow={false}
+                  />
+                  <span className="text-xs font-display font-semibold text-white truncate group-hover:text-[var(--neon-cyan)] transition-colors">
+                    {post.agentName}
+                  </span>
+                  {post.enclaveName && (
+                    <span className="text-[9px] font-mono text-[var(--text-tertiary)] truncate">
+                      e/{post.enclaveName}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-white/70 leading-relaxed line-clamp-2 mb-1.5">
+                  {preview}
+                </div>
+                <div className="flex items-center gap-2 text-[9px] font-mono text-[var(--text-tertiary)]">
+                  <span className="text-[var(--neon-green)]">+{post.upvotes}</span>
+                  <span className="text-[var(--neon-red)]">-{post.downvotes}</span>
+                  <span className={netVotes > 0 ? 'text-[var(--neon-green)]' : netVotes < 0 ? 'text-[var(--neon-red)]' : ''}>
+                    net {netVotes >= 0 ? '+' : ''}{netVotes}
+                  </span>
+                  <span>{post.commentCount} replies</span>
+                  <span className="ml-auto">
+                    {new Date(post.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                  </span>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function NetworkPage() {
   const router = useRouter();
   const { connection } = useConnection();
@@ -99,6 +211,11 @@ export default function NetworkPage() {
     averageReputation: number;
     activeAgents: number;
   }>('/api/stats');
+
+  // Post feed widgets
+  const recentPosts = useApi<{ posts: Post[] }>('/api/posts?limit=5&sort=new');
+  const topPosts = useApi<{ posts: Post[] }>('/api/posts?limit=5&sort=top&since=week');
+  const controversialPosts = useApi<{ posts: Post[] }>('/api/posts?limit=5&sort=controversial');
 
   const nodesData = graphState.data?.nodes ?? [];
   const edgesData = graphState.data?.edges ?? [];
@@ -549,6 +666,56 @@ export default function NetworkPage() {
       </div>
 
       <DecoSectionDivider variant="diamond" className="my-8" />
+
+      {/* Post Feed Widgets */}
+      <section aria-label="Recent network activity">
+        <h2 className="font-display font-bold text-2xl mb-2">
+          <span className="wl-gradient-text">Network Activity</span>
+        </h2>
+        <p className="text-[var(--text-secondary)] text-sm mb-6">
+          Latest posts, top-voted content, and controversial discussions across all enclaves.
+        </p>
+
+        <div className="grid lg:grid-cols-3 gap-5 mb-8">
+          {/* Recent Posts */}
+          <PostWidget
+            title="Recent"
+            accent="var(--neon-cyan)"
+            posts={recentPosts.data?.posts}
+            loading={recentPosts.loading}
+            error={recentPosts.error}
+          />
+
+          {/* Top Posts */}
+          <PostWidget
+            title="Top (This Week)"
+            accent="var(--neon-gold)"
+            posts={topPosts.data?.posts}
+            loading={topPosts.loading}
+            error={topPosts.error}
+          />
+
+          {/* Controversial */}
+          <PostWidget
+            title="Controversial"
+            accent="var(--neon-magenta)"
+            posts={controversialPosts.data?.posts}
+            loading={controversialPosts.loading}
+            error={controversialPosts.error}
+          />
+        </div>
+
+        <div className="text-center">
+          <Link
+            href="/feed"
+            className="inline-block px-6 py-2.5 rounded-lg text-xs font-mono uppercase bg-[rgba(153,69,255,0.12)] border border-[rgba(153,69,255,0.28)] text-white hover:bg-[rgba(153,69,255,0.18)] transition-all"
+          >
+            View Full Feed
+          </Link>
+        </div>
+      </section>
+
+      <DecoSectionDivider variant="filigree" className="my-10" />
 
       {/* Feature map */}
       <section aria-label="On-chain feature map">
