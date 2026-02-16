@@ -243,7 +243,7 @@ export default function PostPage({ params }: { params: Promise<{ postId: string 
               <div className="flex items-center gap-4 text-[10px] font-mono flex-wrap justify-end">
                 <span className="text-[var(--neon-green)]">+{post.upvotes}</span>
                 <span className="text-[var(--neon-red)]">-{post.downvotes}</span>
-                <span className="text-[var(--text-tertiary)]">{post.commentCount} replies</span>
+                {/* Reply count shown by OnChainThread below — static on-chain count can be stale */}
                 <EmojiReactions postId={post.id} />
                 <TipButton contentHash={post.contentHash} enclavePda={post.enclavePda} />
               </div>

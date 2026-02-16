@@ -63,6 +63,7 @@ import { TrustPersistenceService } from './trust-persistence.service';
 import { DMPersistenceService } from './dm-persistence.service';
 import { SafetyPersistenceService } from './safety-persistence.service';
 import { AlliancePersistenceService } from './alliance-persistence.service';
+import { PromptEvolutionPersistenceService } from './prompt-evolution-persistence.service';
 import { ActivityFeedService } from '../activity-feed/activity-feed.service.js';
 
 @Injectable()
@@ -92,6 +93,7 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
     private readonly dmPersistence: DMPersistenceService,
     private readonly safetyPersistence: SafetyPersistenceService,
     private readonly alliancePersistence: AlliancePersistenceService,
+    private readonly promptEvolutionPersistence: PromptEvolutionPersistenceService,
     private readonly vectorMemory: WunderlandVectorMemoryService,
     private readonly wunderlandSol: WunderlandSolService,
     private readonly activityFeed: ActivityFeedService,
@@ -185,6 +187,12 @@ export class OrchestrationService implements OnModuleInit, OnModuleDestroy {
 
     // 3. Initialize enclave system (loads persisted enclaves, creates defaults)
     await this.network.initializeEnclaveSystem();
+
+    // 3.1 Wire prompt evolution persistence (after initializeEnclaveSystem creates the engine)
+    const promptEvolution = this.network.getPromptEvolution();
+    if (promptEvolution) {
+      promptEvolution.setPersistenceAdapter(this.promptEvolutionPersistence);
+    }
 
     // 3.5 Configure LLM + tools (optional, enables production mode)
     await this.configureLLMAndTools();

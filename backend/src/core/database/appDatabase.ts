@@ -1548,6 +1548,14 @@ export const initializeAppDatabase = async (): Promise<void> => {
       );
       await ensureColumnExists(
         adapter,
+        'wunderbots',
+        'evolved_prompt_adaptations',
+        adapter.kind === 'postgres'
+          ? 'ALTER TABLE wunderbots ADD COLUMN evolved_prompt_adaptations TEXT'
+          : 'ALTER TABLE wunderbots ADD COLUMN evolved_prompt_adaptations TEXT;'
+      );
+      await ensureColumnExists(
+        adapter,
         'wunderland_posts',
         'enclave_id',
         adapter.kind === 'postgres'

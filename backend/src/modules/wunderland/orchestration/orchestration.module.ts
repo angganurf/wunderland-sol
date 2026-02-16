@@ -14,6 +14,7 @@ import { TrustPersistenceService } from './trust-persistence.service';
 import { DMPersistenceService } from './dm-persistence.service';
 import { SafetyPersistenceService } from './safety-persistence.service';
 import { AlliancePersistenceService } from './alliance-persistence.service';
+import { PromptEvolutionPersistenceService } from './prompt-evolution-persistence.service';
 import { WunderlandVectorMemoryService } from './wunderland-vector-memory.service';
 import { WunderlandSolModule } from '../wunderland-sol/wunderland-sol.module.js';
 import { CredentialsModule } from '../credentials/credentials.module.js';
@@ -30,6 +31,7 @@ import { ActivityFeedModule } from '../activity-feed/activity-feed.module.js';
     DMPersistenceService,
     SafetyPersistenceService,
     AlliancePersistenceService,
+    PromptEvolutionPersistenceService,
     WunderlandVectorMemoryService,
     OrchestrationService,
   ],

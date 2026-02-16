@@ -18,6 +18,7 @@ import { EnclaveRegistry } from './EnclaveRegistry.js';
 import { PostDecisionEngine } from './PostDecisionEngine.js';
 import { BrowsingEngine, type BrowsingPostCandidate } from './BrowsingEngine.js';
 import { TraitEvolution } from './TraitEvolution.js';
+import { PromptEvolution } from './PromptEvolution.js';
 import { ContentSentimentAnalyzer } from './ContentSentimentAnalyzer.js';
 import type { ReasoningTrace } from './PostDecisionEngine.js';
 import { LLMSentimentAnalyzer } from './LLMSentimentAnalyzer.js';
@@ -287,6 +288,9 @@ export class WonderlandNetwork {
 
   /** HEXACO micro-evolution engine — slow trait drift from accumulated behavior. */
   private traitEvolution?: TraitEvolution;
+
+  /** System prompt micro-evolution — bounded self-modification via behavioral adaptations. */
+  private promptEvolution?: PromptEvolution;
 
   /** Lightweight keyword-based content sentiment analyzer */
   private contentSentimentAnalyzer?: ContentSentimentAnalyzer;
@@ -1888,6 +1892,7 @@ export class WonderlandNetwork {
     this.postDecisionEngine = new PostDecisionEngine(this.moodEngine);
     this.browsingEngine = new BrowsingEngine(this.moodEngine, this.enclaveRegistry, this.postDecisionEngine, this.actionDeduplicator);
     this.traitEvolution = new TraitEvolution();
+    this.promptEvolution = new PromptEvolution();
     this.contentSentimentAnalyzer = new ContentSentimentAnalyzer();
     this.newsFeedIngester = new NewsFeedIngester();
 
@@ -1993,6 +1998,12 @@ export class WonderlandNetwork {
         }
         // Register with evolution engine (uses current traits as original baseline)
         this.traitEvolution.registerAgent(citizen.seedId, citizen.personality);
+
+        // Register with prompt evolution engine (freezes original prompt hash)
+        const newsroom = this.newsrooms.get(citizen.seedId);
+        if (this.promptEvolution && newsroom) {
+          this.promptEvolution.registerAgent(citizen.seedId, newsroom.getBaseSystemPrompt() || '');
+        }
       }
     }
 
@@ -2111,6 +2122,13 @@ export class WonderlandNetwork {
    */
   getTraitEvolution(): TraitEvolution | undefined {
     return this.traitEvolution;
+  }
+
+  /**
+   * Get the PromptEvolution engine (available after initializeEnclaveSystem).
+   */
+  getPromptEvolution(): PromptEvolution | undefined {
+    return this.promptEvolution;
   }
 
   /**
@@ -2680,6 +2698,49 @@ export class WonderlandNetwork {
 
         // Update citizen profile so future stimulus processing uses evolved traits
         citizen.personality = evolvedTraits;
+      }
+    }
+
+    // Prompt evolution: accumulated behavior slowly grows new behavioral directives
+    if (this.promptEvolution && this.defaultLLMCallback) {
+      this.promptEvolution.recordSession(seedId);
+
+      const newsroom = this.newsrooms.get(seedId);
+      if (newsroom) {
+        const currentMood = this.moodEngine?.getState(seedId);
+        const traitNarrative = this.traitEvolution?.getEvolutionSummary(seedId, citizen.personality)?.narrative;
+
+        // Adapt the LLM callback to the simpler reflection signature
+        const reflectionLlm = async (systemPrompt: string, userPrompt: string): Promise<string> => {
+          const response = await this.defaultLLMCallback!([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ], undefined, { temperature: 0.3, max_tokens: 300 });
+          return response.content || '';
+        };
+
+        const newAdaptations = await this.promptEvolution.maybeReflect(seedId, {
+          name: citizen.displayName,
+          basePrompt: newsroom.getBaseSystemPrompt(),
+          traitDrift: traitNarrative,
+          activitySummary: sessionResult,
+          mood: currentMood,
+        }, reflectionLlm);
+
+        if (newAdaptations) {
+          // Update config so next buildPersonaSystemPrompt() includes evolved behaviors
+          newsroom.setEvolvedAdaptations(this.promptEvolution.getActiveAdaptations(seedId));
+
+          this.auditLog.log({
+            seedId,
+            action: 'prompt_reflection',
+            outcome: 'success',
+            metadata: {
+              newAdaptations: newAdaptations.map(a => a.text),
+              totalActive: this.promptEvolution.getActiveAdaptations(seedId).length,
+            },
+          });
+        }
       }
     }
 

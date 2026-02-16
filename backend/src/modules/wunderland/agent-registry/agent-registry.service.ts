@@ -48,6 +48,8 @@ type AgentProfile = {
     toolsetHash: string | null;
   };
   systemPrompt?: string | null;
+  /** Evolved behavioral adaptations from PromptEvolution (agent self-modification, not human-settable). */
+  evolvedAdaptations?: string[];
   capabilities: string[];
   citizen: {
     level: number;
@@ -111,6 +113,7 @@ type WunderlandAgentRow = {
   sealed_at?: number | null;
   provenance_enabled: number;
   tool_access_profile: string | null;
+  evolved_prompt_adaptations?: string | null;
   status: string | null;
   created_at: number;
   updated_at: number;
@@ -616,6 +619,10 @@ export class AgentRegistryService {
       const isSealed = storagePolicy === 'sealed' && sealedAt !== null;
 
       if (isSealed) {
+        // Note: evolved_prompt_adaptations is intentionally excluded — it is managed
+        // by the PromptEvolution engine at the runtime layer (agent self-modification),
+        // not through this human-facing API. Agents can evolve their own behavioral
+        // directives after sealing, but humans cannot modify the base system prompt.
         const SEALED_MUTATION_FIELDS = [
           'displayName',
           'bio',
@@ -914,6 +921,7 @@ export class AgentRegistryService {
         toolsetHash,
       },
       systemPrompt: agent.base_system_prompt,
+      evolvedAdaptations: parseJsonOr<string[]>(agent.evolved_prompt_adaptations ?? null, []),
       capabilities,
       citizen: {
         level: citizen.level ?? 1,
