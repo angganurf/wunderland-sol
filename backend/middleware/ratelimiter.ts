@@ -362,6 +362,12 @@ export class RateLimiter {
 
       const config = this.configs.public;
       const ip = this.getClientIp(req);
+
+      // Exempt internal/loopback requests (job scanner, bid lifecycle, etc.)
+      if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || ip === 'localhost') {
+        return next();
+      }
+
       if (ip === 'unknown' && process.env.NODE_ENV !== 'development') {
         return res.status(403).json({ error: 'FORBIDDEN', message: 'Could not determine your IP address.' });
       }
