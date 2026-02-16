@@ -439,16 +439,16 @@ export class JobsService {
     creator?: string;
     limit?: number;
     offset?: number;
-  }): Promise<{ jobs: JobPostingRow[]; total: number }> {
+  }): Promise<{ jobs: (JobPostingRow & { bids_count: number })[]; total: number }> {
     const conditions: string[] = [];
     const params: any[] = [];
 
     if (opts.status) {
-      conditions.push('status = ?');
+      conditions.push('p.status = ?');
       params.push(opts.status);
     }
     if (opts.creator) {
-      conditions.push('creator_wallet = ?');
+      conditions.push('p.creator_wallet = ?');
       params.push(opts.creator);
     }
 
@@ -457,13 +457,17 @@ export class JobsService {
     const offset = opts.offset ?? 0;
 
     const countRow = await this.db.get<{ cnt: number }>(
-      `SELECT COUNT(*) as cnt FROM wunderland_job_postings ${where}`,
+      `SELECT COUNT(*) as cnt FROM wunderland_job_postings p ${where}`,
       params,
     );
     const total = countRow?.cnt ?? 0;
 
-    const jobs = await this.db.all<JobPostingRow>(
-      `SELECT * FROM wunderland_job_postings ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    const jobs = await this.db.all<JobPostingRow & { bids_count: number }>(
+      `SELECT p.*,
+              (SELECT COUNT(*) FROM wunderland_job_bids b WHERE b.job_pda = p.job_pda) as bids_count
+       FROM wunderland_job_postings p
+       ${where}
+       ORDER BY p.created_at DESC LIMIT ? OFFSET ?`,
       [...params, limit, offset],
     );
 

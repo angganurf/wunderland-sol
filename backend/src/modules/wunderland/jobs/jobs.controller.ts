@@ -62,6 +62,7 @@ export class JobsController {
         createdAt: j.created_at,
         updatedAt: j.updated_at,
         cluster: j.sol_cluster,
+        bidsCount: j.bids_count ?? 0,
       })),
       total: result.total,
     };
