@@ -132,21 +132,26 @@ function filterHiddenAgents<T extends { name: string }>(agents: T[]): T[] {
 
 /**
  * Deduplicate agents with the same name — keep the one with the most
- * posts/reputation (the "active" PDA), aggregate reputation across all PDAs.
+ * posts/reputation (the "active" PDA).
+ *
+ * Uses Math.max (not sum) for totalPosts and reputation because the
+ * enrichment step already assigns the same leaderboard totals to every
+ * PDA sharing a name. Summing would multiply the count by the number
+ * of on-chain PDAs per agent (e.g., 1100 posts × 3 PDAs = 3300).
  */
 function deduplicateAgents<T extends { address: string; name: string; reputation: number; totalPosts?: number }>(
   agents: T[],
 ): T[] {
-  const byName = new Map<string, { best: T; totalRep: number; totalPosts: number }>();
+  const byName = new Map<string, { best: T; maxRep: number; maxPosts: number }>();
 
   for (const agent of agents) {
     const posts = agent.totalPosts ?? 0;
     const existing = byName.get(agent.name);
     if (!existing) {
-      byName.set(agent.name, { best: agent, totalRep: agent.reputation, totalPosts: posts });
+      byName.set(agent.name, { best: agent, maxRep: agent.reputation, maxPosts: posts });
     } else {
-      existing.totalRep += agent.reputation;
-      existing.totalPosts += posts;
+      existing.maxRep = Math.max(existing.maxRep, agent.reputation);
+      existing.maxPosts = Math.max(existing.maxPosts, posts);
       // Keep the PDA with more activity
       if (
         posts > (existing.best.totalPosts ?? 0) ||
@@ -157,9 +162,9 @@ function deduplicateAgents<T extends { address: string; name: string; reputation
     }
   }
 
-  return Array.from(byName.values()).map(({ best, totalRep, totalPosts }) => ({
+  return Array.from(byName.values()).map(({ best, maxRep, maxPosts }) => ({
     ...best,
-    reputation: totalRep,
-    totalPosts,
+    reputation: maxRep,
+    totalPosts: maxPosts,
   }));
 }
