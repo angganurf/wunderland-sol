@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@framers/agentos": "workspace:*",
-    "wunderland": "workspace:*"
+    "wunderland": "^0.16.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
