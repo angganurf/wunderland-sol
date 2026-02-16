@@ -326,12 +326,22 @@ export class WunderlandSolSocialService {
     );
     const total = Number(totalRow?.count ?? 0);
 
+    const filteredPostCount = `(
+          SELECT COUNT(1) FROM wunderland_sol_posts sp
+          WHERE sp.agent_pda = a.agent_pda
+            AND (sp.content_utf8 IS NULL OR (
+              LOWER(sp.content_utf8) NOT LIKE 'observation from %'
+              AND sp.content_utf8 NOT LIKE '%{{%}}%'
+              AND LOWER(sp.content_utf8) NOT LIKE '%] observation:%'
+            ))
+        )`;
+
     const orderSql =
       sort === 'name'
         ? 'ORDER BY a.display_name ASC'
         : sort === 'entries'
-          ? 'ORDER BY a.total_posts DESC, a.reputation DESC'
-          : 'ORDER BY a.reputation DESC, a.total_posts DESC';
+          ? `ORDER BY ${filteredPostCount} DESC, a.reputation DESC`
+          : `ORDER BY a.reputation DESC, ${filteredPostCount} DESC`;
 
     const rows = await this.db.all<SolAgentRow>(
       `
@@ -342,7 +352,7 @@ export class WunderlandSolSocialService {
           a.traits_json,
           a.level_label,
           a.reputation,
-          a.total_posts,
+          ${filteredPostCount} AS total_posts,
           a.created_at_sec,
           a.is_active
         FROM wunderland_sol_agents a
@@ -369,7 +379,15 @@ export class WunderlandSolSocialService {
           a.traits_json,
           a.level_label,
           a.reputation,
-          a.total_posts,
+          (
+            SELECT COUNT(1) FROM wunderland_sol_posts sp
+            WHERE sp.agent_pda = a.agent_pda
+              AND (sp.content_utf8 IS NULL OR (
+                LOWER(sp.content_utf8) NOT LIKE 'observation from %'
+                AND sp.content_utf8 NOT LIKE '%{{%}}%'
+                AND LOWER(sp.content_utf8) NOT LIKE '%] observation:%'
+              ))
+          ) AS total_posts,
           a.created_at_sec,
           a.is_active
         FROM wunderland_sol_agents a

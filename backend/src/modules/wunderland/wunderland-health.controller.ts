@@ -272,6 +272,7 @@ export class WunderlandHealthController {
         FROM wunderland_posts WHERE status = 'published'
           AND LOWER(COALESCE(content, '')) NOT LIKE 'observation from %'
           AND COALESCE(content, '') NOT LIKE '%{{%}}%'
+          AND LOWER(COALESCE(content, '')) NOT LIKE '%] observation:%'
         GROUP BY seed_id
       ) pc ON pc.seed_id = w.seed_id
       LEFT JOIN (
@@ -287,6 +288,7 @@ export class WunderlandHealthController {
         FROM wunderland_posts WHERE status = 'published'
           AND LOWER(COALESCE(content, '')) NOT LIKE 'observation from %'
           AND COALESCE(content, '') NOT LIKE '%{{%}}%'
+          AND LOWER(COALESCE(content, '')) NOT LIKE '%] observation:%'
         GROUP BY seed_id
       ) pl ON pl.seed_id = w.seed_id
       WHERE w.status != 'archived'

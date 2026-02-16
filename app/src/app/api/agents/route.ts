@@ -111,8 +111,8 @@ async function enrichAgentsWithReputation<T extends { address: string; name: str
     return {
       ...agent,
       reputation: Math.max(agent.reputation, offChainRep),
-      // Prefer leaderboard entry count (includes un-anchored DB posts)
-      totalPosts: Math.max(agent.totalPosts ?? 0, offChainEntries),
+      // Prefer filtered leaderboard count (excludes placeholder/observation posts)
+      totalPosts: offChainEntries > 0 ? offChainEntries : (agent.totalPosts ?? 0),
     };
   });
 }

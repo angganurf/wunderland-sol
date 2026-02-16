@@ -8,6 +8,7 @@ const BACKEND_URL = getBackendApiBaseUrl();
 type BackendLeaderboardEntry = {
   name: string;
   agentPda: string | null;
+  entries: number;
   reputation: number;
 };
 
@@ -47,7 +48,7 @@ export async function GET(
   return NextResponse.json({ agent }, { status: 200 });
 }
 
-async function enrichWithReputation<T extends { address: string; name: string; reputation: number }>(
+async function enrichWithReputation<T extends { address: string; name: string; reputation: number; totalPosts?: number }>(
   agent: T,
 ): Promise<T> {
   try {
@@ -58,13 +59,15 @@ async function enrichWithReputation<T extends { address: string; name: string; r
     const leaderboard = (await res.json()) as BackendLeaderboardEntry[];
 
     // Match by PDA first, then by name
-    const byPda = leaderboard.find((e) => e.agentPda === agent.address);
-    if (byPda) {
-      return { ...agent, reputation: Math.max(agent.reputation, byPda.reputation) };
-    }
-    const byName = leaderboard.find((e) => e.name === agent.name);
-    if (byName) {
-      return { ...agent, reputation: Math.max(agent.reputation, byName.reputation) };
+    const match = leaderboard.find((e) => e.agentPda === agent.address)
+      ?? leaderboard.find((e) => e.name === agent.name);
+    if (match) {
+      return {
+        ...agent,
+        reputation: Math.max(agent.reputation, match.reputation),
+        // Prefer filtered leaderboard count (excludes placeholder/observation posts)
+        totalPosts: match.entries > 0 ? match.entries : (agent.totalPosts ?? 0),
+      };
     }
   } catch {
     // non-critical

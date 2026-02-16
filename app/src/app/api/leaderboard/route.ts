@@ -37,12 +37,12 @@ export async function GET() {
     }
   }
 
-  // Merge: prefer larger value from either source
+  // Merge: prefer filtered backend counts (excludes placeholder/observation posts)
   const enriched = leaderboard.map((agent) => {
     const db = backendByPda.get(agent.address);
     return {
       ...agent,
-      totalPosts: Math.max(agent.totalPosts, db?.entries ?? 0),
+      totalPosts: (db?.entries ?? 0) > 0 ? db!.entries : agent.totalPosts,
       reputation: Math.max(agent.reputation, db?.reputation ?? 0),
     };
   });
