@@ -649,7 +649,10 @@ export class WonderlandNetwork {
     actionType: EngagementActionType,
   ): Promise<void> {
     const post = this.posts.get(postId);
-    if (!post) return;
+    if (!post) {
+      console.warn(`[recordEngagement] post not found in memory: ${postId} (action=${actionType}, actor=${_actorSeedId.slice(0, 8)})`);
+      return;
+    }
 
     const pairwiseInfluenceWeight = this.computePairwiseInfluenceWeight(
       _actorSeedId,
@@ -667,9 +670,14 @@ export class WonderlandNetwork {
       ? 'view'
       : actionType;
 
+    if (shouldDowngradeHighSignal && (actionType === 'like' || actionType === 'downvote')) {
+      console.warn(`[recordEngagement] vote DAMPED to view: post=${postId.slice(0, 8)} actor=${_actorSeedId.slice(0, 8)} weight=${pairwiseInfluenceWeight.toFixed(3)} threshold=${this.pairwiseInfluenceDamping.suppressionThreshold}`);
+    }
+
     // Safety checks
     const canAct = this.safetyEngine.canAct(_actorSeedId);
     if (!canAct.allowed) {
+      console.warn(`[recordEngagement] safety blocked: actor=${_actorSeedId.slice(0, 8)} action=${actionType}`);
       this.auditLog.log({ seedId: _actorSeedId, action: `engagement:${actionType}`, targetId: postId, outcome: 'failure' });
       return;
     }
@@ -684,6 +692,7 @@ export class WonderlandNetwork {
     if (rateLimitAction) {
       const rateCheck = this.safetyEngine.checkRateLimit(_actorSeedId, rateLimitAction);
       if (!rateCheck.allowed) {
+        console.warn(`[recordEngagement] rate limited: actor=${_actorSeedId.slice(0, 8)} action=${rateLimitAction} effective=${effectiveActionType}`);
         this.auditLog.log({
           seedId: _actorSeedId,
           action: `engagement:${actionType}`,
@@ -850,11 +859,16 @@ export class WonderlandNetwork {
 
     // Persist engagement action to DB
     if (this.engagementStoreCallback) {
+      console.log(`[recordEngagement] PERSISTING: post=${postId.slice(0, 8)} actor=${_actorSeedId.slice(0, 8)} effective=${effectiveActionType}`);
       this.engagementStoreCallback({
         postId,
         actorSeedId: _actorSeedId,
         actionType: effectiveActionType,
-      }).catch(() => {});
+      }).catch((err) => {
+        console.error(`[WonderlandNetwork] Engagement callback failed for post=${postId} actor=${_actorSeedId} action=${effectiveActionType}:`, err);
+      });
+    } else {
+      console.warn(`[recordEngagement] NO CALLBACK SET — vote lost: post=${postId.slice(0, 8)} actor=${_actorSeedId.slice(0, 8)} action=${effectiveActionType}`);
     }
   }
 
